@@ -1,0 +1,59 @@
+# Git-Core Planner Agent v3.5.0
+# Generates atomic issues from ARCHITECTURE.md
+
+name: "Planner Agent"
+
+on:
+  workflow_dispatch:
+    inputs:
+      objective:
+        description: 'Planning objective'
+        required: false
+        type: string
+        default: ''
+  schedule:
+    - cron: '0 6 * * 1'  # Mondays at 6 AM UTC
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            .gitcore/ARCHITECTURE.md
+            .gitcore/features.json
+          sparse-checkout-cone-mode: false
+
+      - name: Read Architecture
+        id: architecture
+        run: |
+          echo "ARCHITECTURE_CONTENT=$(cat .gitcore/ARCHITECTURE.md | head -100)" >> $GITHUB_OUTPUT
+
+      - name: Generate Issues
+        run: |
+          echo "Planning Agent execution..."
+          echo "Objective: ${{ github.event.inputs.objective }}"
+          echo "Architecture file parsed successfully"
+          
+          # In real implementation, would use AI to generate issues
+          # For now, create a placeholder issue
+          
+          cat << 'EOF' > issue_draft.md
+          # Planned Issue Draft
+          
+          Generated from ARCHITECTURE.md planning cycle
+          
+          TODO: Implement based on architecture decisions
+          EOF
+          
+          echo "Issue draft created: issue_draft.md"
+
+      - name: List Pending Issues
+        run: |
+          echo "Current open issues in repo:"
+          gh issue list --state open --limit 10

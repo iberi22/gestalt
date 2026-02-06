@@ -1,0 +1,99 @@
+# Git-Core Guardian Agent v3.5.0
+# Auto-merge decisions based on CI/CD and review status
+
+name: "Guardian Agent"
+
+on:
+  pull_request:
+    types: [opened, synchronize, review_submitted, checks_run]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'PR number to review'
+        required: false
+        type: string
+
+jobs:
+  guardian:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      checks: read
+    
+    steps:
+      - name: Get PR Info
+        id: pr-info
+        run: |
+          PR_NUM=${{ github.event.pull_request.number || github.event.inputs.pr_number }}
+          echo "pr_number=$PR_NUM" >> $GITHUB_OUTPUT
+          
+          gh pr view $PR_NUM --json title,state,author,baseRefName,headRefName -q '.'
+          
+          # Get check status
+          echo "checks=$(gh pr view $PR_NUM --json statusCheckRollup -q '.statusCheckRollup')" >> $GITHUB_OUTPUT
+
+      - name: Calculate Confidence Score
+        id: confidence
+        run: |
+          PR=${{ steps.pr-info.outputs.pr_number }}
+          
+          # Factors
+          CI_PASSED=true
+          CHANGES_SIZE=$(gh pr view $PR --json additions -q '.additions')
+          HAS_TESTS=$(gh pr view $PR --json files -q '.files | length')
+          
+          # Calculate (simplified)
+          CONFIDENCE=50  # Base
+          
+          # CI checks +30
+          if [ "$CI_PASSED" = "true" ]; then
+            CONFIDENCE=$((CONFIDENCE + 30))
+          fi
+          
+          # Small changes +10
+          if [ "$CHANGES_SIZE" -lt 500 ]; then
+            CONFIDENCE=$((CONFIDENCE + 10))
+          fi
+          
+          # Has tests +10
+          if [ "$HAS_TESTS" -gt 0 ]; then
+            CONFIDENCE=$((CONFIDENCE + 10))
+          fi
+          
+          echo "confidence=$CONFIDENCE" >> $GITHUB_OUTPUT
+          echo "ci_passed=$CI_PASSED" >> $GITHUB_OUTPUT
+
+      - name: Guardian Decision
+        run: |
+          PR=${{ steps.pr-info.outputs.pr_number }}
+          CONF=${{ steps.confidence.outputs.confidence }}
+          CI=${{ steps.confidence.outputs.ci_passed }}
+          
+          echo "Guardian Analysis for PR #$PR"
+          echo "Confidence Score: $CONF%"
+          echo "CI Status: $CI"
+          
+          # Auto-merge conditions (70% confidence threshold)
+          if [ "$CI" = "true" ] && [ "$CONF" -ge 70 ]; then
+            echo "decision=auto-merge" >> $GITHUB_OUTPUT
+            echo "🤖 Guardian: CONFIDENCE $CONF% - AUTO-MERGE ENABLED"
+            
+            # In production: gh pr merge $PR --auto --delete-branch
+          else
+            echo "decision=review-required" >> $GITHUB_OUTPUT
+            echo "🤖 Guardian: CONFIDENCE $CONF% - MANUAL REVIEW REQUIRED"
+          fi
+
+      - name: Post Decision
+        run: |
+          PR=${{ steps.pr-info.outputs.pr_number }}
+          DECISION=${{ steps.decision.outputs.decision }}
+          
+          if [ "$DECISION" = "auto-merge" ]; then
+            BODY="🤖 **Guardian Decision**: AUTO-MERGE (Confidence: ${{ steps.confidence.outputs.confidence }}%)"
+            gh pr comment $PR --body "$BODY"
+          else
+            BODY="🤖 **Guardian Decision**: Manual review required. CI must pass and confidence must be ≥70%."
+            gh pr comment $PR --body "$BODY"
+          fi

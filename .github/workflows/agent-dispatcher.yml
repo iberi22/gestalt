@@ -1,0 +1,73 @@
+# Git-Core Agent Dispatcher v3.5.0
+# Routes issues to best-fit executor agents
+
+name: "Agent Dispatcher"
+
+on:
+  issues:
+    types: [opened, labeled]
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: 'Issue number to dispatch'
+        required: false
+        type: string
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: read
+      contents: read
+    
+    steps:
+      - name: Analyze Issue
+        id: analyze
+        run: |
+          echo "Analyzing issue for routing..."
+          
+          # Get issue labels
+          LABELS=$(gh issue view ${{ github.event.issue.number }} --json labels -q '.labels[].name')
+          echo "Labels: $LABELS"
+          
+          # Route based on labels
+          if echo "$LABELS" | grep -q "ai-agent"; then
+            echo "route=jules" >> $GITHUB_OUTPUT
+          elif echo "$LABELS" | grep -q "bug"; then
+            echo "route=fixer" >> $GITHUB_OUTPUT
+          elif echo "$LABELS" | grep -q "enhancement\|feature"; then
+            echo "route=feature" >> $GITHUB_OUTPUT
+          else
+            echo "route=default" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Dispatch to Agent
+        run: |
+          ROUTE=${{ steps.analyze.outputs.route }}
+          ISSUE=${{ github.event.issue.number }}
+          
+          echo "Routing issue #$ISSUE to: $ROUTE"
+          
+          case $ROUTE in
+            jules)
+              echo "Delegating to Jules CLI agent..."
+              # gh issue edit $ISSUE --add-assignee jules
+              ;;
+            fixer)
+              echo "Routing to bug fixer..."
+              ;;
+            feature)
+              echo "Routing to feature developer..."
+              ;;
+            *)
+              echo "Default routing - requires manual assignment"
+              ;;
+          esac
+
+      - name: Comment on Issue
+        run: |
+          ISSUE=${{ github.event.issue.number }}
+          ROUTE=${{ steps.analyze.outputs.route }}
+          
+          gh issue comment $ISSUE \
+            --body "🤖 Issue routed to: $ROUTE agent. See [Agent Index](../.gitcore/AGENT_INDEX.md) for capabilities."

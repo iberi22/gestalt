@@ -13,6 +13,18 @@
       "description": "Multi-model synthesis"
     },
     {
+      "name": "MiniMax Integration",
+      "status": "in_progress",
+      "passes": false,
+      "description": "MiniMax API LLM provider"
+    },
+    {
+      "name": "Git-Core Workflows",
+      "status": "in_progress",
+      "passes": false,
+      "description": "Planner, Dispatcher, Guardian agents"
+    },
+    {
       "name": "Unified Config",
       "status": "planned",
       "passes": false,
@@ -30,5 +42,13 @@
       "passes": false,
       "description": "Execute tools via MCP"
     }
-  ]
+  ],
+  "metrics": {
+    "progress_percentage": 45,
+    "last_updated": "2026-02-06",
+    "total_features": 7,
+    "completed_features": 2,
+    "in_progress_features": 2,
+    "planned_features": 3
+  }
 }

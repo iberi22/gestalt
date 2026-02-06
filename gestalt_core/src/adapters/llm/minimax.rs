@@ -50,10 +50,15 @@ impl LlmProvider for MiniMaxProvider {
     async fn generate(&self, request: LlmRequest) -> Result<LlmResponse, LlmError> {
         let url = format!("{}/chatcompletion_v2", self.base_url);
 
+        // Convert prompt to messages format for MiniMax API
+        let messages = json!([
+            {"role": "user", "content": request.prompt}
+        ]);
+
         let body = json!({
             "model": self.model,
-            "messages": request.messages,
-            "temperature": request.temperature.unwrap_or(0.7),
+            "messages": messages,
+            "temperature": request.temperature,
             "max_tokens": request.max_tokens.unwrap_or(4096)
         });
 

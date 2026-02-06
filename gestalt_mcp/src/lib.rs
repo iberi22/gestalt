@@ -52,7 +52,7 @@ pub async fn start_server() -> anyhow::Result<()> {
 }
 
 async fn handle_mcp_request(
-    State(state): State<Arc<Mutex<AppState>>>,
+    State(_state): State<Arc<Mutex<AppState>>>,
     Json(payload): Json<JsonRpcRequest>,
 ) -> Json<JsonRpcResponse> {
     // Basic dispatcher

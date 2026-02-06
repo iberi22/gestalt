@@ -35,6 +35,7 @@ pub struct LLMService {
     db: SurrealClient,
     timeline: TimelineService,
     model_id: Arc<RwLock<String>>,
+    subagents: Arc<SubagentRegistry>,
 }
 
 #[async_trait::async_trait]

@@ -13,6 +13,7 @@ use std::sync::{Arc, RwLock};
 use crate::db::SurrealClient;
 use crate::models::{EventType, Project, Task};
 use crate::services::{Agent, TimelineService};
+use gestalt_core::application::subagent::{SubagentRegistry, Subagent};
 
 
 

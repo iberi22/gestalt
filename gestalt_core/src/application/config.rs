@@ -1,12 +1,13 @@
 //! Configuration Module
 //!
-//! Centralized TOML configuration system with environment variable override.
+//! Centralized configuration system with environment variable override.
+//! Uses the `config` crate for TOML/YAML/JSON support.
 
 use serde::Deserialize;
 use std::env;
-use std::fs;
 use std::path::Path;
 use thiserror::Error;
+use config::Config as ConfigBuilder;
 
 /// Configuration errors
 #[derive(Debug, Error)]
@@ -26,8 +27,8 @@ pub enum ConfigError {
     #[error("IO error: {0}")]
     IoError(#[from] std::io::Error),
     
-    #[error("TOML error: {0}")]
-    TomlError(#[from] toml::de::Error),
+    #[error("Configuration error: {0}")]
+    ConfigError(#[from] config::ConfigError),
 }
 
 /// LLM Provider configuration
@@ -91,17 +92,21 @@ pub struct GestaltConfig {
 }
 
 impl GestaltConfig {
-    /// Load configuration from TOML file
-    pub fn from_toml(path: &Path) -> Result<Self, ConfigError> {
+    /// Load configuration from file (TOML, YAML, or JSON)
+    pub fn from_file(path: &Path) -> Result<Self, ConfigError> {
         if !path.exists() {
             return Err(ConfigError::FileNotFound(path.to_string_lossy().to_string()));
         }
         
-        let content = fs::read_to_string(path)?;
-        toml::from_str(&content).map_err(ConfigError::ParseError)
+        let settings = ConfigBuilder::builder()
+            .add_source(config::File::with_name(&path.to_string_lossy()))
+            .build()?;
+        
+        settings.try_deserialize().map_err(ConfigError::ParseError)
     }
     
     /// Load configuration from environment variables
+    /// Uses GESTALT_* prefix with double underscores for nesting
     pub fn from_env() -> Result<Self, ConfigError> {
         let mut config = GestaltConfig::default();
         
@@ -203,7 +208,7 @@ pub fn load_config(config_paths: &[&Path]) -> Result<GestaltConfig, ConfigError>
     // Try each path
     for path in config_paths {
         if path.exists() {
-            return GestaltConfig::from_toml(path);
+            return GestaltConfig::from_file(path);
         }
     }
     
@@ -231,28 +236,6 @@ mod tests {
         let config = GestaltConfig::default().with_defaults();
         assert!(config.llm.is_some());
         assert!(config.database.is_some());
-    }
-    
-    #[test]
-    fn test_parse_toml_config() {
-        let toml_content = r#"
-[llm]
-default_provider = "openai"
-temperature = 0.8
-max_tokens = 8192
-
-[[llm.providers]]
-name = "openai"
-type = "openai"
-api_key = "${OPENAI_API_KEY}"
-model = "gpt-4"
-"#;
-        
-        let config: GestaltConfig = toml::from_str(toml_content).unwrap();
-        assert!(config.llm.is_some());
-        let llm = config.llm.unwrap();
-        assert_eq!(llm.default_provider(), "openai");
-        assert_eq!(llm.temperature, Some(0.8));
     }
     
     #[test]

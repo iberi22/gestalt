@@ -1,104 +1,272 @@
-use config::{Config, ConfigError, Environment, File};
-use directories::ProjectDirs;
-use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+//! Configuration Module
+//!
+//! Centralized TOML configuration system with environment variable override.
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct AppConfig {
-    pub gemini: GeminiConfig,
-    pub openai: OpenAIConfig,
-    pub qwen: QwenConfig,
-    pub ollama: OllamaConfig,
+use serde::Deserialize;
+use std::env;
+use std::fs;
+use std::path::Path;
+use thiserror::Error;
+
+/// Configuration errors
+#[derive(Debug, Error)]
+pub enum ConfigError {
+    #[error("File not found: {0}")]
+    FileNotFound(String),
+    
+    #[error("Parse error: {0}")]
+    ParseError(String),
+    
+    #[error("Validation error: {0}")]
+    ValidationError(String),
+    
+    #[error("Environment variable error: {0}")]
+    EnvError(String),
+    
+    #[error("IO error: {0}")]
+    IoError(#[from] std::io::Error),
+    
+    #[error("TOML error: {0}")]
+    TomlError(#[from] toml::de::Error),
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct GeminiConfig {
-    pub model: String,
+/// LLM Provider configuration
+#[derive(Debug, Clone, Deserialize)]
+pub struct ProviderConfig {
+    pub name: String,
+    #[serde(rename = "type")]
+    pub provider_type: String,
     pub api_key: Option<String>,
+    pub base_url: Option<String>,
+    pub model: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct OpenAIConfig {
-    pub model: String,
-    pub api_key: Option<String>,
+/// LLM configuration
+#[derive(Debug, Clone, Deserialize)]
+pub struct LlmConfig {
+    pub providers: Vec<ProviderConfig>,
+    pub default_provider: Option<String>,
+    pub temperature: Option<f32>,
+    pub max_tokens: Option<u32>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct QwenConfig {
-    pub model: String,
+impl LlmConfig {
+    pub fn default_provider(&self) -> &str {
+        self.default_provider.as_deref().unwrap_or("openai")
+    }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct OllamaConfig {
-    pub model: String,
-    pub base_url: String,
+/// Database configuration
+#[derive(Debug, Clone, Deserialize)]
+pub struct DatabaseConfig {
+    #[serde(rename = "type")]
+    pub db_type: Option<String>,
+    pub url: Option<String>,
+    pub path: Option<String>,
 }
 
-impl Default for AppConfig {
+/// MCP configuration
+#[derive(Debug, Clone, Deserialize)]
+pub struct McpConfig {
+    pub enabled: Option<bool>,
+    pub server_url: Option<String>,
+    pub default_timeout: Option<u64>,
+}
+
+/// Logging configuration
+#[derive(Debug, Clone, Deserialize)]
+pub struct LoggingConfig {
+    pub level: Option<String>,
+    pub format: Option<String>,
+    pub file: Option<String>,
+}
+
+/// Gestalt main configuration
+#[derive(Debug, Clone, Deserialize)]
+pub struct GestaltConfig {
+    pub llm: Option<LlmConfig>,
+    pub database: Option<DatabaseConfig>,
+    pub mcp: Option<McpConfig>,
+    pub logging: Option<LoggingConfig>,
+}
+
+impl GestaltConfig {
+    /// Load configuration from TOML file
+    pub fn from_toml(path: &Path) -> Result<Self, ConfigError> {
+        if !path.exists() {
+            return Err(ConfigError::FileNotFound(path.to_string_lossy().to_string()));
+        }
+        
+        let content = fs::read_to_string(path)?;
+        toml::from_str(&content).map_err(ConfigError::ParseError)
+    }
+    
+    /// Load configuration from environment variables
+    pub fn from_env() -> Result<Self, ConfigError> {
+        let mut config = GestaltConfig::default();
+        
+        // LLM configuration from env
+        if let Ok(api_key) = env::var("GESTALT_LLM__API_KEY") {
+            config.llm = Some(LlmConfig {
+                providers: vec![ProviderConfig {
+                    name: "default".to_string(),
+                    provider_type: "default".to_string(),
+                    api_key: Some(api_key),
+                    base_url: None,
+                    model: None,
+                }],
+                default_provider: env::var("GESTALT_LLM__DEFAULT_PROVIDER").ok(),
+                temperature: env::var("GESTALT_LLM__TEMPERATURE")
+                    .ok()
+                    .and_then(|v| v.parse().ok()),
+                max_tokens: env::var("GESTALT_LLM__MAX_TOKENS")
+                    .ok()
+                    .and_then(|v| v.parse().ok()),
+            });
+        }
+        
+        // Database configuration from env
+        if let Ok(url) = env::var("GESTALT_DATABASE__URL") {
+            config.database = Some(DatabaseConfig {
+                db_type: env::var("GESTALT_DATABASE__TYPE").ok(),
+                url: Some(url),
+                path: env::var("GESTALT_DATABASE__PATH").ok(),
+            });
+        }
+        
+        // MCP configuration from env
+        if let Ok(server_url) = env::var("GESTALT_MCP__SERVER_URL") {
+            config.mcp = Some(McpConfig {
+                enabled: env::var("GESTALT_MCP__ENABLED")
+                    .ok()
+                    .and_then(|v| v.parse().ok()),
+                server_url: Some(server_url),
+                default_timeout: env::var("GESTALT_MCP__DEFAULT_TIMEOUT")
+                    .ok()
+                    .and_then(|v| v.parse().ok()),
+            });
+        }
+        
+        // Logging configuration from env
+        if let Ok(level) = env::var("GESTALT_LOGGING__LEVEL") {
+            config.logging = Some(LoggingConfig {
+                level: Some(level),
+                format: env::var("GESTALT_LOGGING__FORMAT").ok(),
+                file: env::var("GESTALT_LOGGING__FILE").ok(),
+            });
+        }
+        
+        Ok(config)
+    }
+    
+    /// Merge with defaults
+    pub fn with_defaults(self) -> Self {
+        Self {
+            llm: self.llm.or(Some(LlmConfig {
+                providers: vec![],
+                default_provider: Some("openai".to_string()),
+                temperature: Some(0.7),
+                max_tokens: Some(4096),
+            })),
+            database: self.database.or(Some(DatabaseConfig {
+                db_type: Some("memory".to_string()),
+                url: None,
+                path: None,
+            })),
+            mcp: self.mcp.or(Some(McpConfig {
+                enabled: Some(false),
+                server_url: None,
+                default_timeout: Some(30),
+            })),
+            logging: self.logging.or(Some(LoggingConfig {
+                level: Some("info".to_string()),
+                format: Some("json".to_string()),
+                file: None,
+            })),
+        }
+    }
+}
+
+impl Default for GestaltConfig {
     fn default() -> Self {
         Self {
-            gemini: GeminiConfig {
-                model: "gemini-2.0-flash".to_string(),
-                api_key: None,
-            },
-            openai: OpenAIConfig {
-                model: "gpt-4".to_string(),
-                api_key: None,
-            },
-            qwen: QwenConfig {
-                model: "qwen-coder".to_string(),
-            },
-            ollama: OllamaConfig {
-                model: "llama2".to_string(),
-                base_url: "http://localhost:11434".to_string(),
-            },
+            llm: None,
+            database: None,
+            mcp: None,
+            logging: None,
         }
     }
 }
 
-impl AppConfig {
-    pub fn load() -> Result<Self, ConfigError> {
-        let mut builder = Config::builder();
-
-        // 1. Start with defaults
-        let defaults = AppConfig::default();
-
-        // We need to manually set defaults because Config::builder() doesn't take a struct directly easily
-        // without serializing it first, or we can just set individual keys.
-        // For simplicity, we'll rely on the config crate's merging.
-        // Actually, a better pattern is to build the config and then try to deserialize,
-        // but if keys are missing, it might fail.
-        // Let's set default values explicitly in the builder.
-
-        builder = builder
-            .set_default("gemini.model", defaults.gemini.model)?
-            .set_default("openai.model", defaults.openai.model)?
-            .set_default("qwen.model", defaults.qwen.model)?
-            .set_default("ollama.model", defaults.ollama.model)?
-            .set_default("ollama.base_url", defaults.ollama.base_url)?;
-
-        // 2. Load from config file
-        if let Some(proj_dirs) = ProjectDirs::from("com", "gestalt", "gestalt") {
-            let config_dir = proj_dirs.config_dir();
-            let config_path = config_dir.join("gestalt.toml");
-
-            if config_path.exists() {
-                builder = builder.add_source(File::from(config_path));
-            }
+/// Load configuration with fallback chain
+pub fn load_config(config_paths: &[&Path]) -> Result<GestaltConfig, ConfigError> {
+    // Try each path
+    for path in config_paths {
+        if path.exists() {
+            return GestaltConfig::from_toml(path);
         }
-
-        // 3. Load from Environment Variables
-        // GESTALT_GEMINI__MODEL -> gemini.model
-        builder = builder.add_source(
-            Environment::with_prefix("GESTALT")
-                .separator("__")
-        );
-
-        builder.build()?.try_deserialize()
     }
+    
+    // Fall back to environment
+    let config = GestaltConfig::from_env()?;
+    
+    // Apply defaults
+    Ok(config.with_defaults())
+}
 
-    pub fn get_config_path() -> Option<PathBuf> {
-        ProjectDirs::from("com", "gestalt", "gestalt")
-            .map(|d| d.config_dir().join("gestalt.toml"))
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+    
+    #[test]
+    fn test_default_config() {
+        let config = GestaltConfig::default();
+        assert!(config.llm.is_none());
+        assert!(config.database.is_none());
+    }
+    
+    #[test]
+    fn test_config_with_defaults() {
+        let config = GestaltConfig::default().with_defaults();
+        assert!(config.llm.is_some());
+        assert!(config.database.is_some());
+    }
+    
+    #[test]
+    fn test_parse_toml_config() {
+        let toml_content = r#"
+[llm]
+default_provider = "openai"
+temperature = 0.8
+max_tokens = 8192
+
+[[llm.providers]]
+name = "openai"
+type = "openai"
+api_key = "${OPENAI_API_KEY}"
+model = "gpt-4"
+"#;
+        
+        let config: GestaltConfig = toml::from_str(toml_content).unwrap();
+        assert!(config.llm.is_some());
+        let llm = config.llm.unwrap();
+        assert_eq!(llm.default_provider(), "openai");
+        assert_eq!(llm.temperature, Some(0.8));
+    }
+    
+    #[test]
+    fn test_env_override() {
+        // Set environment variable
+        env::set_var("GESTALT_LLM__TEMPERATURE", "0.5");
+        
+        let config = GestaltConfig::from_env();
+        assert!(config.is_ok());
+        let config = config.unwrap();
+        assert!(config.llm.is_some());
+        assert_eq!(config.llm.unwrap().temperature, Some(0.5));
+        
+        // Clean up
+        env::remove_var("GESTALT_LLM__TEMPERATURE");
     }
 }

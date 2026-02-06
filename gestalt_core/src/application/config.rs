@@ -102,7 +102,7 @@ impl GestaltConfig {
             .add_source(config::File::with_name(&path.to_string_lossy()))
             .build()?;
         
-        settings.try_deserialize().map_err(ConfigError::ParseError)
+        settings.try_deserialize::<GestaltConfig>().map_err(|e| ConfigError::ParseError(e.to_string()))
     }
     
     /// Load configuration from environment variables

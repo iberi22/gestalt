@@ -222,7 +222,6 @@ pub fn load_config(config_paths: &[&Path]) -> Result<GestaltConfig, ConfigError>
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
     
     #[test]
     fn test_default_config() {

@@ -17,8 +17,6 @@ pub use llm::{Cognition, LLMResponse, LLMService, OrchestrationAction};
 pub use project::ProjectService;
 pub use task::TaskService;
 pub use timeline::TimelineService;
-pub use task::TaskService;
-pub use timeline::TimelineService;
 pub use watch::WatchService;
 pub use telegram::TelegramService;
 pub mod runtime;

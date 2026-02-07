@@ -7,10 +7,14 @@ use gestalt_timeline::cli::{Cli, Commands, repl};
 use gestalt_timeline::db::SurrealClient;
 use gestalt_timeline::config::Settings;
 use gestalt_timeline::services::{
-    AgentService, LLMService, GeminiService, OrchestrationAction, ProjectService,
-    TaskService, TimelineService, WatchService, AgentRuntime, start_server, Cognition, AuthService,
-    TelegramService
+    AgentService, OrchestrationAction, ProjectService,
+    TaskService, TimelineService, WatchService, AgentRuntime, start_server, AuthService,
+    TelegramService, Cognition
 };
+use gestalt_timeline::services::llm_minimax::{LLMService as MiniMaxLLMService, LLMResponse};
+#[cfg(feature = "bedrock")]
+use gestalt_timeline::services::llm_bedrock::LLMService as BedrockLLMService;
+use gestalt_timeline::services::GeminiService;
 use gestalt_core::context::{detector, scanner};
 use surrealdb::sql::Thing;
 use std::sync::Arc;
@@ -31,21 +35,51 @@ async fn init_cognition(
     timeline: &TimelineService,
     settings: &gestalt_timeline::config::CognitionSettings,
 ) -> Result<Arc<dyn Cognition>> {
+    let provider = settings.provider.to_lowercase();
     let model_id = &settings.model_id;
 
-    if model_id.to_lowercase().contains("gemini") {
-        let api_key = settings.gemini_api_key.clone()
-            .or_else(|| std::env::var("GEMINI_API_KEY").ok());
+    match provider.as_str() {
+        "minimax" => {
+            info!("🚀 Initializing MiniMax cognition service...");
+            let llm_service = MiniMaxLLMService::new(
+                db.clone(),
+                timeline.clone(),
+                Some(model_id.clone()),
+            ).await?;
+            Ok(Arc::new(llm_service))
+        }
+        "gemini" => {
+            info!("🚀 Initializing Gemini cognition service...");
+            let api_key = settings.gemini_api_key.clone()
+                .or_else(|| std::env::var("GEMINI_API_KEY").ok());
 
-        Ok(Arc::new(GeminiService::new(
-            db.clone(),
-            timeline.clone(),
-            model_id.clone(),
-            api_key,
-        )?))
-    } else {
-        let llm_service = LLMService::new(db.clone(), timeline.clone(), settings).await?;
-        Ok(Arc::new(llm_service))
+            Ok(Arc::new(GeminiService::new(
+                db.clone(),
+                timeline.clone(),
+                model_id.clone(),
+                api_key,
+            )?))
+        }
+        #[cfg(feature = "bedrock")]
+        "bedrock" | "claude" | "anthropic" => {
+            info!("🚀 Initializing Bedrock/Claude cognition service...");
+            let llm_service = BedrockLLMService::new(
+                db.clone(),
+                timeline.clone(),
+                settings,
+            ).await?;
+            Ok(Arc::new(llm_service))
+        }
+        _ => {
+            // Default to MiniMax
+            info!("🚀 Unknown provider '{}', defaulting to MiniMax...", provider);
+            let llm_service = MiniMaxLLMService::new(
+                db.clone(),
+                timeline.clone(),
+                Some(model_id.clone()),
+            ).await?;
+            Ok(Arc::new(llm_service))
+        }
     }
 }
 

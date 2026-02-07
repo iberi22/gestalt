@@ -1,0 +1,32 @@
+# Gestalt Configuration - Ready for MiniMax API
+# Configure your API key to enable MiniMax
+
+# Database Configuration
+[database]
+url = "mem://"
+user = "root"
+pass = "root"
+namespace = "gestalt"
+database = "timeline"
+
+# Cognition Configuration - MINIMAX AS PRIMARY
+[cognition]
+provider = "minimax"
+model_id = "MiniMax-M2.1"
+
+# Uncomment and configure your API key:
+# minimax_api_key = "${MINIMAX_API_KEY}"
+# Or set environment variable: export MINIMAX_API_KEY="your_key"
+
+# Alternative: Use Gemini
+# [cognition]
+# provider = "gemini"
+# model_id = "gemini-1.5-pro"
+
+# Agent Configuration
+[agent]
+id = "cli_default"
+
+# Telegram Configuration (optional)
+[telegram]
+bot_token = "${TELEGRAM_BOT_TOKEN}"

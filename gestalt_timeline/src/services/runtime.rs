@@ -79,6 +79,18 @@ pub struct AgentRuntime {
     jobs: Arc<Mutex<HashMap<String, tokio::process::Child>>>,
 }
 
+struct PersistStateInput<'a> {
+    goal: &'a str,
+    step: usize,
+    phase: RuntimePhase,
+    last_action: Option<&'a OrchestrationAction>,
+    last_observation: Option<&'a str>,
+    history: &'a [String],
+    started_at: crate::models::FlexibleTimestamp,
+    finished_at: Option<crate::models::FlexibleTimestamp>,
+    error: Option<String>,
+}
+
 impl AgentRuntime {
     pub fn new(
         agent_id: String,
@@ -119,17 +131,17 @@ impl AgentRuntime {
             goal
         ));
         let started_at = crate::models::FlexibleTimestamp::now();
-        self.persist_state(
+        self.persist_state(PersistStateInput {
             goal,
-            0,
-            RuntimePhase::Running,
-            None,
-            None,
-            &conversation_history,
-            started_at.clone(),
-            None,
-            None,
-        )
+            step: 0,
+            phase: RuntimePhase::Running,
+            last_action: None,
+            last_observation: None,
+            history: &conversation_history,
+            started_at: started_at.clone(),
+            finished_at: None,
+            error: None,
+        })
         .await?;
 
         let loop_result: Result<()> = async {
@@ -139,17 +151,17 @@ impl AgentRuntime {
 
                 if actions.is_empty() {
                     info!("Agent decided to stop (no actions).");
-                    self.persist_state(
+                    self.persist_state(PersistStateInput {
                         goal,
                         step,
-                        RuntimePhase::Completed,
-                        None,
-                        Some("Agent returned no actions; loop stopped."),
-                        &conversation_history,
-                        started_at.clone(),
-                        Some(crate::models::FlexibleTimestamp::now()),
-                        None,
-                    )
+                        phase: RuntimePhase::Completed,
+                        last_action: None,
+                        last_observation: Some("Agent returned no actions; loop stopped."),
+                        history: &conversation_history,
+                        started_at: started_at.clone(),
+                        finished_at: Some(crate::models::FlexibleTimestamp::now()),
+                        error: None,
+                    })
                     .await?;
                     return Ok(());
                 }
@@ -161,32 +173,32 @@ impl AgentRuntime {
                         Err(e) => format!("Error: {}", e),
                     };
                     conversation_history.push(format!("Observation: {}", observation));
-                    self.persist_state(
+                    self.persist_state(PersistStateInput {
                         goal,
-                        step + 1,
-                        RuntimePhase::Running,
-                        Some(&action),
-                        Some(&observation),
-                        &conversation_history,
-                        started_at.clone(),
-                        None,
-                        None,
-                    )
+                        step: step + 1,
+                        phase: RuntimePhase::Running,
+                        last_action: Some(&action),
+                        last_observation: Some(&observation),
+                        history: &conversation_history,
+                        started_at: started_at.clone(),
+                        finished_at: None,
+                        error: None,
+                    })
                     .await?;
                 }
             }
 
-            self.persist_state(
+            self.persist_state(PersistStateInput {
                 goal,
-                self.max_steps,
-                RuntimePhase::Completed,
-                None,
-                Some("Loop finished."),
-                &conversation_history,
-                started_at.clone(),
-                Some(crate::models::FlexibleTimestamp::now()),
-                None,
-            )
+                step: self.max_steps,
+                phase: RuntimePhase::Completed,
+                last_action: None,
+                last_observation: Some("Loop finished."),
+                history: &conversation_history,
+                started_at: started_at.clone(),
+                finished_at: Some(crate::models::FlexibleTimestamp::now()),
+                error: None,
+            })
             .await?;
             Ok(())
         }
@@ -198,17 +210,17 @@ impl AgentRuntime {
             .await;
         if let Err(e) = loop_result {
             let _ = self
-                .persist_state(
+                .persist_state(PersistStateInput {
                     goal,
-                    0,
-                    RuntimePhase::Failed,
-                    None,
-                    Some("Loop failed."),
-                    &conversation_history,
+                    step: 0,
+                    phase: RuntimePhase::Failed,
+                    last_action: None,
+                    last_observation: Some("Loop failed."),
+                    history: &conversation_history,
                     started_at,
-                    Some(crate::models::FlexibleTimestamp::now()),
-                    Some(e.to_string()),
-                )
+                    finished_at: Some(crate::models::FlexibleTimestamp::now()),
+                    error: Some(e.to_string()),
+                })
                 .await;
             return Err(e);
         }
@@ -216,29 +228,24 @@ impl AgentRuntime {
         Ok(())
     }
 
-    async fn persist_state(
-        &self,
-        goal: &str,
-        step: usize,
-        phase: RuntimePhase,
-        last_action: Option<&OrchestrationAction>,
-        last_observation: Option<&str>,
-        history: &[String],
-        started_at: crate::models::FlexibleTimestamp,
-        finished_at: Option<crate::models::FlexibleTimestamp>,
-        error: Option<String>,
-    ) -> Result<()> {
-        let mut state = AgentRuntimeState::new(&self.agent_id, goal, self.max_steps);
-        state.phase = phase;
-        state.current_step = step;
-        state.last_action = last_action.map(|a| format!("{:?}", a));
-        state.last_observation = last_observation.map(ToOwned::to_owned);
-        state.history_tail = history.iter().rev().take(20).cloned().collect::<Vec<_>>();
+    async fn persist_state(&self, input: PersistStateInput<'_>) -> Result<()> {
+        let mut state = AgentRuntimeState::new(&self.agent_id, input.goal, self.max_steps);
+        state.phase = input.phase;
+        state.current_step = input.step;
+        state.last_action = input.last_action.map(|a| format!("{:?}", a));
+        state.last_observation = input.last_observation.map(ToOwned::to_owned);
+        state.history_tail = input
+            .history
+            .iter()
+            .rev()
+            .take(20)
+            .cloned()
+            .collect::<Vec<_>>();
         state.history_tail.reverse();
-        state.started_at = started_at;
+        state.started_at = input.started_at;
         state.updated_at = crate::models::FlexibleTimestamp::now();
-        state.finished_at = finished_at;
-        state.error = error;
+        state.finished_at = input.finished_at;
+        state.error = input.error;
 
         let db = self.watch.db();
         let _saved: AgentRuntimeState = db

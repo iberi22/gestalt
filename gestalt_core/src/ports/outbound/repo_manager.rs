@@ -17,6 +17,17 @@ pub trait RepoManager: Send + Sync {
 
 #[async_trait]
 pub trait VectorDb: Send + Sync {
-    async fn store_embedding(&self, collection: &str, id: &str, vector: Vec<f32>, metadata: serde_json::Value) -> anyhow::Result<()>;
-    async fn search_similar(&self, collection: &str, vector: Vec<f32>, limit: usize) -> anyhow::Result<Vec<serde_json::Value>>;
+    async fn store_embedding(
+        &self,
+        collection: &str,
+        id: &str,
+        vector: Vec<f32>,
+        metadata: serde_json::Value,
+    ) -> anyhow::Result<()>;
+    async fn search_similar(
+        &self,
+        collection: &str,
+        vector: Vec<f32>,
+        limit: usize,
+    ) -> anyhow::Result<Vec<serde_json::Value>>;
 }

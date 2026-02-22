@@ -1,7 +1,7 @@
 import 'dart:convert';
-import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
+import 'package:web_socket_channel/web_socket_channel.dart';
+import 'services/api_service.dart';
 
 class AgentView extends StatefulWidget {
   const AgentView({super.key});
@@ -11,77 +11,77 @@ class AgentView extends StatefulWidget {
 }
 
 class _AgentViewState extends State<AgentView> {
+  final ApiService _api = ApiService();
   final TextEditingController _controller = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   String _agentStatus = "Offline";
   List<dynamic> _events = [];
   bool _isLoading = false;
-  Timer? _pollingTimer;
+  WebSocketChannel? _channel;
 
   @override
   void initState() {
     super.initState();
-    // Start polling timeline and agents every 2 seconds
-    _pollingTimer = Timer.periodic(const Duration(seconds: 2), (timer) {
-      _fetchTimeline();
-      _fetchAgents();
-    });
+    _fetchAgentsInit();
+    _connectWebSocket();
   }
 
   @override
   void dispose() {
-    _pollingTimer?.cancel();
+    _channel?.sink.close();
     _controller.dispose();
     _scrollController.dispose();
     super.dispose();
   }
 
-  Future<void> _fetchAgents() async {
-    try {
-      final response = await http.get(Uri.parse('http://127.0.0.1:3000/agents'));
-      if (response.statusCode == 200) {
-         final List<dynamic> agents = json.decode(response.body);
-         if (agents.isNotEmpty) {
-           // For simplicity, just show the first agent's status or "Busy" if any is busy
-           bool anyBusy = agents.any((a) => a['status'] == 'busy');
-           bool anyOnline = agents.any((a) => a['status'] == 'online');
-
-           if (mounted) {
-             setState(() {
-               _agentStatus = anyBusy ? "Busy 🏃" : (anyOnline ? "Online 🟢" : "Offline ⚫");
-             });
-           }
-         }
+  Future<void> _fetchAgentsInit() async {
+    final agents = await _api.getAgents();
+    if (agents.isNotEmpty) {
+      bool anyBusy = agents.any((a) => a.status == 'busy');
+      bool anyOnline = agents.any((a) => a.status == 'online');
+      if (mounted) {
+        setState(() {
+          _agentStatus = anyBusy ? "Busy 🏃" : (anyOnline ? "Online 🟢" : "Offline ⚫");
+        });
       }
-    } catch (e) {
-      // ignore errors
     }
   }
 
-  Future<void> _fetchTimeline() async {
+  void _connectWebSocket() {
     try {
-      final response = await http.get(Uri.parse('http://127.0.0.1:3000/timeline'));
-      if (response.statusCode == 200) {
-        final List<dynamic> newEvents = json.decode(response.body);
-        // sort by timestamp ascending
-        newEvents.sort((a, b) => a['timestamp'].compareTo(b['timestamp']));
-
-        if (mounted) {
-          setState(() {
-            _events = newEvents;
-          });
-          // Auto-scroll to bottom if new events came in
-          if (_scrollController.hasClients) {
-             _scrollController.animateTo(
-               _scrollController.position.maxScrollExtent,
-               duration: const Duration(milliseconds: 300),
-               curve: Curves.easeOut
-             );
+      _channel = _api.timelineStream;
+      _channel?.stream.listen(
+        (message) {
+          if (!mounted) return;
+          try {
+            final event = json.decode(message);
+            setState(() {
+              _events.add(event);
+            });
+             if (_scrollController.hasClients) {
+               final isNearBottom = _scrollController.offset >= _scrollController.position.maxScrollExtent - 100;
+               if (isNearBottom || _events.length < 50) {
+                 _scrollController.animateTo(
+                   _scrollController.position.maxScrollExtent + 200,
+                   duration: const Duration(milliseconds: 300),
+                   curve: Curves.easeOut
+                 );
+               }
+            }
+          } catch (e) {
+             debugPrint("WS JSON Error: $e");
           }
+        },
+        onError: (e) => debugPrint("WS Error: $e"),
+        onDone: () {
+          debugPrint("WS Closed. Reconnecting...");
+          Future.delayed(const Duration(seconds: 3), () {
+            if (mounted) _connectWebSocket();
+          });
         }
-      }
+      );
     } catch (e) {
-      print('Error polling timeline: $e');
+      debugPrint("WebSocket Connection Error: $e");
     }
   }
 
@@ -93,16 +93,9 @@ class _AgentViewState extends State<AgentView> {
     setState(() => _isLoading = true);
 
     try {
-      await http.post(
-        Uri.parse('http://127.0.0.1:3000/orchestrate'),
-        headers: {'Content-Type': 'application/json'},
-        body: json.encode({'goal': goal}),
-      );
-      // Wait a bit and fetch immediately
-      await Future.delayed(const Duration(milliseconds: 500));
-      await _fetchTimeline();
+      await _api.sendGoal(goal);
     } catch (e) {
-      // ignore users stopping server etc
+      // ignore
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);

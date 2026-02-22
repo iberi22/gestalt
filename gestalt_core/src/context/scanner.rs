@@ -1,7 +1,7 @@
+use super::FileContext;
 use ignore::WalkBuilder;
 use std::fs;
 use std::path::Path;
-use super::FileContext;
 
 pub fn scan_markdown_files(root: &Path) -> Vec<FileContext> {
     let mut files = Vec::new();
@@ -10,7 +10,7 @@ pub fn scan_markdown_files(root: &Path) -> Vec<FileContext> {
     let gitcore_path = root.join(".gitcore/ARCHITECTURE.md");
     if gitcore_path.exists() {
         if let Ok(content) = fs::read_to_string(&gitcore_path) {
-             files.push(FileContext {
+            files.push(FileContext {
                 path: ".gitcore/ARCHITECTURE.md".to_string(),
                 content, // Load full content for Architecture, it's critical
             });
@@ -27,11 +27,15 @@ pub fn scan_markdown_files(root: &Path) -> Vec<FileContext> {
             Ok(entry) => {
                 let path = entry.path();
                 // Avoid duplicating if we already added it manually
-                if path.ends_with(".gitcore/ARCHITECTURE.md") { continue; }
+                if path.ends_with(".gitcore/ARCHITECTURE.md") {
+                    continue;
+                }
 
-                if path.is_file() && path.extension().map_or(false, |ext| ext == "md") {
+                if path.is_file() && path.extension().is_some_and(|ext| ext == "md") {
                     // Skip target/ and node_modules/ just in case .gitignore misses them
-                    if path.to_string_lossy().contains("target") || path.to_string_lossy().contains("node_modules") {
+                    if path.to_string_lossy().contains("target")
+                        || path.to_string_lossy().contains("node_modules")
+                    {
                         continue;
                     }
 
@@ -66,17 +70,21 @@ pub fn generate_directory_tree(root: &Path, max_depth: usize) -> String {
         .max_depth(Some(max_depth))
         .build();
 
-    for result in walker {
-        if let Ok(entry) = result {
-            let depth = entry.depth();
-            if depth == 0 { continue; }
-
-            let indent = "  ".repeat(depth - 1);
-            let file_name = entry.file_name().to_string_lossy();
-            let marker = if entry.file_type().map_or(false, |ft| ft.is_dir()) { "/" } else { "" };
-
-            tree.push_str(&format!("{}├── {}{}\n", indent, file_name, marker));
+    for entry in walker.flatten() {
+        let depth = entry.depth();
+        if depth == 0 {
+            continue;
         }
+
+        let indent = "  ".repeat(depth - 1);
+        let file_name = entry.file_name().to_string_lossy();
+        let marker = if entry.file_type().is_some_and(|ft| ft.is_dir()) {
+            "/"
+        } else {
+            ""
+        };
+
+        tree.push_str(&format!("{}├── {}{}\n", indent, file_name, marker));
     }
     tree
 }

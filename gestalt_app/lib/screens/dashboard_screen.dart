@@ -1,4 +1,6 @@
-import 'dart:async';
+import 'dart:convert';
+import 'package:flutter/material.dart';
+import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:flutter/material.dart';
 import 'package:glass_kit/glass_kit.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -24,50 +26,79 @@ class _DashboardScreenState extends State<DashboardScreen> {
   List<Project> _projects = [];
   List<Agent> _agents = [];
   List<dynamic> _logs = [];
-  Timer? _pollingTimer;
+  WebSocketChannel? _channel;
   bool _isLoading = false;
 
   @override
   void initState() {
     super.initState();
-    _refreshData();
-    _pollingTimer = Timer.periodic(const Duration(seconds: 4), (timer) {
-      _refreshData();
-    });
+    _fetchStaticData();
+    _connectWebSocket();
   }
 
-  @override
-  void dispose() {
-    _pollingTimer?.cancel();
-    _logController.dispose();
-    _inputController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _refreshData() async {
+  void _fetchStaticData() async {
     try {
       final projects = await _api.getProjects();
       final agents = await _api.getAgents();
-      final logs = await _api.getTimeline();
-
       if (mounted) {
         setState(() {
           _projects = projects;
           _agents = agents;
-          _logs = logs;
         });
-
-        if (_logController.hasClients && _logController.offset >= _logController.position.maxScrollExtent - 50) {
-          _logController.animateTo(
-             _logController.position.maxScrollExtent,
-             duration: const Duration(milliseconds: 300),
-             curve: Curves.easeOut
-          );
-        }
       }
     } catch (e) {
-      debugPrint("Error refreshing dashboard: $e");
+      debugPrint("Error fetching static data: $e");
     }
+  }
+
+  void _connectWebSocket() {
+    try {
+      _channel = _api.timelineStream;
+      _channel?.stream.listen(
+        (message) {
+          if (!mounted) return;
+          try {
+            final event = json.decode(message);
+            setState(() {
+              _logs.add(event);
+            });
+            _scrollToBottom();
+          } catch (e) {
+            debugPrint("WS JSON Error: $e");
+          }
+        },
+        onError: (e) => debugPrint("WS Error: $e"),
+        onDone: () {
+          debugPrint("WS Closed. Reconnecting...");
+          Future.delayed(const Duration(seconds: 3), () {
+            if (mounted) _connectWebSocket();
+          });
+        },
+      );
+    } catch (e) {
+      debugPrint("WebSocket Connection Error: $e");
+    }
+  }
+
+  void _scrollToBottom() {
+    if (_logController.hasClients) {
+      final isNearBottom = _logController.offset >= _logController.position.maxScrollExtent - 100;
+      if (isNearBottom || _logs.length < 50) {
+        _logController.animateTo(
+          _logController.position.maxScrollExtent + 200,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _channel?.sink.close();
+    _logController.dispose();
+    _inputController.dispose();
+    super.dispose();
   }
 
   Future<void> _sendCommand() async {
@@ -75,8 +106,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
     setState(() => _isLoading = true);
     await _api.sendGoal(_inputController.text);
     _inputController.clear();
-    await Future.delayed(const Duration(milliseconds: 500));
-    await _refreshData();
     setState(() => _isLoading = false);
   }
 

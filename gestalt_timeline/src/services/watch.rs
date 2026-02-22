@@ -17,7 +17,7 @@ use crate::services::TimelineService;
 #[derive(Debug, Clone)]
 pub enum WatchMessage {
     /// A new timeline event occurred
-    Event(TimelineEvent),
+    Event(Box<TimelineEvent>),
     /// A broadcast message from another agent
     Broadcast { agent_id: String, message: String },
     /// System shutdown signal
@@ -55,6 +55,11 @@ impl WatchService {
     /// Check if the watch service is running.
     pub fn is_running(&self) -> bool {
         self.running.load(Ordering::SeqCst)
+    }
+
+    /// Get a clone of the DB client for internal service coordination.
+    pub fn db(&self) -> SurrealClient {
+        self.db.clone()
     }
 
     /// Start watching timeline events.
@@ -123,7 +128,11 @@ impl WatchService {
                     ts_utc.format("%H:%M:%S"),
                     event.agent_id,
                     event.event_type,
-                    event.id.as_ref().map(|x| x.to_string()).unwrap_or_else(|| "none".to_string())
+                    event
+                        .id
+                        .as_ref()
+                        .map(|x| x.to_string())
+                        .unwrap_or_else(|| "none".to_string())
                 );
 
                 // Update last_check to strictly follow the latest event seen
@@ -132,7 +141,7 @@ impl WatchService {
                 }
 
                 // Broadcast to subscribers
-                let _ = self.tx.send(WatchMessage::Event(event.clone()));
+                let _ = self.tx.send(WatchMessage::Event(Box::new(event.clone())));
             }
 
             tokio::time::sleep(poll_interval).await;

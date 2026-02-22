@@ -1,7 +1,7 @@
+use crate::ports::outbound::repo_manager::VectorDb;
 use async_trait::async_trait;
 use surrealdb::engine::local::Db;
 use surrealdb::Surreal;
-use crate::ports::outbound::repo_manager::VectorDb;
 
 pub struct SurrealDbAdapter {
     db: Surreal<Db>,
@@ -17,8 +17,16 @@ impl SurrealDbAdapter {
 
 #[async_trait]
 impl VectorDb for SurrealDbAdapter {
-    async fn store_embedding(&self, collection: &str, id: &str, vector: Vec<f32>, metadata: serde_json::Value) -> anyhow::Result<()> {
-        let _: Option<serde_json::Value> = self.db.create((collection, id))
+    async fn store_embedding(
+        &self,
+        collection: &str,
+        id: &str,
+        vector: Vec<f32>,
+        metadata: serde_json::Value,
+    ) -> anyhow::Result<()> {
+        let _: Option<serde_json::Value> = self
+            .db
+            .create((collection, id))
             .content(serde_json::json!({
                 "embedding": vector,
                 "metadata": metadata
@@ -27,9 +35,16 @@ impl VectorDb for SurrealDbAdapter {
         Ok(())
     }
 
-    async fn search_similar(&self, collection: &str, _vector: Vec<f32>, limit: usize) -> anyhow::Result<Vec<serde_json::Value>> {
+    async fn search_similar(
+        &self,
+        collection: &str,
+        _vector: Vec<f32>,
+        limit: usize,
+    ) -> anyhow::Result<Vec<serde_json::Value>> {
         // SurrealDB 1.x doesn't have native vector search, use simple query for now
-        let mut response = self.db.query("SELECT * FROM type::table($table) LIMIT $limit")
+        let mut response = self
+            .db
+            .query("SELECT * FROM type::table($table) LIMIT $limit")
             .bind(("table", collection.to_string()))
             .bind(("limit", limit))
             .await?;

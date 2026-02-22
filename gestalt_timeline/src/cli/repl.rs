@@ -2,13 +2,13 @@ use anyhow::Result;
 use rustyline::error::ReadlineError;
 use rustyline::DefaultEditor;
 use std::sync::Arc;
-use tracing::{info, warn};
+use tracing::warn;
 
-use crate::services::Cognition;
+use synapse_agentic::prelude::*;
 
 /// Runs the interactive REPL for the AI Chat.
-pub async fn run_repl(agent_id: &str, cognition: Arc<dyn Cognition>) -> Result<()> {
-    println!("🤖 Entering Interactive AI Chat (Model: {})", cognition.model_id());
+pub async fn run_repl(_agent_id: &str, engine: Arc<DecisionEngine>) -> Result<()> {
+    println!("🤖 Entering Interactive AI Chat (Synapse Decision Engine)");
     println!("📝 Type 'exit' or 'quit' to leave. 'clear' to reset context.");
 
     let mut rl = DefaultEditor::new()?;
@@ -77,13 +77,15 @@ pub async fn run_repl(agent_id: &str, cognition: Arc<dyn Cognition>) -> Result<(
                 };
 
                 println!("🤖 Thinking...");
-                match cognition.chat(agent_id, &prompt_with_context).await {
-                    Ok(response) => {
-                         println!("{}", response.content);
+                let context = DecisionContext::new("repl").with_summary(&prompt_with_context);
 
-                         // Update local history
-                         messages.push(format!("User: {}", input));
-                         messages.push(format!("AI: {}", response.content));
+                match engine.decide(&context).await {
+                    Ok(decision) => {
+                        println!("{}", decision.reasoning);
+
+                        // Update local history
+                        messages.push(format!("User: {}", input));
+                        messages.push(format!("AI: {}", decision.reasoning));
                     }
                     Err(e) => {
                         println!("❌ Error: {}", e);

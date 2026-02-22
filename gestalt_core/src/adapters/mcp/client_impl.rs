@@ -121,7 +121,8 @@ mod tests {
         let adapter = McpClientAdapter::new(
             "python".to_string(),
             vec![mock_path.to_string_lossy().to_string()],
-        ).await?;
+        )
+        .await?;
 
         let tools = adapter.list_tools().await?;
         assert!(!tools.is_empty());

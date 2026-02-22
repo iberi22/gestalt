@@ -1,0 +1,35 @@
+# Gestalt Configuration
+# Task ID: 1.6 - Configurar OpenClaw para usar Gestalt CLI
+
+# LLM Provider Configuration
+# Use MiniMax to match OpenClaw's API
+[llm]
+default_provider = "minimax"
+
+[llm.providers.minimax]
+name = "MiniMax M2.1"
+type = "minimax"
+model = "MiniMax-M2.1"
+api_key = "${MINIMAX_API_KEY}"
+base_url = "https://api.minimax.chat/v1/text"
+
+[llm.providers.openai]
+name = "OpenAI GPT-4"
+type = "openai"
+model = "gpt-4"
+api_key = "${OPENAI_API_KEY}"
+
+# Database Configuration
+[database]
+type = "surreal"
+url = "mem://"
+
+# MCP Configuration
+[mcp]
+enabled = false
+server_url = "http://localhost:3000"
+
+# Logging Configuration
+[logging]
+level = "info"
+format = "json"

@@ -1,91 +1,121 @@
-//! Integration tests for Gestalt Timeline CLI
-//!
-//! These tests verify CLI command parsing without requiring SurrealDB.
+//! Integration tests for Gestalt Timeline CLI parsing.
 
-use std::process::Command;
+use clap::Parser;
+use gestalt_timeline::cli::{AgentCommands, Cli, Commands};
 
-fn gestalt_help(args: &[&str]) -> String {
-    let output = Command::new(env!("CARGO_BIN_EXE_gestalt"))
-        .args(args)
-        .output()
-        .expect("Failed to execute command");
-
-    String::from_utf8_lossy(&output.stdout).to_string()
+#[test]
+fn test_main_parsing_with_global_flags() {
+    let cli = Cli::try_parse_from(["gestalt", "--json", "--context", "--mode", "build"]).unwrap();
+    assert!(cli.json);
+    assert!(cli.context);
+    assert_eq!(cli.mode, "build");
+    assert!(cli.command.is_none());
 }
 
 #[test]
-fn test_main_help() {
-    let output = gestalt_help(&["--help"]);
-    assert!(output.contains("Meta-Agent") || output.contains("gestalt"), "Should show app name");
-    assert!(output.contains("add-project"), "Should list add-project command");
-    assert!(output.contains("add-task"), "Should list add-task command");
-    assert!(output.contains("timeline"), "Should list timeline command");
-    assert!(output.contains("watch"), "Should list watch command");
-    assert!(output.contains("broadcast"), "Should list broadcast command");
-    assert!(output.contains("list-agents"), "Should list list-agents command");
+fn test_add_project_parsing() {
+    let cli = Cli::try_parse_from(["gestalt", "add-project", "my-proj"]).unwrap();
+    match cli.command {
+        Some(Commands::AddProject { name }) => assert_eq!(name, "my-proj"),
+        _ => panic!("Expected add-project command"),
+    }
 }
 
 #[test]
-fn test_add_project_help() {
-    let output = gestalt_help(&["add-project", "--help"]);
-    assert!(output.contains("Register a new project"), "Should show command description");
+fn test_add_task_parsing() {
+    let cli = Cli::try_parse_from(["gestalt", "add-task", "my-proj", "do work"]).unwrap();
+    match cli.command {
+        Some(Commands::AddTask {
+            project,
+            description,
+        }) => {
+            assert_eq!(project, "my-proj");
+            assert_eq!(description, "do work");
+        }
+        _ => panic!("Expected add-task command"),
+    }
 }
 
 #[test]
-fn test_add_task_help() {
-    let output = gestalt_help(&["add-task", "--help"]);
-    assert!(output.contains("Add a task"), "Should show command description");
+fn test_watch_parsing() {
+    let cli = Cli::try_parse_from([
+        "gestalt",
+        "watch",
+        "--project",
+        "proj-1",
+        "--events",
+        "TaskCreated,TaskCompleted",
+    ])
+    .unwrap();
+    match cli.command {
+        Some(Commands::Watch { project, events }) => {
+            assert_eq!(project.as_deref(), Some("proj-1"));
+            assert_eq!(events.as_deref(), Some("TaskCreated,TaskCompleted"));
+        }
+        _ => panic!("Expected watch command"),
+    }
 }
 
 #[test]
-fn test_watch_help() {
-    let output = gestalt_help(&["watch", "--help"]);
-    assert!(output.contains("Watch"), "Should show command description");
-    assert!(output.contains("--project"), "Should show project option");
-    assert!(output.contains("--events"), "Should show events option");
+fn test_broadcast_parsing() {
+    let cli =
+        Cli::try_parse_from(["gestalt", "broadcast", "hello", "--project", "proj-1"]).unwrap();
+    match cli.command {
+        Some(Commands::Broadcast { message, project }) => {
+            assert_eq!(message, "hello");
+            assert_eq!(project.as_deref(), Some("proj-1"));
+        }
+        _ => panic!("Expected broadcast command"),
+    }
 }
 
 #[test]
-fn test_broadcast_help() {
-    let output = gestalt_help(&["broadcast", "--help"]);
-    assert!(output.contains("Broadcast"), "Should show command description");
+fn test_timeline_parsing() {
+    let cli = Cli::try_parse_from(["gestalt", "timeline", "--since", "1h"]).unwrap();
+    match cli.command {
+        Some(Commands::Timeline { since }) => assert_eq!(since.as_deref(), Some("1h")),
+        _ => panic!("Expected timeline command"),
+    }
 }
 
 #[test]
-fn test_timeline_help() {
-    let output = gestalt_help(&["timeline", "--help"]);
-    assert!(output.contains("timeline"), "Should show command name");
-    assert!(output.contains("--since"), "Should show since option");
+fn test_agent_connect_parsing() {
+    let cli = Cli::try_parse_from(["gestalt", "agent-connect", "--name", "worker-a"]).unwrap();
+    match cli.command {
+        Some(Commands::AgentConnect { name }) => assert_eq!(name.as_deref(), Some("worker-a")),
+        _ => panic!("Expected agent-connect command"),
+    }
 }
 
 #[test]
-fn test_agent_connect_help() {
-    let output = gestalt_help(&["agent-connect", "--help"]);
-    assert!(output.contains("agent"), "Should show command description");
-    assert!(output.contains("--name"), "Should show name option");
+fn test_list_agents_parsing() {
+    let cli = Cli::try_parse_from(["gestalt", "list-agents", "--online"]).unwrap();
+    match cli.command {
+        Some(Commands::ListAgents { online }) => assert!(online),
+        _ => panic!("Expected list-agents command"),
+    }
 }
 
 #[test]
-fn test_list_agents_help() {
-    let output = gestalt_help(&["list-agents", "--help"]);
-    assert!(output.contains("agents"), "Should show command description");
-    assert!(output.contains("--online"), "Should show online option");
+fn test_subscribe_parsing() {
+    let cli = Cli::try_parse_from(["gestalt", "subscribe", "proj-1"]).unwrap();
+    match cli.command {
+        Some(Commands::Subscribe { project }) => assert_eq!(project, "proj-1"),
+        _ => panic!("Expected subscribe command"),
+    }
 }
 
 #[test]
-fn test_subscribe_help() {
-    let output = gestalt_help(&["subscribe", "--help"]);
-    assert!(output.contains("Subscribe"), "Should show command description");
-}
-
-#[test]
-fn test_json_flag_recognized() {
-    // Test that --json is a valid global flag
-    let output = Command::new(env!("CARGO_BIN_EXE_gestalt"))
-        .args(["--help"])
-        .output()
-        .expect("Failed");
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("--json"), "Should recognize --json flag");
+fn test_agent_spawn_subcommand_parsing() {
+    let cli = Cli::try_parse_from(["gestalt", "agent", "spawn", "codex", "fix tests"]).unwrap();
+    match cli.command {
+        Some(Commands::Agent { action }) => match action {
+            AgentCommands::Spawn { agent_type, prompt } => {
+                assert_eq!(agent_type, "codex");
+                assert_eq!(prompt, "fix tests");
+            }
+            _ => panic!("Expected agent spawn subcommand"),
+        },
+        _ => panic!("Expected agent command"),
+    }
 }

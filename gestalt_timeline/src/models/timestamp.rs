@@ -64,13 +64,15 @@ where
     match v {
         Value::String(s) => {
             let s_clean = if s.starts_with("s'") && s.ends_with("'") {
-                &s[2..s.len()-1]
+                &s[2..s.len() - 1]
             } else {
                 s.as_str()
             };
 
             let dt = DateTime::parse_from_rfc3339(s_clean)
-                .map_err(|e| serde::de::Error::custom(format!("Parse error: {} on '{}'", e, s_clean)))?
+                .map_err(|e| {
+                    serde::de::Error::custom(format!("Parse error: {} on '{}'", e, s_clean))
+                })?
                 .with_timezone(&Utc);
             Ok(FlexibleTimestamp(dt))
         }
@@ -89,14 +91,19 @@ where
             }
 
             if let Some(s) = map.values().next().and_then(|v| v.as_str()) {
-                 if let Ok(ts) = DateTime::parse_from_rfc3339(s) {
-                     return Ok(FlexibleTimestamp(ts.with_timezone(&Utc)));
-                 }
+                if let Ok(ts) = DateTime::parse_from_rfc3339(s) {
+                    return Ok(FlexibleTimestamp(ts.with_timezone(&Utc)));
+                }
             }
 
-            Err(serde::de::Error::custom(format!("Expected datetime string or object, found: {:?}", map)))
+            Err(serde::de::Error::custom(format!(
+                "Expected datetime string or object, found: {:?}",
+                map
+            )))
         }
-        _ => Err(serde::de::Error::custom("Expected string or object for timestamp")),
+        _ => Err(serde::de::Error::custom(
+            "Expected string or object for timestamp",
+        )),
     }
 }
 
@@ -122,7 +129,7 @@ pub mod option {
                 match v {
                     serde_json::Value::String(s) => {
                         let s_clean = if s.starts_with("s'") && s.ends_with("'") {
-                            &s[2..s.len()-1]
+                            &s[2..s.len() - 1]
                         } else {
                             s.as_str()
                         };
@@ -132,7 +139,7 @@ pub mod option {
                         Ok(FlexibleTimestamp(dt))
                     }
                     serde_json::Value::Object(map) => {
-                         if let Some(dt_val) = map.get("datetime").or_else(|| {
+                        if let Some(dt_val) = map.get("datetime").or_else(|| {
                             map.get("$surreal")
                                 .and_then(|v| v.as_object())
                                 .and_then(|io| io.get("datetime"))

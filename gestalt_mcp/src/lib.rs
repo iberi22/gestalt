@@ -1,8 +1,7 @@
 use axum::{
-    routing::{get, post},
-    Router,
-    Json,
     extract::State,
+    routing::{get, post},
+    Json, Router,
 };
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -84,8 +83,14 @@ async fn handle_mcp_request(
             if let Some(params) = &payload.params {
                 let name = params.get("name").and_then(|v| v.as_str()).unwrap_or("");
                 if name == "echo" {
-                    let args = params.get("arguments").cloned().unwrap_or(serde_json::Value::Null);
-                    let message = args.get("message").and_then(|v| v.as_str()).unwrap_or("hello");
+                    let args = params
+                        .get("arguments")
+                        .cloned()
+                        .unwrap_or(serde_json::Value::Null);
+                    let message = args
+                        .get("message")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("hello");
                     serde_json::json!({
                         "content": [
                             {
@@ -95,7 +100,7 @@ async fn handle_mcp_request(
                         ]
                     })
                 } else {
-                     return Json(JsonRpcResponse {
+                    return Json(JsonRpcResponse {
                         jsonrpc: "2.0".to_string(),
                         result: None,
                         error: Some(JsonRpcError {
@@ -104,10 +109,10 @@ async fn handle_mcp_request(
                             data: None,
                         }),
                         id: payload.id,
-                    })
+                    });
                 }
             } else {
-                 return Json(JsonRpcResponse {
+                return Json(JsonRpcResponse {
                     jsonrpc: "2.0".to_string(),
                     result: None,
                     error: Some(JsonRpcError {
@@ -116,19 +121,21 @@ async fn handle_mcp_request(
                         data: None,
                     }),
                     id: payload.id,
-                })
+                });
             }
-        },
-        _ => return Json(JsonRpcResponse {
-            jsonrpc: "2.0".to_string(),
-            result: None,
-            error: Some(JsonRpcError {
-                code: -32601,
-                message: "Method not found".to_string(),
-                data: None,
-            }),
-            id: payload.id,
-        }),
+        }
+        _ => {
+            return Json(JsonRpcResponse {
+                jsonrpc: "2.0".to_string(),
+                result: None,
+                error: Some(JsonRpcError {
+                    code: -32601,
+                    message: "Method not found".to_string(),
+                    data: None,
+                }),
+                id: payload.id,
+            })
+        }
     };
 
     Json(JsonRpcResponse {
@@ -149,7 +156,9 @@ pub async fn start_stdio_server() -> anyhow::Result<()> {
     eprintln!("MCP Stdio Server Started"); // Log to stderr so it doesn't break JSON-RPC
 
     while let Some(line) = reader.next_line().await? {
-        if line.trim().is_empty() { continue; }
+        if line.trim().is_empty() {
+            continue;
+        }
 
         let req: Result<JsonRpcRequest, _> = serde_json::from_str(&line);
         match req {
@@ -172,7 +181,7 @@ pub async fn start_stdio_server() -> anyhow::Result<()> {
 }
 
 async fn process_rpc_request(payload: JsonRpcRequest) -> JsonRpcResponse {
-     let result = match payload.method.as_str() {
+    let result = match payload.method.as_str() {
         "initialize" => serde_json::json!({
             "protocolVersion": "0.1.0",
             "serverInfo": {
@@ -198,12 +207,18 @@ async fn process_rpc_request(payload: JsonRpcRequest) -> JsonRpcResponse {
             ]
         }),
         "tools/call" => {
-             // Logic repeated for Stdio
-             if let Some(params) = &payload.params {
+            // Logic repeated for Stdio
+            if let Some(params) = &payload.params {
                 let name = params.get("name").and_then(|v| v.as_str()).unwrap_or("");
                 if name == "echo" {
-                    let args = params.get("arguments").cloned().unwrap_or(serde_json::Value::Null);
-                    let message = args.get("message").and_then(|v| v.as_str()).unwrap_or("hello");
+                    let args = params
+                        .get("arguments")
+                        .cloned()
+                        .unwrap_or(serde_json::Value::Null);
+                    let message = args
+                        .get("message")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("hello");
                     serde_json::json!({
                         "content": [
                             {
@@ -225,7 +240,7 @@ async fn process_rpc_request(payload: JsonRpcRequest) -> JsonRpcResponse {
                     };
                 }
             } else {
-                 return JsonRpcResponse {
+                return JsonRpcResponse {
                     jsonrpc: "2.0".to_string(),
                     result: None,
                     error: Some(JsonRpcError {
@@ -237,16 +252,18 @@ async fn process_rpc_request(payload: JsonRpcRequest) -> JsonRpcResponse {
                 };
             }
         }
-        _ => return JsonRpcResponse {
-             jsonrpc: "2.0".to_string(),
-            result: None,
-            error: Some(JsonRpcError {
-                code: -32601,
-                message: "Method not found".to_string(),
-                data: None,
-            }),
-            id: payload.id,
-        },
+        _ => {
+            return JsonRpcResponse {
+                jsonrpc: "2.0".to_string(),
+                result: None,
+                error: Some(JsonRpcError {
+                    code: -32601,
+                    message: "Method not found".to_string(),
+                    data: None,
+                }),
+                id: payload.id,
+            }
+        }
     };
 
     JsonRpcResponse {
@@ -256,7 +273,6 @@ async fn process_rpc_request(payload: JsonRpcRequest) -> JsonRpcResponse {
         id: payload.id,
     }
 }
-
 
 async fn sse_handler() -> impl axum::response::IntoResponse {
     "SSE Not implemented yet"
@@ -287,9 +303,12 @@ mod tests {
 
         let result = resp.result.expect("Result should be present");
         let content = result.get("content").expect("Content should be present");
-        let text = content[0].get("text").expect("Text should be present").as_str().expect("Should be string");
+        let text = content[0]
+            .get("text")
+            .expect("Text should be present")
+            .as_str()
+            .expect("Should be string");
 
         assert_eq!(text, "Echo: Hello MCP");
     }
 }
-

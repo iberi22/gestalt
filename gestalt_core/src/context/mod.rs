@@ -1,6 +1,6 @@
 pub mod detector;
-pub mod scanner;
 pub mod repo;
+pub mod scanner;
 
 use serde::{Deserialize, Serialize};
 

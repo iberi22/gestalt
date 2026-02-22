@@ -1,52 +1,85 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use chrono::{DateTime, Utc};
 use clap::Parser;
-use std::io::Write;
-use std::path::Path;
-use gestalt_timeline::cli::{Cli, Commands, repl};
-use gestalt_timeline::db::SurrealClient;
+use gestalt_core::application::agent::tools::{ExecuteShellTool, ReadFileTool, WriteFileTool};
+use gestalt_timeline::cli::{repl, AgentCommands, Cli, Commands};
 use gestalt_timeline::config::Settings;
+use gestalt_timeline::db::SurrealClient;
 use gestalt_timeline::services::{
-    AgentService, LLMService, GeminiService, OrchestrationAction, ProjectService,
-    TaskService, TimelineService, WatchService, AgentRuntime, start_server, Cognition, AuthService,
-    TelegramService
+    start_server, AgentRuntime, AgentService, AuthService, DispatcherService, MemoryService,
+    ProjectService, QueuedTask, TaskQueue, TaskService, TaskSource, TelegramService,
+    TimelineService, WatchService,
 };
+use std::path::Path;
+
 use gestalt_core::context::{detector, scanner};
-use surrealdb::sql::Thing;
 use std::sync::Arc;
+use surrealdb::sql::Thing;
 use tracing::{info, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 // Re-export specific models if needed for matching
-use gestalt_timeline::models::{TaskStatus};
+use gestalt_timeline::models::TaskStatus;
 
 /// Helper to convert Option<Thing> to String for display
 fn thing_to_string(thing: &Option<Thing>) -> String {
-    thing.as_ref().map(|t| t.to_string()).unwrap_or_else(|| "unknown".to_string())
+    thing
+        .as_ref()
+        .map(|t| t.to_string())
+        .unwrap_or_else(|| "unknown".to_string())
 }
 
-/// Helper to initialize cognition service based on configuration
-async fn init_cognition(
-    db: &SurrealClient,
-    timeline: &TimelineService,
+use synapse_agentic::prelude::*;
+
+/// Helper to initialize decision engine based on configuration
+async fn init_decision_engine(
     settings: &gestalt_timeline::config::CognitionSettings,
-) -> Result<Arc<dyn Cognition>> {
+) -> Result<Arc<DecisionEngine>> {
+    let provider_name = settings.provider.to_lowercase();
     let model_id = &settings.model_id;
 
-    if model_id.to_lowercase().contains("gemini") {
-        let api_key = settings.gemini_api_key.clone()
-            .or_else(|| std::env::var("GEMINI_API_KEY").ok());
+    let mut builder = DecisionEngine::builder();
 
-        Ok(Arc::new(GeminiService::new(
-            db.clone(),
-            timeline.clone(),
-            model_id.clone(),
-            api_key,
-        )?))
-    } else {
-        let llm_service = LLMService::new(db.clone(), timeline.clone(), settings).await?;
-        Ok(Arc::new(llm_service))
+    match provider_name.as_str() {
+        "minimax" => {
+            info!("🚀 Initializing MiniMax decision provider...");
+            let api_key = settings
+                .minimax_api_key
+                .clone()
+                .or_else(|| std::env::var("MINIMAX_API_KEY").ok())
+                .ok_or_else(|| anyhow::anyhow!("MINIMAX_API_KEY not found"))?;
+
+            // For now, group_id placeholder as synapse-agentic MinimaxProvider expects it
+            let group_id = std::env::var("MINIMAX_GROUP_ID").unwrap_or_default();
+
+            builder =
+                builder.with_provider(MinimaxProvider::new(api_key, group_id, model_id.clone()));
+        }
+        "gemini" => {
+            info!("🚀 Initializing Gemini decision provider...");
+            let api_key = settings
+                .gemini_api_key
+                .clone()
+                .or_else(|| std::env::var("GEMINI_API_KEY").ok())
+                .ok_or_else(|| anyhow::anyhow!("GEMINI_API_KEY not found"))?;
+
+            builder = builder.with_provider(GeminiProvider::new(api_key, model_id.clone()));
+        }
+        _ => {
+            warn!("🚀 Unknown provider '{}', decision engine will use rule-based fallback if no others added.", provider_name);
+        }
     }
+
+    Ok(Arc::new(builder.build()))
+}
+
+/// Initialize native tools for AgentRuntime.
+async fn init_tool_registry() -> Arc<ToolRegistry> {
+    let registry = Arc::new(ToolRegistry::new());
+    registry.register_tool(ExecuteShellTool).await;
+    registry.register_tool(ReadFileTool).await;
+    registry.register_tool(WriteFileTool).await;
+    registry
 }
 
 /// Collect context from the current directory
@@ -63,16 +96,22 @@ fn collect_context(root: &Path) -> String {
     context_str.push_str("\nMarkdown Context (first 100 lines):\n");
 
     for file in files {
-        context_str.push_str(&format!("--- File: {} ---\n{}\n\n", file.path, file.content));
+        context_str.push_str(&format!(
+            "--- File: {} ---\n{}\n\n",
+            file.path, file.content
+        ));
     }
 
     // Truncate if too long (approx 16k chars ~ 4k tokens)
     if context_str.len() > 16000 {
-         context_str.truncate(16000);
-         context_str.push_str("\n... (truncated context)");
+        context_str.truncate(16000);
+        context_str.push_str("\n... (truncated context)");
     }
 
-    info!("🧠 Context Engine: Added {} chars of context.", context_str.len());
+    info!(
+        "🧠 Context Engine: Added {} chars of context.",
+        context_str.len()
+    );
     context_str
 }
 
@@ -80,7 +119,9 @@ fn collect_context(root: &Path) -> String {
 async fn main() -> anyhow::Result<()> {
     // Initialize logging
     tracing_subscriber::registry()
-        .with(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()))
+        .with(
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
+        )
         .with(tracing_subscriber::fmt::layer())
         .init();
 
@@ -108,8 +149,8 @@ async fn main() -> anyhow::Result<()> {
 
     // Check if we have a direct prompt (Context Engine Mode)
     if let Some(prompt) = &cli.prompt {
-        // Initialize cognition service
-        let cognition = init_cognition(&db, &timeline_service, &settings.cognition).await?;
+        // Initialize decision engine
+        let engine = init_decision_engine(&settings.cognition).await?;
 
         let mut final_prompt = prompt.clone();
         if cli.context {
@@ -117,13 +158,23 @@ async fn main() -> anyhow::Result<()> {
             final_prompt = format!("CONTEXT:\n{}\n\nUSER PROMPT:\n{}", context_str, prompt);
         }
 
-        println!("🤖 Sending message to {}...", cognition.model_id());
-        let response = cognition.chat(&agent_id, &final_prompt).await?;
+        println!("🤖 Sending message to Decision Engine...");
+        let context = DecisionContext::new("cli").with_summary(&final_prompt);
+
+        let decision = engine.decide(&context).await?;
 
         if cli.json {
-            println!("{}", serde_json::to_string_pretty(&response)?);
+            let json_resp = serde_json::json!({
+                "action": decision.action,
+                "reasoning": decision.reasoning,
+                "confidence": decision.confidence,
+                "providers": decision.providers_used
+            });
+            println!("{}", serde_json::to_string_pretty(&json_resp)?);
         } else {
-            println!("\n💬 {}:\n{}", cognition.model_id(), response.content);
+            println!("\n💬 Decision Engine:");
+            println!("Action: {}", decision.action);
+            println!("Reasoning: {}", decision.reasoning);
         }
         return Ok(());
     }
@@ -135,7 +186,11 @@ async fn main() -> anyhow::Result<()> {
             if cli.json {
                 println!("{}", serde_json::to_string_pretty(&project)?);
             } else {
-                println!("✅ Project created: {} (ID: {})", project.name, thing_to_string(&project.id));
+                println!(
+                    "✅ Project created: {} (ID: {})",
+                    project.name,
+                    thing_to_string(&project.id)
+                );
             }
         }
 
@@ -148,42 +203,63 @@ async fn main() -> anyhow::Result<()> {
             }
         }
 
-        Some(Commands::AddTask { project, description }) => {
-            let task = task_service.create_task(&project, &description, &agent_id).await?;
+        Some(Commands::AddTask {
+            project,
+            description,
+        }) => {
+            let task = task_service
+                .create_task(&project, &description, &agent_id)
+                .await?;
             if cli.json {
                 println!("{}", serde_json::to_string_pretty(&task)?);
             } else {
-                println!("✅ Task created: {} (ID: {})", task.description, task.id.as_ref().map(|x| x.to_string()).unwrap_or_else(|| "none".to_string()));
+                println!(
+                    "✅ Task created: {} (ID: {})",
+                    task.description,
+                    task.id
+                        .as_ref()
+                        .map(|x| x.to_string())
+                        .unwrap_or_else(|| "none".to_string())
+                );
             }
         }
 
-        Some(Commands::UpdateTask { id, description, status }) => {
+        Some(Commands::UpdateTask {
+            id,
+            description,
+            status,
+        }) => {
             let task_status = if let Some(s) = status {
-                 match s.to_lowercase().as_str() {
-                     "todo" => Some(TaskStatus::Pending),
-                     "inprogress" | "running" => Some(TaskStatus::Running),
-                     "completed" | "done" => Some(TaskStatus::Completed),
-                     "cancelled" | "failed" => Some(TaskStatus::Cancelled), // Mapping failed/cancelled together roughly or user choice
-                     _ => {
-                         eprintln!("Unknown status: {}. Valid: todo, running, completed, cancelled", s);
-                         return Ok(());
-                     }
-                 }
+                match s.to_lowercase().as_str() {
+                    "todo" => Some(TaskStatus::Pending),
+                    "inprogress" | "running" => Some(TaskStatus::Running),
+                    "completed" | "done" => Some(TaskStatus::Completed),
+                    "cancelled" | "failed" => Some(TaskStatus::Cancelled), // Mapping failed/cancelled together roughly or user choice
+                    _ => {
+                        eprintln!(
+                            "Unknown status: {}. Valid: todo, running, completed, cancelled",
+                            s
+                        );
+                        return Ok(());
+                    }
+                }
             } else {
                 None
             };
 
-            let task = task_service.update_task(&id, description, task_status, &agent_id).await?;
+            let task = task_service
+                .update_task(&id, description, task_status, &agent_id)
+                .await?;
             if cli.json {
-                 println!("{}", serde_json::to_string_pretty(&task)?);
+                println!("{}", serde_json::to_string_pretty(&task)?);
             } else {
-                 println!("✏️ Task updated: {}", id);
+                println!("✏️ Task updated: {}", id);
             }
         }
 
         Some(Commands::DeleteTask { id }) => {
             task_service.delete_task(&id, &agent_id).await?;
-             if cli.json {
+            if cli.json {
                 println!("{{ \"status\": \"deleted\", \"id\": \"{}\" }}", id);
             } else {
                 println!("🗑️ Task deleted: {}", id);
@@ -196,16 +272,20 @@ async fn main() -> anyhow::Result<()> {
             let execute_at = match DateTime::parse_from_rfc3339(&time) {
                 Ok(dt) => dt.with_timezone(&Utc),
                 Err(_) => {
-                    eprintln!("Invalid time format. Please use ISO 8601 (e.g., 2023-10-27T10:00:00Z)");
+                    eprintln!(
+                        "Invalid time format. Please use ISO 8601 (e.g., 2023-10-27T10:00:00Z)"
+                    );
                     return Ok(());
                 }
             };
 
-            let task = task_service.schedule_task(&id, execute_at, &agent_id).await?;
-             if cli.json {
-                 println!("{}", serde_json::to_string_pretty(&task)?);
+            let task = task_service
+                .schedule_task(&id, execute_at, &agent_id)
+                .await?;
+            if cli.json {
+                println!("{}", serde_json::to_string_pretty(&task)?);
             } else {
-                 println!("⏰ Task scheduled: {} at {}", id, execute_at);
+                println!("⏰ Task scheduled: {} at {}", id, execute_at);
             }
         }
 
@@ -222,14 +302,12 @@ async fn main() -> anyhow::Result<()> {
             let projects = project_service.list_projects().await?;
             if cli.json {
                 println!("{}", serde_json::to_string_pretty(&projects)?);
+            } else if projects.is_empty() {
+                println!("📋 No projects found.");
             } else {
-                if projects.is_empty() {
-                    println!("📋 No projects found.");
-                } else {
-                    println!("📋 Projects:");
-                    for p in projects {
-                        println!("  • {} [{}] - {}", p.name, p.status, thing_to_string(&p.id));
-                    }
+                println!("📋 Projects:");
+                for p in projects {
+                    println!("  • {} [{}] - {}", p.name, p.status, thing_to_string(&p.id));
                 }
             }
         }
@@ -238,14 +316,19 @@ async fn main() -> anyhow::Result<()> {
             let tasks = task_service.list_tasks(project.as_deref()).await?;
             if cli.json {
                 println!("{}", serde_json::to_string_pretty(&tasks)?);
+            } else if tasks.is_empty() {
+                println!("📋 No tasks found.");
             } else {
-                if tasks.is_empty() {
-                    println!("📋 No tasks found.");
-                } else {
-                    println!("📋 Tasks:");
-                    for t in tasks {
-                        println!("  • [{}] {} - {}", t.status, t.description, t.id.as_ref().map(|x| x.to_string()).unwrap_or_else(|| "none".to_string()));
-                    }
+                println!("📋 Tasks:");
+                for t in tasks {
+                    println!(
+                        "  • [{}] {} - {}",
+                        t.status,
+                        t.description,
+                        t.id.as_ref()
+                            .map(|x| x.to_string())
+                            .unwrap_or_else(|| "none".to_string())
+                    );
                 }
             }
         }
@@ -257,7 +340,10 @@ async fn main() -> anyhow::Result<()> {
             } else {
                 println!("📊 Project: {}", status.name);
                 println!("   Status: {}", status.status);
-                println!("   Tasks: {} total, {} completed", status.total_tasks, status.completed_tasks);
+                println!(
+                    "   Tasks: {} total, {} completed",
+                    status.total_tasks, status.completed_tasks
+                );
                 println!("   Progress: {}%", status.progress_percent);
             }
         }
@@ -266,19 +352,20 @@ async fn main() -> anyhow::Result<()> {
             let events = timeline_service.get_timeline(since.as_deref()).await?;
             if cli.json {
                 println!("{}", serde_json::to_string_pretty(&events)?);
+            } else if events.is_empty() {
+                println!("🕐 No events in timeline.");
             } else {
-                if events.is_empty() {
-                    println!("🕐 No events in timeline.");
-                } else {
-                    println!("🕐 Timeline:");
-                    for e in events {
-                        println!("  {} | {} | {} | {}",
-                            e.timestamp,
-                            e.agent_id,
-                            e.event_type,
-                            e.id.as_ref().map(|x| x.to_string()).unwrap_or_else(|| "none".to_string())
-                        );
-                    }
+                println!("🕐 Timeline:");
+                for e in events {
+                    println!(
+                        "  {} | {} | {} | {}",
+                        e.timestamp,
+                        e.agent_id,
+                        e.event_type,
+                        e.id.as_ref()
+                            .map(|x| x.to_string())
+                            .unwrap_or_else(|| "none".to_string())
+                    );
                 }
             }
         }
@@ -319,7 +406,11 @@ async fn main() -> anyhow::Result<()> {
             // Get project ID first
             let proj = project_service.get_by_name(&project).await?;
             if let Some(p) = proj {
-                println!("📡 Subscribed to project: {} ({})", project, thing_to_string(&p.id));
+                println!(
+                    "📡 Subscribed to project: {} ({})",
+                    project,
+                    thing_to_string(&p.id)
+                );
 
                 // Setup Ctrl+C handler
                 let watch_service_clone = watch_service.clone();
@@ -347,10 +438,13 @@ async fn main() -> anyhow::Result<()> {
             }
         }
 
-        Some(Commands::AgentDisconnect {}) => {
+        Some(Commands::AgentDisconnect) => {
             agent_service.disconnect(&agent_id).await?;
             if cli.json {
-                println!(r#"{{"agent_id": "{}", "status": "disconnected"}}"#, agent_id);
+                println!(
+                    r#"{{"agent_id": "{}", "status": "disconnected"}}"#,
+                    agent_id
+                );
             } else {
                 println!("👋 Agent disconnected: {}", agent_id);
             }
@@ -364,46 +458,57 @@ async fn main() -> anyhow::Result<()> {
             };
             if cli.json {
                 println!("{}", serde_json::to_string_pretty(&agents)?);
+            } else if agents.is_empty() {
+                println!("🤖 No agents found.");
             } else {
-                if agents.is_empty() {
-                    println!("🤖 No agents found.");
-                } else {
-                    println!("🤖 Agents:");
-                    for a in agents {
-                        println!("  • {} [{}] ({}) - last seen: {}",
-                            a.name,
-                            a.status,
-                            a.agent_type,
-                            a.last_seen
-                        );
-                    }
+                println!("🤖 Agents:");
+                for a in agents {
+                    println!(
+                        "  • {} [{}] ({}) - last seen: {}",
+                        a.name, a.status, a.agent_type, a.last_seen
+                    );
                 }
             }
         }
 
         Some(Commands::AiChat { message }) => {
-            // Initialize cognition service
-            let cognition = init_cognition(&db, &timeline_service, &settings.cognition).await?;
+            // Initialize decision engine
+            let engine = init_decision_engine(&settings.cognition).await?;
 
-            println!("🤖 Sending message to {}...", cognition.model_id());
-            let response = cognition.chat(&agent_id, &message).await?;
+            println!("🤖 Sending message to Decision Engine...");
+            let context = DecisionContext::new("chat").with_summary(&message);
+
+            let decision = engine.decide(&context).await?;
 
             if cli.json {
-                println!("{}", serde_json::to_string_pretty(&response)?);
+                let json_resp = serde_json::json!({
+                    "action": decision.action,
+                    "reasoning": decision.reasoning,
+                    "confidence": decision.confidence,
+                    "providers": decision.providers_used
+                });
+                println!("{}", serde_json::to_string_pretty(&json_resp)?);
             } else {
-                println!("\n💬 {}:\n{}", cognition.model_id(), response.content);
-                println!("\n📊 Tokens: {} in / {} out", response.input_tokens, response.output_tokens);
+                println!("\n💬 Decision Engine:");
+                println!("Action: {}", decision.action);
+                println!("Reasoning: {}", decision.reasoning);
             }
         }
 
-        Some(Commands::AiOrchestrate { workflow, project: _, dry_run: _ }) => {
-            // Initialize cognition service
-            let cognition = init_cognition(&db, &timeline_service, &settings.cognition).await?;
+        Some(Commands::AiOrchestrate {
+            workflow,
+            project: _,
+            dry_run: _,
+        }) => {
+            // Initialize decision engine
+            let engine = init_decision_engine(&settings.cognition).await?;
+            let registry = init_tool_registry().await;
 
             // Initialize Agent Runtime
             let runtime = AgentRuntime::new(
                 agent_id.clone(),
-                cognition,
+                engine,
+                registry,
                 project_service.clone(),
                 task_service.clone(),
                 watch_service.clone(),
@@ -419,45 +524,61 @@ async fn main() -> anyhow::Result<()> {
         }
 
         Some(Commands::Server { port }) => {
-            // Initialize cognition service
-            let cognition = init_cognition(&db, &timeline_service, &settings.cognition).await?;
+            // Initialize decision engine
+            let engine = init_decision_engine(&settings.cognition).await?;
+            let registry = init_tool_registry().await;
 
             // Initialize Agent Runtime
             let runtime = AgentRuntime::new(
                 agent_id.clone(),
-                cognition,
+                engine,
+                registry,
                 project_service.clone(),
                 task_service.clone(),
                 watch_service.clone(),
                 agent_service.clone(),
             );
 
-            start_server(runtime, timeline_service.clone(), agent_service.clone(), project_service.clone(), task_service.clone(), port).await?;
+            start_server(
+                runtime,
+                timeline_service.clone(),
+                agent_service.clone(),
+                project_service.clone(),
+                task_service.clone(),
+                watch_service.clone(),
+                port,
+            )
+            .await?;
         }
 
-        Some(Commands::Login {}) => {
+        Some(Commands::Login) => {
             let auth = AuthService::new()?;
 
             // Check if we already have a valid token
             if auth.get_valid_token().await.is_ok() {
                 println!("✅ Already logged in (valid credential found).");
-                println!("💡 To force re-login, delete ~/.gestalt/gemini_credentials.json manually.");
+                println!(
+                    "💡 To force re-login, delete ~/.gestalt/gemini_credentials.json manually."
+                );
                 return Ok(());
             }
 
             println!("🔑 Starting Google Gemini OAuth2 login...");
             match auth.login().await {
-                Ok(creds) => println!("✅ Login successful! Token expires at: {:?}", creds.expires_at),
+                Ok(creds) => println!(
+                    "✅ Login successful! Token expires at: {:?}",
+                    creds.expires_at
+                ),
                 Err(e) => println!("❌ Login failed: {:?}", e),
             }
         }
 
-        Some(Commands::Chat {}) => {
-             // Initialize cognition service
-            let cognition = init_cognition(&db, &timeline_service, &settings.cognition).await?;
+        Some(Commands::Chat) => {
+            // Initialize decision engine
+            let engine = init_decision_engine(&settings.cognition).await?;
 
             // Run REPL
-            repl::run_repl(&agent_id, cognition).await?;
+            repl::run_repl(&agent_id, engine).await?;
         }
 
         Some(Commands::IndexRepo { url }) => {
@@ -479,30 +600,203 @@ async fn main() -> anyhow::Result<()> {
         }
 
         Some(Commands::Bot) => {
-            let telegram_settings = settings.telegram.ok_or_else(|| anyhow::anyhow!("Telegram settings not configured"))?;
+            let telegram_settings = settings
+                .telegram
+                .ok_or_else(|| anyhow::anyhow!("Telegram settings not configured"))?;
 
-            // Initialize cognition service
-            let cognition = init_cognition(&db, &timeline_service, &settings.cognition).await?;
+            // Initialize decision engine
+            let engine = init_decision_engine(&settings.cognition).await?;
 
             let bot_service = TelegramService::new(
                 telegram_settings.bot_token,
-                cognition,
+                engine,
                 telegram_settings.allowed_users,
             );
 
             bot_service.start().await?;
         }
 
-        None => {
-             // No command provided. If prompt is also None (checked above), show help or REPL
-             // But we handled prompt above. So if we are here, prompt was None and command was None.
-             // Start REPL in that case.
+        Some(Commands::Nexus { workers, port }) => {
+            info!("🚀 Starting Gestalt Nexus - Always-On Agentic Daemon");
+            info!("   Workers: {}, API Port: {}", workers, port);
 
-             // Initialize cognition service
-            let cognition = init_cognition(&db, &timeline_service, &settings.cognition).await?;
+            // Initialize cognition
+            let cognition = init_decision_engine(&settings.cognition).await?;
+            let registry = init_tool_registry().await;
+
+            // Initialize memory service
+            let _memory_service = Arc::new(MemoryService::new(db.clone()));
+
+            // Create TaskQueue (buffer = 256 tasks)
+            let (task_queue, task_receiver) = TaskQueue::new(db.clone(), 256);
+            let task_queue = Arc::new(task_queue);
+
+            // Wire Telegram bot to TaskQueue if configured
+            let tg_handle = if let Some(tg_settings) = settings.telegram {
+                let tg_queue = Arc::clone(&task_queue);
+                let tg_cognition = cognition.clone();
+                let bot_service = TelegramService::new(
+                    tg_settings.bot_token,
+                    tg_cognition,
+                    tg_settings.allowed_users,
+                )
+                .with_task_queue(tg_queue);
+
+                info!("📡 Telegram bot configured with TaskQueue integration");
+                Some(tokio::spawn(async move {
+                    if let Err(e) = bot_service.start().await {
+                        tracing::error!("Telegram bot error: {}", e);
+                    }
+                }))
+            } else {
+                info!("⚠️  Telegram not configured — skipping bot startup");
+                None
+            };
+
+            // Recover any pending tasks from DB (handles restarts)
+            let pending = task_queue.recover_pending().await.unwrap_or_default();
+            for pending_task in pending {
+                let _ = task_queue.enqueue(pending_task).await;
+            }
+
+            // Clone services for the factory closure
+            let project_service_clone = project_service.clone();
+            let task_service_clone = task_service.clone();
+            let watch_service_clone = watch_service.clone();
+            let agent_service_clone = agent_service.clone();
+            let timeline_clone = timeline_service.clone();
+
+            // Start REST API server in background
+            let api_runtime = AgentRuntime::new(
+                agent_id.clone(),
+                cognition.clone(),
+                registry.clone(),
+                project_service.clone(),
+                task_service.clone(),
+                watch_service.clone(),
+                agent_service.clone(),
+            );
+            let api_handle = tokio::spawn(async move {
+                if let Err(e) = start_server(
+                    api_runtime,
+                    timeline_clone,
+                    agent_service_clone,
+                    project_service_clone,
+                    task_service_clone,
+                    watch_service_clone,
+                    port,
+                )
+                .await
+                {
+                    tracing::error!("API server error: {}", e);
+                }
+            });
+
+            // Launch the TaskQueue dispatch loop
+            let tq_clone = Arc::clone(&task_queue);
+            let tq_engine = cognition.clone();
+            let tq_registry = registry.clone();
+            let tq_project = project_service.clone();
+            let tq_task = task_service.clone();
+            let tq_watch = watch_service.clone();
+            let tq_agent = agent_service.clone();
+
+            info!(
+                "⚙️  TaskQueue dispatch loop starting with {} max workers",
+                workers
+            );
+            tq_clone
+                .run_dispatch_loop(task_receiver, workers, move |agent_id_str| {
+                    let engine = tq_engine.clone();
+                    let registry = tq_registry.clone();
+                    let project = tq_project.clone();
+                    let task = tq_task.clone();
+                    let watch = tq_watch.clone();
+                    let agent = tq_agent.clone();
+                    async move {
+                        Ok(AgentRuntime::new(
+                            agent_id_str,
+                            engine,
+                            registry,
+                            project,
+                            task,
+                            watch,
+                            agent,
+                        ))
+                    }
+                })
+                .await;
+
+            // Wait for other services
+            if let Some(h) = tg_handle {
+                let _ = h.await;
+            }
+            let _ = api_handle.await;
+
+            info!("🔴 Gestalt Nexus daemon shutting down.");
+        }
+
+        Some(Commands::Queue { goal, priority }) => {
+            // Direct CLI task injection into the queue
+            let (task_queue, _receiver) = TaskQueue::new(db.clone(), 1);
+            let queued = QueuedTask::new(
+                goal.clone(),
+                TaskSource::Cli {
+                    invocation: format!("gestalt queue '{}'", &goal[..goal.len().min(60)]),
+                },
+                priority,
+            );
+            task_queue.enqueue(queued).await?;
+            if cli.json {
+                println!(
+                    r#"{{"status": "queued", "goal": "{}", "priority": {} }}"#,
+                    goal, priority
+                );
+            } else {
+                println!(
+                    "📥 Task queued: '{}' (priority: {})",
+                    &goal[..goal.len().min(80)],
+                    priority
+                );
+                println!("   Start the Nexus daemon to process: gestalt nexus");
+            }
+        }
+
+        Some(Commands::Agent { action }) => {
+            let dispatcher = DispatcherService::new(Arc::new(timeline_service.clone()));
+
+            match action {
+                AgentCommands::Spawn { agent_type, prompt } => {
+                    let task_name = dispatcher.spawn_agent(&agent_type, &prompt).await?;
+                    if cli.json {
+                        println!(
+                            r#"{{"status": "spawned", "agent_type": "{}", "task_id": "{}"}}"#,
+                            agent_type, task_name
+                        );
+                    } else {
+                        println!(
+                            "🚀 Spawned background agent: {} (Task ID: {})",
+                            agent_type, task_name
+                        );
+                    }
+                }
+                AgentCommands::Ps => {
+                    // MVP implementation
+                    println!("📋 Agent process list (Check timeline for outputs)");
+                }
+            }
+        }
+
+        None => {
+            // No command provided. If prompt is also None (checked above), show help or REPL
+            // But we handled prompt above. So if we are here, prompt was None and command was None.
+            // Start REPL in that case.
+
+            // Initialize decision engine
+            let engine = init_decision_engine(&settings.cognition).await?;
 
             // Run REPL
-            repl::run_repl(&agent_id, cognition).await?;
+            repl::run_repl(&agent_id, engine).await?;
         }
     }
 

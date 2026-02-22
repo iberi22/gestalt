@@ -212,4 +212,49 @@ pub enum Commands {
     /// Start the Telegram Bot listener
     #[command(name = "bot")]
     Bot,
+
+    /// 🚀 Start the Gestalt Nexus always-on agentic daemon.
+    /// Runs TaskQueue + Telegram bot + AgentRuntime workers concurrently 24/7.
+    #[command(name = "nexus")]
+    Nexus {
+        /// Max concurrent agent workers (default: 3)
+        #[arg(long, default_value_t = 3)]
+        workers: usize,
+        /// Port for REST API (default: 3000)
+        #[arg(long, default_value_t = 3000)]
+        port: u16,
+    },
+
+    /// Queue a task from the CLI for autonomous background execution
+    #[command(name = "queue")]
+    Queue {
+        /// Natural language goal for an agent to work on
+        goal: String,
+        /// Priority 1-10 (default: 5)
+        #[arg(long, default_value_t = 5)]
+        priority: u8,
+    },
+
+    /// Manage sub-agent CLI processes
+    #[command(name = "agent")]
+    Agent {
+        #[command(subcommand)]
+        action: AgentCommands,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum AgentCommands {
+    /// Launches a specific CLI in the background
+    #[command(name = "spawn")]
+    Spawn {
+        /// Agent CLI command (e.g. codex, claude)
+        agent_type: String,
+        /// Initial prompt or command arguments
+        prompt: String,
+    },
+
+    /// Lists currently running background agents managed by Gestalt
+    #[command(name = "ps")]
+    Ps,
 }

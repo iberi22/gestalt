@@ -1,0 +1,26 @@
+# Gestalt Configuration - MiniMax API Ready
+# Configured by user
+
+# Database Configuration
+[database]
+url = "mem://"
+user = "root"
+pass = "root"
+namespace = "gestalt"
+database = "timeline"
+
+# Cognition Configuration - MINIMAX AS PRIMARY
+[cognition]
+provider = "minimax"
+model_id = "MiniMax-M2.1"
+
+# API Key from environment variable: MINIMAX_API_KEY
+# Already configured by user
+
+# Agent Configuration
+[agent]
+id = "cli_default"
+
+# Telegram Configuration (optional)
+[telegram]
+bot_token = "${TELEGRAM_BOT_TOKEN}"

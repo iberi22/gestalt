@@ -4,10 +4,10 @@ use anyhow::{Context, Result};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::sync::Arc;
+use surrealdb::engine::any::Any;
 use surrealdb::opt::auth::Root;
 use surrealdb::Surreal;
-use surrealdb::engine::any::Any;
-use tracing::{info, debug};
+use tracing::{debug, info};
 
 /// SurrealDB client wrapper for timeline operations.
 #[derive(Clone)]
@@ -25,7 +25,11 @@ impl SurrealClient {
             .context("Failed to connect to SurrealDB")?;
 
         // Only sign in for remote connections
-        if config.url.starts_with("ws://") || config.url.starts_with("wss://") || config.url.starts_with("http://") || config.url.starts_with("https://") {
+        if config.url.starts_with("ws://")
+            || config.url.starts_with("wss://")
+            || config.url.starts_with("http://")
+            || config.url.starts_with("https://")
+        {
             db.signin(Root {
                 username: &config.user,
                 password: &config.pass,
@@ -34,9 +38,14 @@ impl SurrealClient {
             .context("Failed to authenticate with SurrealDB")?;
         }
 
-        db.use_ns(&config.namespace).use_db(&config.database).await?;
+        db.use_ns(&config.namespace)
+            .use_db(&config.database)
+            .await?;
 
-        info!("Connected to SurrealDB: {}:{}", config.namespace, config.database);
+        info!(
+            "Connected to SurrealDB: {}:{}",
+            config.namespace, config.database
+        );
 
         // Initialize schema
         Self::init_schema(&db).await?;
@@ -94,6 +103,21 @@ impl SurrealClient {
             DEFINE FIELD command_count ON agents TYPE int;
             DEFINE FIELD system_prompt ON agents TYPE option<string>;
             DEFINE FIELD model_id ON agents TYPE option<string>;
+
+            DEFINE TABLE agent_runtime_states SCHEMAFULL;
+            DEFINE FIELD agent_id ON agent_runtime_states TYPE string;
+            DEFINE FIELD goal ON agent_runtime_states TYPE string;
+            DEFINE FIELD phase ON agent_runtime_states TYPE string;
+            DEFINE FIELD current_step ON agent_runtime_states TYPE int;
+            DEFINE FIELD max_steps ON agent_runtime_states TYPE int;
+            DEFINE FIELD last_action ON agent_runtime_states TYPE option<string>;
+            DEFINE FIELD last_observation ON agent_runtime_states TYPE option<string>;
+            DEFINE FIELD history_tail ON agent_runtime_states TYPE array;
+            DEFINE FIELD error ON agent_runtime_states TYPE option<string>;
+            DEFINE FIELD started_at ON agent_runtime_states TYPE datetime;
+            DEFINE FIELD updated_at ON agent_runtime_states TYPE datetime;
+            DEFINE FIELD finished_at ON agent_runtime_states TYPE option<datetime>;
+            DEFINE INDEX idx_runtime_agent ON agent_runtime_states FIELDS agent_id UNIQUE;
             "#,
         )
         .await
@@ -104,9 +128,14 @@ impl SurrealClient {
     }
 
     /// Create a record in a table.
-    pub async fn create<T: Serialize + DeserializeOwned>(&self, table: &str, data: &T) -> Result<T> {
-        let results: Vec<T> = self.db.create(table).content(data).await?;
-        results.into_iter().next().ok_or_else(|| anyhow::anyhow!("Failed to create record"))
+    pub async fn create<T: Serialize + DeserializeOwned>(
+        &self,
+        table: &str,
+        data: &T,
+    ) -> Result<T> {
+        let val = serde_json::to_value(data)?;
+        let result: Option<T> = self.db.create(table).content(val).await?;
+        result.ok_or_else(|| anyhow::anyhow!("Failed to create record"))
     }
 
     /// Select all records from a table.
@@ -116,15 +145,46 @@ impl SurrealClient {
     }
 
     /// Select a record by ID.
-    pub async fn select_by_id<T: DeserializeOwned>(&self, table: &str, id: &str) -> Result<Option<T>> {
+    pub async fn select_by_id<T: DeserializeOwned>(
+        &self,
+        table: &str,
+        id: &str,
+    ) -> Result<Option<T>> {
         let result: Option<T> = self.db.select((table, id)).await?;
         Ok(result)
     }
 
     /// Update a record.
-    pub async fn update<T: Serialize + DeserializeOwned>(&self, table: &str, id: &str, data: &T) -> Result<T> {
-        let result: Option<T> = self.db.update((table, id)).content(data).await?;
+    pub async fn update<T: Serialize + DeserializeOwned>(
+        &self,
+        table: &str,
+        id: &str,
+        data: &T,
+    ) -> Result<T> {
+        let val = serde_json::to_value(data)?;
+        let result: Option<T> = self.db.update((table, id)).content(val).await?;
         result.ok_or_else(|| anyhow::anyhow!("Failed to update record"))
+    }
+
+    /// Upsert a record by ID.
+    pub async fn upsert<T: Serialize + DeserializeOwned>(
+        &self,
+        table: &str,
+        id: &str,
+        data: &T,
+    ) -> Result<T> {
+        let val = serde_json::to_value(data)?;
+        let table_name = table.to_string();
+        let record_id = id.to_string();
+        let mut response = self
+            .db
+            .query("UPSERT type::thing($table, $id) CONTENT $data RETURN AFTER")
+            .bind(("table", table_name))
+            .bind(("id", record_id))
+            .bind(("data", val))
+            .await?;
+        let result: Option<T> = response.take(0)?;
+        result.ok_or_else(|| anyhow::anyhow!("Failed to upsert record"))
     }
 
     /// Execute a raw query.
@@ -139,9 +199,15 @@ impl SurrealClient {
         query: &str,
         bindings: impl Serialize,
     ) -> Result<Vec<T>> {
-        let mut response = self.db.query(query).bind(bindings).await?;
+        let val = serde_json::to_value(bindings)?;
+        let mut response = self.db.query(query).bind(val).await?;
         let results: Vec<T> = response.take(0)?;
         Ok(results)
+    }
+
+    /// Access the underlying Surreal client.
+    pub fn client(&self) -> Arc<Surreal<Any>> {
+        self.db.clone()
     }
     /// Delete a record.
     pub async fn delete(&self, table: &str, id: &str) -> Result<()> {

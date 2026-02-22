@@ -15,10 +15,10 @@ use std::path::PathBuf;
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 use tracing::{info, warn};
-use oauth2::url::Url;
 
 // Constants from gemini-cli reference implementation
-const GOOGLE_CLIENT_ID: &str = "681255809395-oo8ft2oprdrnp9e3aqf6av3hmdib135j.apps.googleusercontent.com";
+const GOOGLE_CLIENT_ID: &str =
+    "681255809395-oo8ft2oprdrnp9e3aqf6av3hmdib135j.apps.googleusercontent.com";
 const AUTH_URL: &str = "https://accounts.google.com/o/oauth2/v2/auth";
 const TOKEN_URL: &str = "https://oauth2.googleapis.com/token";
 
@@ -69,9 +69,7 @@ impl AuthService {
             auth_req = auth_req.add_scope(Scope::new(scope.to_string()));
         }
 
-        let (auth_url, _csrf_token) = auth_req
-            .set_pkce_challenge(pkce_challenge)
-            .url();
+        let (auth_url, _csrf_token) = auth_req.set_pkce_challenge(pkce_challenge).url();
 
         println!("🚀 Opening browser to authenticate with Google...");
         println!("If it doesn't open, visit: {}", auth_url);
@@ -96,9 +94,9 @@ impl AuthService {
         let credentials = AuthCredentials {
             access_token: token_result.access_token().secret().to_string(),
             refresh_token: token_result.refresh_token().map(|t| t.secret().to_string()),
-            expires_at: token_result.expires_in().map(|dur| {
-                chrono::Utc::now() + chrono::Duration::from_std(dur).unwrap()
-            }),
+            expires_at: token_result
+                .expires_in()
+                .map(|dur| chrono::Utc::now() + chrono::Duration::from_std(dur).unwrap()),
         };
 
         self.save_credentials(&credentials)?;
@@ -153,10 +151,13 @@ impl AuthService {
 
     /// Get valid access token, refreshing if necessary
     pub async fn get_valid_token(&self) -> Result<String> {
-        let creds = self.load_credentials().context("No credentials found. Run 'gestalt login' first.")?;
+        let creds = self
+            .load_credentials()
+            .context("No credentials found. Run 'gestalt login' first.")?;
 
         // Check if expired (with 1 minute buffer)
-        let is_expired = creds.expires_at
+        let is_expired = creds
+            .expires_at
             .map(|exp| exp < chrono::Utc::now() + chrono::Duration::minutes(1))
             .unwrap_or(true); // Assume expired if no expiration set (safer)
 
@@ -166,7 +167,8 @@ impl AuthService {
 
         if let Some(ref refresh_token) = creds.refresh_token {
             info!("🔄 Refreshing expired access token...");
-            let token_result = self.client
+            let token_result = self
+                .client
                 .exchange_refresh_token(&RefreshToken::new(refresh_token.clone()))
                 .request_async(async_http_client)
                 .await
@@ -175,16 +177,21 @@ impl AuthService {
             let new_creds = AuthCredentials {
                 access_token: token_result.access_token().secret().to_string(),
                 // Keep old refresh token if new one not provided (standard OAuth2 behavior)
-                refresh_token: token_result.refresh_token().map(|t| t.secret().to_string()).or(creds.refresh_token),
-                expires_at: token_result.expires_in().map(|dur| {
-                    chrono::Utc::now() + chrono::Duration::from_std(dur).unwrap()
-                }),
+                refresh_token: token_result
+                    .refresh_token()
+                    .map(|t| t.secret().to_string())
+                    .or(creds.refresh_token),
+                expires_at: token_result
+                    .expires_in()
+                    .map(|dur| chrono::Utc::now() + chrono::Duration::from_std(dur).unwrap()),
             };
 
             self.save_credentials(&new_creds)?;
             Ok(new_creds.access_token)
         } else {
-            Err(anyhow::anyhow!("Token expired and no refresh token available. Please login again."))
+            Err(anyhow::anyhow!(
+                "Token expired and no refresh token available. Please login again."
+            ))
         }
     }
 

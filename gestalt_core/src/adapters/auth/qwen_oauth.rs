@@ -3,10 +3,10 @@
 //! Implements the OAuth 2.0 Device Authorization Grant (RFC 8628)
 //! for Qwen AI authentication.
 
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use tokio::fs;
-use serde::{Deserialize, Serialize};
-use tracing::{info, debug};
+use tracing::{debug, info};
 
 /// Qwen OAuth Configuration
 const QWEN_OAUTH_BASE_URL: &str = "https://chat.qwen.ai";
@@ -93,8 +93,8 @@ pub async fn clear_credentials() -> anyhow::Result<()> {
 
 /// Generate PKCE code verifier and challenge.
 fn generate_pkce_pair() -> (String, String) {
-    use sha2::{Sha256, Digest};
-    use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+    use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
+    use sha2::{Digest, Sha256};
 
     let verifier: String = (0..32)
         .map(|_| rand::random::<u8>())
@@ -120,7 +120,8 @@ async fn request_device_authorization(code_challenge: &str) -> anyhow::Result<De
         ("code_challenge_method", "S256"),
     ];
 
-    let resp = client.post(&url)
+    let resp = client
+        .post(&url)
         .header("Content-Type", "application/x-www-form-urlencoded")
         .header("Accept", "application/json")
         .form(&params)
@@ -137,7 +138,10 @@ async fn request_device_authorization(code_challenge: &str) -> anyhow::Result<De
 }
 
 /// Poll for device token.
-async fn poll_device_token(device_code: &str, code_verifier: &str) -> anyhow::Result<Option<QwenCredentials>> {
+async fn poll_device_token(
+    device_code: &str,
+    code_verifier: &str,
+) -> anyhow::Result<Option<QwenCredentials>> {
     let client = reqwest::Client::new();
     let url = format!("{}/api/v1/oauth2/token", QWEN_OAUTH_BASE_URL);
 
@@ -148,7 +152,8 @@ async fn poll_device_token(device_code: &str, code_verifier: &str) -> anyhow::Re
         ("code_verifier", code_verifier),
     ];
 
-    let resp = client.post(&url)
+    let resp = client
+        .post(&url)
         .header("Content-Type", "application/x-www-form-urlencoded")
         .header("Accept", "application/json")
         .form(&params)
@@ -171,7 +176,9 @@ async fn poll_device_token(device_code: &str, code_verifier: &str) -> anyhow::Re
         let creds = QwenCredentials {
             access_token,
             refresh_token: token_resp.refresh_token,
-            expiry_date: token_resp.expires_in.map(|e| chrono::Utc::now().timestamp_millis() + e * 1000),
+            expiry_date: token_resp
+                .expires_in
+                .map(|e| chrono::Utc::now().timestamp_millis() + e * 1000),
             token_type: token_resp.token_type,
             resource_url: token_resp.resource_url,
         };
@@ -217,7 +224,8 @@ pub async fn run_device_flow_login() -> anyhow::Result<QwenCredentials> {
             }
             Err(e) => {
                 if e.to_string().contains("slow_down") {
-                    poll_interval = std::cmp::min(poll_interval * 2, std::time::Duration::from_secs(10));
+                    poll_interval =
+                        std::cmp::min(poll_interval * 2, std::time::Duration::from_secs(10));
                     debug!("Slowing down poll interval to {:?}", poll_interval);
                 } else {
                     return Err(e);
@@ -240,7 +248,8 @@ pub async fn refresh_access_token(refresh_token: &str) -> anyhow::Result<QwenCre
         ("client_id", QWEN_OAUTH_CLIENT_ID),
     ];
 
-    let resp = client.post(&url)
+    let resp = client
+        .post(&url)
         .header("Content-Type", "application/x-www-form-urlencoded")
         .header("Accept", "application/json")
         .form(&params)
@@ -254,13 +263,18 @@ pub async fn refresh_access_token(refresh_token: &str) -> anyhow::Result<QwenCre
 
     let token_resp: TokenResponse = resp.json().await?;
 
-    let access_token = token_resp.access_token
+    let access_token = token_resp
+        .access_token
         .ok_or_else(|| anyhow::anyhow!("No access token in refresh response"))?;
 
     let creds = QwenCredentials {
         access_token,
-        refresh_token: token_resp.refresh_token.or_else(|| Some(refresh_token.to_string())),
-        expiry_date: token_resp.expires_in.map(|e| chrono::Utc::now().timestamp_millis() + e * 1000),
+        refresh_token: token_resp
+            .refresh_token
+            .or_else(|| Some(refresh_token.to_string())),
+        expiry_date: token_resp
+            .expires_in
+            .map(|e| chrono::Utc::now().timestamp_millis() + e * 1000),
         token_type: token_resp.token_type,
         resource_url: token_resp.resource_url,
     };
@@ -273,15 +287,15 @@ pub async fn refresh_access_token(refresh_token: &str) -> anyhow::Result<QwenCre
 
 /// Get a valid Qwen access token, refreshing if necessary.
 pub async fn get_valid_access_token() -> anyhow::Result<String> {
-    let cached = load_cached_credentials().await
-        .ok_or_else(|| anyhow::anyhow!(
-            "No Qwen credentials found. Run the login command first."
-        ))?;
+    let cached = load_cached_credentials().await.ok_or_else(|| {
+        anyhow::anyhow!("No Qwen credentials found. Run the login command first.")
+    })?;
 
     // Check if token is expired
     if let Some(expiry_date) = cached.expiry_date {
         let now = chrono::Utc::now().timestamp_millis();
-        if now >= expiry_date - 60_000 { // Refresh 60 seconds before expiry
+        if now >= expiry_date - 60_000 {
+            // Refresh 60 seconds before expiry
             if let Some(refresh_token) = &cached.refresh_token {
                 info!("Qwen access token expired, refreshing...");
                 let new_creds = refresh_access_token(refresh_token).await?;

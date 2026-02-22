@@ -1,13 +1,13 @@
 use clap::{Parser, Subcommand};
 use dotenv::dotenv;
-use std::sync::Arc;
-use std::path::Path;
-use std::io::Write;
-use tracing::{info, Level};
-use tracing_subscriber::FmtSubscriber;
+use futures::StreamExt;
 use rustyline::error::ReadlineError;
 use rustyline::DefaultEditor;
-use futures::StreamExt;
+use std::io::Write;
+use std::path::Path;
+use std::sync::Arc;
+use tracing::{info, Level};
+use tracing_subscriber::FmtSubscriber;
 
 use gestalt_core::adapters::auth::{google_oauth, qwen_oauth};
 use gestalt_core::adapters::llm::gemini::GeminiProvider;
@@ -15,11 +15,11 @@ use gestalt_core::adapters::llm::gemini_oauth::GeminiOAuthProvider;
 use gestalt_core::adapters::llm::ollama::OllamaProvider;
 use gestalt_core::adapters::llm::openai::OpenAIProvider;
 use gestalt_core::adapters::llm::qwen::QwenProvider;
+use gestalt_core::application::config::AppConfig;
 use gestalt_core::application::consensus::ConsensusService;
 use gestalt_core::application::mcp_service::McpService;
-use gestalt_core::application::config::AppConfig;
-use gestalt_core::ports::outbound::llm_provider::{LlmProvider, LlmRequest};
 use gestalt_core::context::{detector, scanner};
+use gestalt_core::ports::outbound::llm_provider::{LlmProvider, LlmRequest};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -92,8 +92,7 @@ async fn main() {
     let subscriber = FmtSubscriber::builder()
         .with_max_level(Level::INFO)
         .finish();
-    tracing::subscriber::set_global_default(subscriber)
-        .expect("setting default subscriber failed");
+    tracing::subscriber::set_global_default(subscriber).expect("setting default subscriber failed");
 
     // 2. Load Environment Variables (.env)
     dotenv().ok();
@@ -113,20 +112,20 @@ async fn main() {
                             return;
                         }
                         if let Some(parent) = path.parent() {
-                            std::fs::create_dir_all(parent).expect("Failed to create config directory");
+                            std::fs::create_dir_all(parent)
+                                .expect("Failed to create config directory");
                         }
 
-                        let toml_str = toml::to_string_pretty(&default_config).expect("Failed to serialize config");
+                        let toml_str = toml::to_string_pretty(&default_config)
+                            .expect("Failed to serialize config");
                         std::fs::write(&path, toml_str).expect("Failed to write config file");
                         println!("✅ Config file created at {:?}", path);
                     }
                 }
-                ConfigCommands::Show => {
-                    match AppConfig::load() {
-                        Ok(config) => println!("{:#?}", config),
-                        Err(e) => eprintln!("❌ Failed to load config: {}", e),
-                    }
-                }
+                ConfigCommands::Show => match AppConfig::load() {
+                    Ok(config) => println!("{:#?}", config),
+                    Err(e) => eprintln!("❌ Failed to load config: {}", e),
+                },
             }
             return;
         }
@@ -206,13 +205,22 @@ async fn main() {
     let mut providers: Vec<(String, Arc<dyn LlmProvider>)> = Vec::new();
 
     // Gemini
-    let gemini_model = if cli.gemini_model != "gemini-2.0-flash" { cli.gemini_model.clone() } else { config.gemini.model.clone() };
+    let gemini_model = if cli.gemini_model != "gemini-2.0-flash" {
+        cli.gemini_model.clone()
+    } else {
+        config.gemini.model.clone()
+    };
 
     if google_oauth::has_gemini_cli_credentials().await {
         info!("Using Gemini with gemini-cli OAuth credentials.");
         let gemini = GeminiOAuthProvider::new(gemini_model);
         providers.push(("Gemini".to_string(), Arc::new(gemini)));
-    } else if let Some(key) = config.gemini.api_key.clone().or_else(|| std::env::var("GOOGLE_API_KEY").ok()) {
+    } else if let Some(key) = config
+        .gemini
+        .api_key
+        .clone()
+        .or_else(|| std::env::var("GOOGLE_API_KEY").ok())
+    {
         std::env::set_var("GOOGLE_API_KEY", key);
         let gemini = GeminiProvider::new(gemini_model);
         providers.push(("Gemini (API Key)".to_string(), Arc::new(gemini)));
@@ -221,7 +229,11 @@ async fn main() {
     }
 
     // Qwen
-    let qwen_model = if cli.qwen_model != "qwen-coder" { cli.qwen_model.clone() } else { config.qwen.model.clone() };
+    let qwen_model = if cli.qwen_model != "qwen-coder" {
+        cli.qwen_model.clone()
+    } else {
+        config.qwen.model.clone()
+    };
     if qwen_oauth::has_qwen_credentials().await {
         info!("Using Qwen with OAuth credentials.");
         let qwen = QwenProvider::new(qwen_model);
@@ -229,16 +241,33 @@ async fn main() {
     }
 
     // OpenAI
-    let openai_model = if cli.openai_model != "gpt-4" { cli.openai_model.clone() } else { config.openai.model.clone() };
-    if let Some(key) = config.openai.api_key.clone().or_else(|| std::env::var("OPENAI_API_KEY").ok()) {
+    let openai_model = if cli.openai_model != "gpt-4" {
+        cli.openai_model.clone()
+    } else {
+        config.openai.model.clone()
+    };
+    if let Some(key) = config
+        .openai
+        .api_key
+        .clone()
+        .or_else(|| std::env::var("OPENAI_API_KEY").ok())
+    {
         std::env::set_var("OPENAI_API_KEY", key);
         let openai = OpenAIProvider::new(openai_model);
         providers.push(("OpenAI".to_string(), Arc::new(openai)));
     }
 
     // Ollama
-    let ollama_model = if cli.ollama_model != "llama2" { cli.ollama_model.clone() } else { config.ollama.model.clone() };
-    let ollama_url = if cli.ollama_url != "http://localhost:11434" { cli.ollama_url.clone() } else { config.ollama.base_url.clone() };
+    let ollama_model = if cli.ollama_model != "llama2" {
+        cli.ollama_model.clone()
+    } else {
+        config.ollama.model.clone()
+    };
+    let ollama_url = if cli.ollama_url != "http://localhost:11434" {
+        cli.ollama_url.clone()
+    } else {
+        config.ollama.base_url.clone()
+    };
     let ollama = OllamaProvider::new(ollama_url, ollama_model);
     providers.push(("Ollama".to_string(), Arc::new(ollama)));
 
@@ -266,7 +295,9 @@ async fn main() {
             match readline {
                 Ok(line) => {
                     let line = line.trim();
-                    if line.is_empty() { continue; }
+                    if line.is_empty() {
+                        continue;
+                    }
 
                     rl.add_history_entry(line).unwrap();
 
@@ -284,15 +315,15 @@ async fn main() {
                     }
 
                     process_prompt(line, &providers, &cli, cli.consensus).await;
-                },
+                }
                 Err(ReadlineError::Interrupted) => {
                     println!("CTRL-C");
                     break;
-                },
+                }
                 Err(ReadlineError::Eof) => {
                     println!("CTRL-D");
                     break;
-                },
+                }
                 Err(err) => {
                     println!("Error: {:?}", err);
                     break;
@@ -307,7 +338,7 @@ async fn process_prompt(
     prompt: &str,
     providers: &Vec<(String, Arc<dyn LlmProvider>)>,
     cli: &Cli,
-    consensus: bool
+    consensus: bool,
 ) {
     // --- Context Engine ---
     let mut final_prompt = prompt.to_string();
@@ -325,17 +356,23 @@ async fn process_prompt(
         context_str.push_str("\nMarkdown Context (first 100 lines):\n");
 
         for file in files {
-            context_str.push_str(&format!("--- File: {} ---\n{}\n\n", file.path, file.content));
+            context_str.push_str(&format!(
+                "--- File: {} ---\n{}\n\n",
+                file.path, file.content
+            ));
         }
 
         // Truncate if too long (approx 16k chars ~ 4k tokens)
         if context_str.len() > 16000 {
-             context_str.truncate(16000);
-             context_str.push_str("\n... (truncated context)");
+            context_str.truncate(16000);
+            context_str.push_str("\n... (truncated context)");
         }
 
         final_prompt = format!("CONTEXT:\n{}\n\nUSER PROMPT:\n{}", context_str, prompt);
-        info!("🧠 Context Engine: Added {} chars of context.", context_str.len());
+        info!(
+            "🧠 Context Engine: Added {} chars of context.",
+            context_str.len()
+        );
     }
 
     if consensus {

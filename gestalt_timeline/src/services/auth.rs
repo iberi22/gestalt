@@ -15,7 +15,6 @@ use std::path::PathBuf;
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 use tracing::{info, warn};
-use oauth2::url::Url;
 
 // Constants from gemini-cli reference implementation
 const GOOGLE_CLIENT_ID: &str = "681255809395-oo8ft2oprdrnp9e3aqf6av3hmdib135j.apps.googleusercontent.com";

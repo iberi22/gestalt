@@ -3,4 +3,4 @@
 pub mod repl;
 mod commands;
 
-pub use commands::{Cli, Commands};
+pub use commands::{AgentCommands, Cli, Commands};

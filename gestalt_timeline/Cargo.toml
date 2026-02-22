@@ -20,15 +20,15 @@ clap = { version = "4.4", features = ["derive"] }
 # Serialization
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-axum = "0.7"
+axum = { version = "0.7", features = ["ws", "macros"] }
 tower-http = { version = "0.5", features = ["cors"] }
 reqwest = { version = "0.11", features = ["json"] }
 oauth2 = "4.4"
 dirs = "5.0"
 open = "5.0"
 
-# SurrealDB client (with embedded support for mem and rocksdb)
-surrealdb = { version = "2.0.5", features = ["kv-mem", "kv-rocksdb"] }
+# SurrealDB client
+surrealdb = { version = "2.0.5", features = ["kv-mem"] }
 
 # Date/Time
 chrono = { version = "0.4", features = ["serde"] }
@@ -63,6 +63,18 @@ rustyline = "17.0.2"
 # Core Logic
 gestalt_core = { path = "../gestalt_core" }
 teloxide = { version = "0.17.0", features = ["macros"] }
+
+# Synapse Agentic - Framework base for Hive, Memory, Resilience, Compaction
+synapse-agentic = { path = "../../synapse-agentic", default-features = false, features = ["mcp", "db-surreal"] }
+
+# Unique IDs (for MemoryFragment)
+uuid = { version = "1", features = ["v4", "serde"] }
+
+# Cron scheduling
+tokio-cron-scheduler = "0.13"
+
+# Context window token estimation
+tiktoken-rs = "0.6"
 
 [dev-dependencies]
 assert_cmd = "2.0"

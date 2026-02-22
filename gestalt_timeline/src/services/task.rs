@@ -8,7 +8,7 @@ use surrealdb::sql::Thing;
 use tracing::{debug, info};
 
 use crate::db::SurrealClient;
-use crate::models::{EventType, Task, TaskResult, TaskStatus, FlexibleTimestamp};
+use crate::models::{EventType, Task, TaskResult, TaskStatus};
 use crate::services::TimelineService;
 
 /// Helper to convert Option<Thing> to String

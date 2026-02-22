@@ -1,32 +1,54 @@
 use anyhow::Result;
-use tracing::info;
-use crate::services::{
-    AgentService, LLMService, ProjectService, TaskService, WatchService, OrchestrationAction, Cognition
-};
+use serde_json::Value;
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use std::collections::HashMap;
+use tracing::info;
+
+use crate::services::{AgentService, ProjectService, TaskService, WatchService};
+use synapse_agentic::prelude::{DecisionContext, DecisionEngine, EmptyContext, ToolRegistry};
+
+/// Orchestration action executed by AgentRuntime.
+#[derive(Debug, Clone)]
+pub enum OrchestrationAction {
+    CreateProject { name: String, description: Option<String> },
+    CreateTask { project: String, description: String },
+    RunTask { task_id: String },
+    ListProjects,
+    ListTasks { project: Option<String> },
+    GetStatus { project: String },
+    Chat { response: String },
+    ReadFile { path: String },
+    WriteFile { path: String, content: String },
+    ExecuteShell { command: String },
+    StartJob { name: String, command: String },
+    StopJob { name: String },
+    ListJobs,
+    DelegateTask { agent: String, goal: String },
+    CallAgent { tool: String, args: Value },
+    AwaitJob { job_id: String },
+}
 
 /// The Autonomous Agent Runtime.
 /// Encapsulates the "Think-Act-Observe" loop.
 #[derive(Clone)]
 pub struct AgentRuntime {
     agent_id: String,
-    llm: Arc<dyn Cognition>,
+    engine: Arc<DecisionEngine>,
+    registry: Arc<ToolRegistry>,
     project: ProjectService,
     task: TaskService,
     watch: WatchService,
     agent: AgentService,
     max_steps: usize,
-    // Background jobs: Name -> Child Process
     jobs: Arc<Mutex<HashMap<String, tokio::process::Child>>>,
 }
-
 
 impl AgentRuntime {
     pub fn new(
         agent_id: String,
-        llm: Arc<dyn Cognition>,
+        engine: Arc<DecisionEngine>,
+        registry: Arc<ToolRegistry>,
         project: ProjectService,
         task: TaskService,
         watch: WatchService,
@@ -34,74 +56,78 @@ impl AgentRuntime {
     ) -> Self {
         Self {
             agent_id,
-            llm,
+            engine,
+            registry,
             project,
             task,
             watch,
             agent,
-            max_steps: 10, // Default safety limit
+            max_steps: 20,
             jobs: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
-    pub async fn list_models(&self) -> Result<Vec<String>> {
-        self.llm.list_models().await
-    }
-
-    pub async fn set_model(&self, model_id: &str) -> Result<()> {
-        self.llm.set_model(model_id).await
-    }
-
     /// Run the autonomous loop for a specific goal.
     pub async fn run_loop(&self, goal: &str) -> Result<()> {
-        info!("🔄 Starting Autonomous Loop for Agent: {}", self.agent_id);
-        info!("🎯 Goal: {}", goal);
+        info!("Starting Autonomous Loop for Agent: {}", self.agent_id);
+        info!("Goal: {}", goal);
 
-        // Update Agent Status to Busy
         use crate::services::AgentStatus;
         let _ = self.agent.set_status(&self.agent_id, AgentStatus::Busy).await;
 
-        let mut conversation_history = Vec::new(); // TODO: Use proper Bedrock Message types
-
-        // Initial Context for the LLM
-        let initial_prompt = format!("GOAL: {}\n\nPlease start working on this goal.", goal);
-        conversation_history.push(initial_prompt);
+        let mut conversation_history = Vec::new();
+        conversation_history.push(format!("GOAL: {}\n\nPlease start working on this goal.", goal));
 
         for step in 0..self.max_steps {
-            info!("📍 Step {}/{}", step + 1, self.max_steps);
-
-            // 1. THINK: Helper to get next action based on history
-            let actions = self.llm.orchestrate_step(&self.agent_id, goal, &conversation_history, None).await?;
+            info!("Step {}/{}", step + 1, self.max_steps);
+            let actions = self.next_actions(goal, &conversation_history).await?;
 
             if actions.is_empty() {
-                info!("✅ Agent decided to stop (no actions).");
+                info!("Agent decided to stop (no actions).");
                 break;
             }
 
-            // 2. ACT: Execute actions
             for action in actions {
-                let action_summary = format!("Action: {:?}", action);
-                conversation_history.push(action_summary.clone());
-
+                conversation_history.push(format!("Action: {:?}", action));
                 let observation = match self.execute_action(&action).await {
                     Ok(obs) => obs,
-                    Err(e) => {
-                        println!("❌ Execution Error: {:?}", e);
-                        format!("Error: {}", e)
-                    }
+                    Err(e) => format!("Error: {}", e),
                 };
-
-                // 3. OBSERVE: Create observation for history
-                let observation_msg = format!("Observation: {}", observation);
-                info!("👀 {}", observation_msg);
-                conversation_history.push(observation_msg);
+                conversation_history.push(format!("Observation: {}", observation));
             }
         }
 
-        // Update Agent Status to Idle
         let _ = self.agent.set_status(&self.agent_id, AgentStatus::Idle).await;
-
         Ok(())
+    }
+
+    async fn next_actions(&self, goal: &str, history: &[String]) -> Result<Vec<OrchestrationAction>> {
+        let history_summary = history
+            .iter()
+            .rev()
+            .take(8)
+            .cloned()
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        let context = DecisionContext::new("orchestration")
+            .with_summary(format!("goal: {}\n\nhistory:\n{}", goal, history_summary));
+        let decision = self.engine.decide(&context).await?;
+        Ok(Self::map_decision_to_actions(&decision.action, &decision.reasoning))
+    }
+
+    fn map_decision_to_actions(action: &str, reasoning: &str) -> Vec<OrchestrationAction> {
+        match action.trim().to_lowercase().as_str() {
+            "stop" | "done" | "defer" => vec![],
+            "list_projects" => vec![OrchestrationAction::ListProjects],
+            "list_jobs" => vec![OrchestrationAction::ListJobs],
+            "chat" => vec![OrchestrationAction::Chat {
+                response: reasoning.to_string(),
+            }],
+            _ => vec![OrchestrationAction::Chat {
+                response: format!("Decision: {} | {}", action, reasoning),
+            }],
+        }
     }
 
     async fn execute_action(&self, action: &OrchestrationAction) -> Result<String> {
@@ -131,18 +157,16 @@ impl AgentRuntime {
                 Ok(format!("Project '{}' is {}% complete", project, status.progress_percent))
             }
             OrchestrationAction::Chat { response } => {
-                info!("💬 Agent says: {}", response);
+                info!("Agent says: {}", response);
                 Ok(format!("Agent said: {}", response))
             }
             OrchestrationAction::ReadFile { path } => {
-                info!("📂 Reading file: {}", path);
                 match tokio::fs::read_to_string(path).await {
                     Ok(content) => Ok(format!("File '{}' content:\n{}", path, content)),
                     Err(e) => Ok(format!("Error reading file '{}': {}", path, e)),
                 }
             }
             OrchestrationAction::WriteFile { path, content } => {
-                info!("💾 Writing file: {}", path);
                 if let Some(parent) = std::path::Path::new(path).parent() {
                     tokio::fs::create_dir_all(parent).await?;
                 }
@@ -152,10 +176,6 @@ impl AgentRuntime {
                 }
             }
             OrchestrationAction::ExecuteShell { command } => {
-                info!("🐚 Executing command: {}", command);
-                // Security Note: This runs commands directly on the host shell.
-                // In production, this should be sandboxed or restricted.
-
                 #[cfg(target_os = "windows")]
                 let mut cmd = tokio::process::Command::new("powershell");
                 #[cfg(target_os = "windows")]
@@ -180,8 +200,6 @@ impl AgentRuntime {
                 }
             }
             OrchestrationAction::StartJob { name, command } => {
-                info!("🏃 Starting background job '{}': {}", name, command);
-
                 #[cfg(target_os = "windows")]
                 let mut cmd = tokio::process::Command::new("powershell");
                 #[cfg(target_os = "windows")]
@@ -192,8 +210,6 @@ impl AgentRuntime {
                 #[cfg(not(target_os = "windows"))]
                 cmd.arg("-c").arg(command);
 
-                // Spawn and detach (sort of, we keep handle)
-                // We must pipe output if we want to read it later, but for now let's inherit or null
                 cmd.stdout(std::process::Stdio::piped());
                 cmd.stderr(std::process::Stdio::piped());
 
@@ -208,7 +224,6 @@ impl AgentRuntime {
                 }
             }
             OrchestrationAction::StopJob { name } => {
-                info!("🛑 Stopping job '{}'", name);
                 let mut jobs = self.jobs.lock().await;
                 if let Some(mut child) = jobs.remove(name) {
                     match child.kill().await {
@@ -232,54 +247,51 @@ impl AgentRuntime {
                 }
             }
             OrchestrationAction::DelegateTask { agent, goal } => {
-                info!("🤝 Delegating task to '{}' agent: {}", agent, goal);
-
-                // Create a sub-agent runtime (clone services)
-                // distinct agent_id for the sub-agent
                 let sub_agent_id = format!("{}-{}", self.agent_id, agent);
-
                 let sub_runtime = AgentRuntime::new(
                     sub_agent_id.clone(),
-                    self.llm.clone(),
+                    self.engine.clone(),
+                    self.registry.clone(),
                     self.project.clone(),
                     self.task.clone(),
                     self.watch.clone(),
                     self.agent.clone(),
                 );
 
-                // Connect the sub-agent formally
                 let _ = self.agent.connect(&sub_agent_id, Some(agent)).await;
-
-                // Execute recursively
-                // We must box the future to avoid infinite size recursion error
-                let sub_future = async move {
-                    sub_runtime.run_loop(goal).await
-                };
-
-                match Box::pin(sub_future).await {
+                match Box::pin(async move { sub_runtime.run_loop(goal).await }).await {
                     Ok(_) => Ok(format!("Delegated task to '{}' completed successfully.", agent)),
                     Err(e) => Ok(format!("Delegated task to '{}' failed: {}", agent, e)),
                 }
             }
-
             OrchestrationAction::CallAgent { tool, args } => {
-                info!("📞 Calling external agent/tool: {} {:?}", tool, args);
+                if let Ok(result) = self.registry.call(tool, &EmptyContext, args.clone()).await {
+                    return Ok(format!("Tool '{}' executed with result:\n{}", tool, result));
+                }
 
-                // Allow-list for security
-                let allowed_tools = vec!["gh", "aws", "kubectl", "cargo", "git", "docker"];
+                let argv = args
+                    .as_array()
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|v| v.as_str().map(ToOwned::to_owned))
+                            .collect::<Vec<_>>()
+                    })
+                    .unwrap_or_default();
+
+                let allowed_tools = ["gh", "aws", "kubectl", "cargo", "git", "docker"];
                 if !allowed_tools.contains(&tool.as_str()) {
-                    return Ok(format!("❌ Security Error: Tool '{}' is not in the allow-list.", tool));
+                    return Ok(format!("Security Error: Tool '{}' is not allowed.", tool));
                 }
 
                 #[cfg(target_os = "windows")]
                 let mut cmd = tokio::process::Command::new("powershell");
                 #[cfg(target_os = "windows")]
-                cmd.arg("-Command").arg(format!("{} {}", tool, args.join(" ")));
+                cmd.arg("-Command").arg(format!("{} {}", tool, argv.join(" ")));
 
                 #[cfg(not(target_os = "windows"))]
-                let mut cmd = tokio::process::Command::new(&tool);
+                let mut cmd = tokio::process::Command::new(tool);
                 #[cfg(not(target_os = "windows"))]
-                cmd.args(args);
+                cmd.args(&argv);
 
                 match cmd.output().await {
                     Ok(output) => {
@@ -295,12 +307,9 @@ impl AgentRuntime {
                 }
             }
             OrchestrationAction::AwaitJob { job_id } => {
-                info!("⏳ Awaiting job: {}", job_id);
-
                 let mut jobs = self.jobs.lock().await;
                 if let Some(mut child) = jobs.remove(job_id.as_str()) {
                     drop(jobs);
-
                     match child.wait().await {
                         Ok(status) => Ok(format!("Job '{}' finished with status: {}", job_id, status)),
                         Err(e) => Ok(format!("Error waiting for job '{}': {}", job_id, e)),

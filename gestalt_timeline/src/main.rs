@@ -1,20 +1,17 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use chrono::{DateTime, Utc};
 use clap::Parser;
-use std::io::Write;
 use std::path::Path;
-use gestalt_timeline::cli::{Cli, Commands, repl};
+use gestalt_timeline::cli::{Cli, Commands, AgentCommands, repl};
 use gestalt_timeline::db::SurrealClient;
 use gestalt_timeline::config::Settings;
+use gestalt_core::application::agent::tools::{ExecuteShellTool, ReadFileTool, WriteFileTool};
 use gestalt_timeline::services::{
-    AgentService, OrchestrationAction, ProjectService,
+    AgentService, ProjectService,
     TaskService, TimelineService, WatchService, AgentRuntime, start_server, AuthService,
-    TelegramService, Cognition
+    TelegramService, MemoryService, TaskQueue, QueuedTask, TaskSource, DispatcherService
 };
-use gestalt_timeline::services::llm_minimax::{LLMService as MiniMaxLLMService, LLMResponse};
-#[cfg(feature = "bedrock")]
-use gestalt_timeline::services::llm_bedrock::LLMService as BedrockLLMService;
-use gestalt_timeline::services::GeminiService;
+
 use gestalt_core::context::{detector, scanner};
 use surrealdb::sql::Thing;
 use std::sync::Arc;
@@ -29,58 +26,59 @@ fn thing_to_string(thing: &Option<Thing>) -> String {
     thing.as_ref().map(|t| t.to_string()).unwrap_or_else(|| "unknown".to_string())
 }
 
-/// Helper to initialize cognition service based on configuration
-async fn init_cognition(
-    db: &SurrealClient,
-    timeline: &TimelineService,
+use synapse_agentic::prelude::*;
+
+/// Helper to initialize decision engine based on configuration
+async fn init_decision_engine(
     settings: &gestalt_timeline::config::CognitionSettings,
-) -> Result<Arc<dyn Cognition>> {
-    let provider = settings.provider.to_lowercase();
+) -> Result<Arc<DecisionEngine>> {
+    let provider_name = settings.provider.to_lowercase();
     let model_id = &settings.model_id;
 
-    match provider.as_str() {
+    let mut builder = DecisionEngine::builder();
+
+    match provider_name.as_str() {
         "minimax" => {
-            info!("🚀 Initializing MiniMax cognition service...");
-            let llm_service = MiniMaxLLMService::new(
-                db.clone(),
-                timeline.clone(),
-                Some(model_id.clone()),
-            ).await?;
-            Ok(Arc::new(llm_service))
+            info!("🚀 Initializing MiniMax decision provider...");
+            let api_key = settings.minimax_api_key.clone()
+                .or_else(|| std::env::var("MINIMAX_API_KEY").ok())
+                .ok_or_else(|| anyhow::anyhow!("MINIMAX_API_KEY not found"))?;
+
+            // For now, group_id placeholder as synapse-agentic MinimaxProvider expects it
+            let group_id = std::env::var("MINIMAX_GROUP_ID").unwrap_or_default();
+
+            builder = builder.with_provider(MinimaxProvider::new(
+                api_key,
+                group_id,
+                model_id.clone(),
+            ));
         }
         "gemini" => {
-            info!("🚀 Initializing Gemini cognition service...");
+            info!("🚀 Initializing Gemini decision provider...");
             let api_key = settings.gemini_api_key.clone()
-                .or_else(|| std::env::var("GEMINI_API_KEY").ok());
+                .or_else(|| std::env::var("GEMINI_API_KEY").ok())
+                .ok_or_else(|| anyhow::anyhow!("GEMINI_API_KEY not found"))?;
 
-            Ok(Arc::new(GeminiService::new(
-                db.clone(),
-                timeline.clone(),
-                model_id.clone(),
+            builder = builder.with_provider(GeminiProvider::new(
                 api_key,
-            )?))
-        }
-        #[cfg(feature = "bedrock")]
-        "bedrock" | "claude" | "anthropic" => {
-            info!("🚀 Initializing Bedrock/Claude cognition service...");
-            let llm_service = BedrockLLMService::new(
-                db.clone(),
-                timeline.clone(),
-                settings,
-            ).await?;
-            Ok(Arc::new(llm_service))
+                model_id.clone(),
+            ));
         }
         _ => {
-            // Default to MiniMax
-            info!("🚀 Unknown provider '{}', defaulting to MiniMax...", provider);
-            let llm_service = MiniMaxLLMService::new(
-                db.clone(),
-                timeline.clone(),
-                Some(model_id.clone()),
-            ).await?;
-            Ok(Arc::new(llm_service))
+            warn!("🚀 Unknown provider '{}', decision engine will use rule-based fallback if no others added.", provider_name);
         }
     }
+
+    Ok(Arc::new(builder.build()))
+}
+
+/// Initialize native tools for AgentRuntime.
+async fn init_tool_registry() -> Arc<ToolRegistry> {
+    let registry = Arc::new(ToolRegistry::new());
+    registry.register_tool(ExecuteShellTool).await;
+    registry.register_tool(ReadFileTool).await;
+    registry.register_tool(WriteFileTool).await;
+    registry
 }
 
 /// Collect context from the current directory
@@ -142,8 +140,8 @@ async fn main() -> anyhow::Result<()> {
 
     // Check if we have a direct prompt (Context Engine Mode)
     if let Some(prompt) = &cli.prompt {
-        // Initialize cognition service
-        let cognition = init_cognition(&db, &timeline_service, &settings.cognition).await?;
+        // Initialize decision engine
+        let engine = init_decision_engine(&settings.cognition).await?;
 
         let mut final_prompt = prompt.clone();
         if cli.context {
@@ -151,13 +149,24 @@ async fn main() -> anyhow::Result<()> {
             final_prompt = format!("CONTEXT:\n{}\n\nUSER PROMPT:\n{}", context_str, prompt);
         }
 
-        println!("🤖 Sending message to {}...", cognition.model_id());
-        let response = cognition.chat(&agent_id, &final_prompt).await?;
+        println!("🤖 Sending message to Decision Engine...");
+        let context = DecisionContext::new("cli")
+            .with_summary(&final_prompt);
+
+        let decision = engine.decide(&context).await?;
 
         if cli.json {
-            println!("{}", serde_json::to_string_pretty(&response)?);
+            let json_resp = serde_json::json!({
+                "action": decision.action,
+                "reasoning": decision.reasoning,
+                "confidence": decision.confidence,
+                "providers": decision.providers_used
+            });
+            println!("{}", serde_json::to_string_pretty(&json_resp)?);
         } else {
-            println!("\n💬 {}:\n{}", cognition.model_id(), response.content);
+            println!("\n💬 Decision Engine:");
+            println!("Action: {}", decision.action);
+            println!("Reasoning: {}", decision.reasoning);
         }
         return Ok(());
     }
@@ -256,14 +265,12 @@ async fn main() -> anyhow::Result<()> {
             let projects = project_service.list_projects().await?;
             if cli.json {
                 println!("{}", serde_json::to_string_pretty(&projects)?);
+            } else if projects.is_empty() {
+                println!("📋 No projects found.");
             } else {
-                if projects.is_empty() {
-                    println!("📋 No projects found.");
-                } else {
-                    println!("📋 Projects:");
-                    for p in projects {
-                        println!("  • {} [{}] - {}", p.name, p.status, thing_to_string(&p.id));
-                    }
+                println!("📋 Projects:");
+                for p in projects {
+                    println!("  • {} [{}] - {}", p.name, p.status, thing_to_string(&p.id));
                 }
             }
         }
@@ -272,14 +279,12 @@ async fn main() -> anyhow::Result<()> {
             let tasks = task_service.list_tasks(project.as_deref()).await?;
             if cli.json {
                 println!("{}", serde_json::to_string_pretty(&tasks)?);
+            } else if tasks.is_empty() {
+                println!("📋 No tasks found.");
             } else {
-                if tasks.is_empty() {
-                    println!("📋 No tasks found.");
-                } else {
-                    println!("📋 Tasks:");
-                    for t in tasks {
-                        println!("  • [{}] {} - {}", t.status, t.description, t.id.as_ref().map(|x| x.to_string()).unwrap_or_else(|| "none".to_string()));
-                    }
+                println!("📋 Tasks:");
+                for t in tasks {
+                    println!("  • [{}] {} - {}", t.status, t.description, t.id.as_ref().map(|x| x.to_string()).unwrap_or_else(|| "none".to_string()));
                 }
             }
         }
@@ -300,19 +305,17 @@ async fn main() -> anyhow::Result<()> {
             let events = timeline_service.get_timeline(since.as_deref()).await?;
             if cli.json {
                 println!("{}", serde_json::to_string_pretty(&events)?);
+            } else if events.is_empty() {
+                println!("🕐 No events in timeline.");
             } else {
-                if events.is_empty() {
-                    println!("🕐 No events in timeline.");
-                } else {
-                    println!("🕐 Timeline:");
-                    for e in events {
-                        println!("  {} | {} | {} | {}",
-                            e.timestamp,
-                            e.agent_id,
-                            e.event_type,
-                            e.id.as_ref().map(|x| x.to_string()).unwrap_or_else(|| "none".to_string())
-                        );
-                    }
+                println!("🕐 Timeline:");
+                for e in events {
+                    println!("  {} | {} | {} | {}",
+                        e.timestamp,
+                        e.agent_id,
+                        e.event_type,
+                        e.id.as_ref().map(|x| x.to_string()).unwrap_or_else(|| "none".to_string())
+                    );
                 }
             }
         }
@@ -381,7 +384,7 @@ async fn main() -> anyhow::Result<()> {
             }
         }
 
-        Some(Commands::AgentDisconnect {}) => {
+        Some(Commands::AgentDisconnect) => {
             agent_service.disconnect(&agent_id).await?;
             if cli.json {
                 println!(r#"{{"agent_id": "{}", "status": "disconnected"}}"#, agent_id);
@@ -398,46 +401,56 @@ async fn main() -> anyhow::Result<()> {
             };
             if cli.json {
                 println!("{}", serde_json::to_string_pretty(&agents)?);
+            } else if agents.is_empty() {
+                println!("🤖 No agents found.");
             } else {
-                if agents.is_empty() {
-                    println!("🤖 No agents found.");
-                } else {
-                    println!("🤖 Agents:");
-                    for a in agents {
-                        println!("  • {} [{}] ({}) - last seen: {}",
-                            a.name,
-                            a.status,
-                            a.agent_type,
-                            a.last_seen
-                        );
-                    }
+                println!("🤖 Agents:");
+                for a in agents {
+                    println!("  • {} [{}] ({}) - last seen: {}",
+                        a.name,
+                        a.status,
+                        a.agent_type,
+                        a.last_seen
+                    );
                 }
             }
         }
 
         Some(Commands::AiChat { message }) => {
-            // Initialize cognition service
-            let cognition = init_cognition(&db, &timeline_service, &settings.cognition).await?;
+            // Initialize decision engine
+            let engine = init_decision_engine(&settings.cognition).await?;
 
-            println!("🤖 Sending message to {}...", cognition.model_id());
-            let response = cognition.chat(&agent_id, &message).await?;
+            println!("🤖 Sending message to Decision Engine...");
+            let context = DecisionContext::new("chat")
+                .with_summary(&message);
+
+            let decision = engine.decide(&context).await?;
 
             if cli.json {
-                println!("{}", serde_json::to_string_pretty(&response)?);
+                let json_resp = serde_json::json!({
+                    "action": decision.action,
+                    "reasoning": decision.reasoning,
+                    "confidence": decision.confidence,
+                    "providers": decision.providers_used
+                });
+                println!("{}", serde_json::to_string_pretty(&json_resp)?);
             } else {
-                println!("\n💬 {}:\n{}", cognition.model_id(), response.content);
-                println!("\n📊 Tokens: {} in / {} out", response.input_tokens, response.output_tokens);
+                println!("\n💬 Decision Engine:");
+                println!("Action: {}", decision.action);
+                println!("Reasoning: {}", decision.reasoning);
             }
         }
 
         Some(Commands::AiOrchestrate { workflow, project: _, dry_run: _ }) => {
-            // Initialize cognition service
-            let cognition = init_cognition(&db, &timeline_service, &settings.cognition).await?;
+            // Initialize decision engine
+            let engine = init_decision_engine(&settings.cognition).await?;
+            let registry = init_tool_registry().await;
 
             // Initialize Agent Runtime
             let runtime = AgentRuntime::new(
                 agent_id.clone(),
-                cognition,
+                engine,
+                registry,
                 project_service.clone(),
                 task_service.clone(),
                 watch_service.clone(),
@@ -453,23 +466,25 @@ async fn main() -> anyhow::Result<()> {
         }
 
         Some(Commands::Server { port }) => {
-            // Initialize cognition service
-            let cognition = init_cognition(&db, &timeline_service, &settings.cognition).await?;
+            // Initialize decision engine
+            let engine = init_decision_engine(&settings.cognition).await?;
+            let registry = init_tool_registry().await;
 
             // Initialize Agent Runtime
             let runtime = AgentRuntime::new(
                 agent_id.clone(),
-                cognition,
+                engine,
+                registry,
                 project_service.clone(),
                 task_service.clone(),
                 watch_service.clone(),
                 agent_service.clone(),
             );
 
-            start_server(runtime, timeline_service.clone(), agent_service.clone(), project_service.clone(), task_service.clone(), port).await?;
+            start_server(runtime, timeline_service.clone(), agent_service.clone(), project_service.clone(), task_service.clone(), watch_service.clone(), port).await?;
         }
 
-        Some(Commands::Login {}) => {
+        Some(Commands::Login) => {
             let auth = AuthService::new()?;
 
             // Check if we already have a valid token
@@ -486,12 +501,12 @@ async fn main() -> anyhow::Result<()> {
             }
         }
 
-        Some(Commands::Chat {}) => {
-             // Initialize cognition service
-            let cognition = init_cognition(&db, &timeline_service, &settings.cognition).await?;
+        Some(Commands::Chat) => {
+             // Initialize decision engine
+            let engine = init_decision_engine(&settings.cognition).await?;
 
             // Run REPL
-            repl::run_repl(&agent_id, cognition).await?;
+            repl::run_repl(&agent_id, engine).await?;
         }
 
         Some(Commands::IndexRepo { url }) => {
@@ -515,16 +530,167 @@ async fn main() -> anyhow::Result<()> {
         Some(Commands::Bot) => {
             let telegram_settings = settings.telegram.ok_or_else(|| anyhow::anyhow!("Telegram settings not configured"))?;
 
-            // Initialize cognition service
-            let cognition = init_cognition(&db, &timeline_service, &settings.cognition).await?;
+            // Initialize decision engine
+            let engine = init_decision_engine(&settings.cognition).await?;
 
             let bot_service = TelegramService::new(
                 telegram_settings.bot_token,
-                cognition,
+                engine,
                 telegram_settings.allowed_users,
             );
 
             bot_service.start().await?;
+        }
+
+        Some(Commands::Nexus { workers, port }) => {
+            info!("🚀 Starting Gestalt Nexus - Always-On Agentic Daemon");
+            info!("   Workers: {}, API Port: {}", workers, port);
+
+            // Initialize cognition
+            let cognition = init_decision_engine(&settings.cognition).await?;
+            let registry = init_tool_registry().await;
+
+            // Initialize memory service
+            let _memory_service = Arc::new(MemoryService::new(db.clone()));
+
+            // Create TaskQueue (buffer = 256 tasks)
+            let (task_queue, task_receiver) = TaskQueue::new(db.clone(), 256);
+            let task_queue = Arc::new(task_queue);
+
+            // Wire Telegram bot to TaskQueue if configured
+            let tg_handle = if let Some(tg_settings) = settings.telegram {
+                let tg_queue = Arc::clone(&task_queue);
+                let tg_cognition = cognition.clone();
+                let bot_service = TelegramService::new(
+                    tg_settings.bot_token,
+                    tg_cognition,
+                    tg_settings.allowed_users,
+                ).with_task_queue(tg_queue);
+
+                info!("📡 Telegram bot configured with TaskQueue integration");
+                Some(tokio::spawn(async move {
+                    if let Err(e) = bot_service.start().await {
+                        tracing::error!("Telegram bot error: {}", e);
+                    }
+                }))
+            } else {
+                info!("⚠️  Telegram not configured — skipping bot startup");
+                None
+            };
+
+            // Recover any pending tasks from DB (handles restarts)
+            let pending = task_queue.recover_pending().await.unwrap_or_default();
+            for pending_task in pending {
+                let _ = task_queue.enqueue(pending_task).await;
+            }
+
+            // Clone services for the factory closure
+            let project_service_clone = project_service.clone();
+            let task_service_clone = task_service.clone();
+            let watch_service_clone = watch_service.clone();
+            let agent_service_clone = agent_service.clone();
+            let timeline_clone = timeline_service.clone();
+
+            // Start REST API server in background
+            let api_runtime = AgentRuntime::new(
+                agent_id.clone(),
+                cognition.clone(),
+                registry.clone(),
+                project_service.clone(),
+                task_service.clone(),
+                watch_service.clone(),
+                agent_service.clone(),
+            );
+            let api_handle = tokio::spawn(async move {
+                if let Err(e) = start_server(
+                    api_runtime,
+                    timeline_clone,
+                    agent_service_clone,
+                    project_service_clone,
+                    task_service_clone,
+                    watch_service_clone,
+                    port,
+                ).await {
+                    tracing::error!("API server error: {}", e);
+                }
+            });
+
+            // Launch the TaskQueue dispatch loop
+            let tq_clone = Arc::clone(&task_queue);
+            let tq_engine = cognition.clone();
+            let tq_registry = registry.clone();
+            let tq_project = project_service.clone();
+            let tq_task = task_service.clone();
+            let tq_watch = watch_service.clone();
+            let tq_agent = agent_service.clone();
+
+            info!("⚙️  TaskQueue dispatch loop starting with {} max workers", workers);
+            tq_clone.run_dispatch_loop(
+                task_receiver,
+                workers,
+                move |agent_id_str| {
+                    let engine = tq_engine.clone();
+                    let registry = tq_registry.clone();
+                    let project = tq_project.clone();
+                    let task = tq_task.clone();
+                    let watch = tq_watch.clone();
+                    let agent = tq_agent.clone();
+                    async move {
+                        Ok(AgentRuntime::new(
+                            agent_id_str,
+                            engine,
+                            registry,
+                            project,
+                            task,
+                            watch,
+                            agent,
+                        ))
+                    }
+                },
+            ).await;
+
+            // Wait for other services
+            if let Some(h) = tg_handle { let _ = h.await; }
+            let _ = api_handle.await;
+
+            info!("🔴 Gestalt Nexus daemon shutting down.");
+        }
+
+        Some(Commands::Queue { goal, priority }) => {
+            // Direct CLI task injection into the queue
+            let (task_queue, _receiver) = TaskQueue::new(db.clone(), 1);
+            let queued = QueuedTask::new(
+                goal.clone(),
+                TaskSource::Cli { invocation: format!("gestalt queue '{}'", &goal[..goal.len().min(60)]) },
+                priority,
+            );
+            task_queue.enqueue(queued).await?;
+            if cli.json {
+                println!(r#"{{"status": "queued", "goal": "{}", "priority": {} }}"#, goal, priority);
+            } else {
+                println!("📥 Task queued: '{}' (priority: {})", &goal[..goal.len().min(80)], priority);
+                println!("   Start the Nexus daemon to process: gestalt nexus");
+            }
+        }
+
+
+        Some(Commands::Agent { action }) => {
+            let dispatcher = DispatcherService::new(Arc::new(timeline_service.clone()));
+
+            match action {
+                AgentCommands::Spawn { agent_type, prompt } => {
+                    let task_name = dispatcher.spawn_agent(&agent_type, &prompt).await?;
+                    if cli.json {
+                        println!(r#"{{"status": "spawned", "agent_type": "{}", "task_id": "{}"}}"#, agent_type, task_name);
+                    } else {
+                        println!("🚀 Spawned background agent: {} (Task ID: {})", agent_type, task_name);
+                    }
+                }
+                AgentCommands::Ps => {
+                    // MVP implementation
+                    println!("📋 Agent process list (Check timeline for outputs)");
+                }
+            }
         }
 
         None => {
@@ -532,11 +698,11 @@ async fn main() -> anyhow::Result<()> {
              // But we handled prompt above. So if we are here, prompt was None and command was None.
              // Start REPL in that case.
 
-             // Initialize cognition service
-            let cognition = init_cognition(&db, &timeline_service, &settings.cognition).await?;
+             // Initialize decision engine
+            let engine = init_decision_engine(&settings.cognition).await?;
 
             // Run REPL
-            repl::run_repl(&agent_id, cognition).await?;
+            repl::run_repl(&agent_id, engine).await?;
         }
     }
 

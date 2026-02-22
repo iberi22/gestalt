@@ -17,7 +17,7 @@ use crate::services::TimelineService;
 #[derive(Debug, Clone)]
 pub enum WatchMessage {
     /// A new timeline event occurred
-    Event(TimelineEvent),
+    Event(Box<TimelineEvent>),
     /// A broadcast message from another agent
     Broadcast { agent_id: String, message: String },
     /// System shutdown signal
@@ -132,7 +132,7 @@ impl WatchService {
                 }
 
                 // Broadcast to subscribers
-                let _ = self.tx.send(WatchMessage::Event(event.clone()));
+                let _ = self.tx.send(WatchMessage::Event(Box::new(event.clone())));
             }
 
             tokio::time::sleep(poll_interval).await;

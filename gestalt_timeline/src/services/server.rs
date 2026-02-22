@@ -1,17 +1,18 @@
 use axum::{
-    extract::{State, Json, Path},
-    routing::{get, post, put, delete}, // Added put, delete
+    extract::{State, Json, Path, ws::{WebSocketUpgrade, WebSocket, Message}},
+    http::{StatusCode, HeaderMap},
+    routing::{get, post, put, delete},
+    middleware::{self, Next},
+    response::{IntoResponse, Response},
     Router,
-    http::StatusCode,
 };
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
 use tokio::net::TcpListener;
 use tower_http::cors::CorsLayer;
 use tracing::info;
 use chrono::{DateTime, Utc};
 
-use crate::services::{AgentRuntime, TimelineService, AgentService, ProjectService, TaskService};
+use crate::services::{AgentRuntime, TimelineService, AgentService, ProjectService, TaskService, WatchService};
 use crate::models::{TaskStatus}; // Import TaskStatus
 
 #[derive(Clone)]
@@ -21,6 +22,7 @@ pub struct AppState {
     pub agent: AgentService,
     pub project: ProjectService,
     pub task: TaskService,
+    pub _watch: WatchService,
 }
 
 #[derive(Deserialize)]
@@ -56,10 +58,7 @@ pub struct ScheduleTaskRequest {
     pub time: DateTime<Utc>,
 }
 
-#[derive(Deserialize)]
-pub struct SetModelRequest {
-    pub model_id: String,
-}
+
 
 #[derive(Deserialize)]
 pub struct SetModeRequest {
@@ -79,6 +78,7 @@ pub async fn start_server(
     agent: AgentService,
     project: ProjectService,
     task: TaskService,
+    watch: WatchService,
     port: u16,
 ) -> anyhow::Result<()> {
     let state = AppState {
@@ -87,14 +87,13 @@ pub async fn start_server(
         agent,
         project,
         task,
+        _watch: watch,
     };
 
     let app = Router::new()
         .route("/orchestrate", post(run_orchestration))
         .route("/timeline", get(get_timeline))
         .route("/agents", get(get_agents))
-        .route("/models", get(get_models)) // NEW
-        .route("/config/model", post(set_active_model)) // NEW
         .route("/projects", get(get_projects).post(create_project))
         .route("/projects/:id", delete(delete_project))
         .route("/tasks", get(get_tasks).post(create_task))
@@ -103,6 +102,8 @@ pub async fn start_server(
         .route("/tasks/:id/schedule", post(schedule_task_endpoint))
         .route("/health", get(health_check))
         .route("/config/mode", get(get_agent_mode).post(set_agent_mode)) // Agent mode toggle
+        .route("/stream", get(ws_handler))
+        .layer(middleware::from_fn(auth_middleware))
         .layer(CorsLayer::permissive()) // Allow Flutter app to access
         .with_state(state);
 
@@ -113,6 +114,91 @@ pub async fn start_server(
     axum::serve(listener, app).await?;
 
     Ok(())
+}
+
+/// Security Middleware that checks GESTALT_API_TOKEN
+async fn auth_middleware(
+    headers: HeaderMap,
+    req: axum::extract::Request,
+    next: Next,
+) -> Result<Response, StatusCode> {
+    let expected_token = std::env::var("GESTALT_API_TOKEN").unwrap_or_default();
+    if expected_token.is_empty() {
+        return Ok(next.run(req).await);
+    }
+
+    let mut authorized = false;
+
+    // Check Header
+    if let Some(auth_header) = headers.get("Authorization") {
+        if let Ok(auth_str) = auth_header.to_str() {
+            if auth_str == format!("Bearer {}", expected_token) {
+                authorized = true;
+            }
+        }
+    }
+
+    // Check Query Param
+    if let Some(query) = req.uri().query() {
+        if query.contains(&format!("token={}", expected_token)) {
+            authorized = true;
+        }
+    }
+
+    if authorized {
+        Ok(next.run(req).await)
+    } else {
+        Err(StatusCode::UNAUTHORIZED)
+    }
+}
+
+/// WebSocket Handler for UI Real-Time Streaming
+async fn ws_handler(
+    ws: WebSocketUpgrade,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    ws.on_upgrade(move |socket| handle_socket(socket, state))
+}
+
+async fn handle_socket(mut socket: WebSocket, state: AppState) {
+    let mut last_check = Utc::now();
+    let poll_interval = tokio::time::Duration::from_millis(500);
+
+    // Initial fetch to populate UI (last 2 hours)
+    if let Ok(initial_events) = state.timeline.get_timeline(Some("2h")).await {
+        for event in initial_events.into_iter().rev() {
+            if let Ok(json) = serde_json::to_string(&event) {
+                if socket.send(Message::Text(json)).await.is_err() {
+                    return;
+                }
+            }
+        }
+    }
+
+    // Stream loop
+    loop {
+        // Send a ping to detect disconnections
+        if socket.send(Message::Ping(vec![])).await.is_err() {
+            break;
+        }
+
+        if let Ok(events) = state.timeline.get_events_since(last_check).await {
+            for event in events {
+                let ts_utc = event.timestamp.0;
+                if ts_utc > last_check {
+                    last_check = ts_utc;
+                }
+
+                if let Ok(json) = serde_json::to_string(&event) {
+                    if socket.send(Message::Text(json)).await.is_err() {
+                        return;
+                    }
+                }
+            }
+        }
+
+        tokio::time::sleep(poll_interval).await;
+    }
 }
 
 /// Handler: Trigger autonomous loop
@@ -287,32 +373,7 @@ async fn schedule_task_endpoint(
     }
 }
 
-/// Handler: Get available models
-async fn get_models(
-    State(state): State<AppState>,
-) -> (StatusCode, Json<Vec<String>>) {
-    match state.runtime.list_models().await {
-        Ok(models) => (StatusCode::OK, Json(models)),
-        Err(e) => {
-            info!("Failed to list models: {}", e);
-            (StatusCode::INTERNAL_SERVER_ERROR, Json(vec![]))
-        }
-    }
-}
 
-/// Handler: Set active model
-async fn set_active_model(
-    State(state): State<AppState>,
-    Json(payload): Json<SetModelRequest>,
-) -> StatusCode {
-    match state.runtime.set_model(&payload.model_id).await {
-        Ok(_) => StatusCode::OK,
-        Err(e) => {
-            info!("Failed to set model: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        }
-    }
-}
 
 /// Handler: Simple health check
 async fn health_check() -> StatusCode {

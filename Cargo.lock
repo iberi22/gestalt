@@ -3304,6 +3304,7 @@ dependencies = [
  "gestalt_core",
  "rustyline",
  "serde_json",
+ "synapse-agentic",
  "tokio",
  "toml",
  "tracing",

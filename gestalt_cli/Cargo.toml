@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 gestalt_core = { path = "../gestalt_core" }
+synapse-agentic = { path = "../../synapse-agentic" }
 tokio = { version = "1.37", features = ["full"] }
 clap = { version = "4.5", features = ["derive"] }
 dotenv = "0.15"

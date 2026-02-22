@@ -22,7 +22,7 @@ impl RepoManager for OctoRepoManager {
         // For MVP, just wrapping the metadata
         Ok(Repository {
             id: uuid::Uuid::new_v4().to_string(),
-            name: url.split('/').last().unwrap_or("unknown").to_string(),
+            name: url.split('/').next_back().unwrap_or("unknown").to_string(),
             url: url.to_string(),
             local_path: None,
         })

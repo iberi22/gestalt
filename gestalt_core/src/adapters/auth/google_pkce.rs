@@ -15,6 +15,12 @@ pub struct GoogleAuthFlow {
     client: BasicClient,
 }
 
+impl Default for GoogleAuthFlow {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl GoogleAuthFlow {
     pub fn new() -> Self {
         let client_id = std::env::var("GOOGLE_OAUTH_CLIENT_ID")
@@ -55,7 +61,7 @@ impl GoogleAuthFlow {
 
         println!("Waiting for callback on port {}...", port);
 
-        for stream in listener.incoming() {
+        if let Some(stream) = listener.incoming().next() {
             let mut stream = stream?;
             let mut reader = BufReader::new(&stream);
             let mut first_line = String::new();

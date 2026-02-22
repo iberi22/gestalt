@@ -83,7 +83,7 @@ pub struct LoggingConfig {
 }
 
 /// Gestalt main configuration
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Default)]
 pub struct GestaltConfig {
     pub llm: Option<LlmConfig>,
     pub database: Option<DatabaseConfig>,
@@ -188,17 +188,6 @@ impl GestaltConfig {
                 format: Some("json".to_string()),
                 file: None,
             })),
-        }
-    }
-}
-
-impl Default for GestaltConfig {
-    fn default() -> Self {
-        Self {
-            llm: None,
-            database: None,
-            mcp: None,
-            logging: None,
         }
     }
 }

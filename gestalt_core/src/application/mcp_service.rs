@@ -9,6 +9,12 @@ pub struct McpService {
     clients: HashMap<String, Arc<dyn McpClientPort>>,
 }
 
+impl Default for McpService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl McpService {
     pub fn new() -> Self {
         Self {

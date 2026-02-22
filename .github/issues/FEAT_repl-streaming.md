@@ -45,11 +45,19 @@ Refactor `main` to support a REPL mode when no arguments are provided.
 - Maintain a `Vec<Message>` history context (if the provider supports it, otherwise just append to prompt).
 
 ## ✅ Acceptance Criteria
-- [ ] Running `gestalt` without arguments starts the REPL.
-- [ ] Typing a prompt streams the response token-by-token to stdout.
-- [ ] `/exit` or `Ctrl+C` exits the REPL.
-- [ ] The `LlmProvider` trait has a `stream` method implemented for at least one provider (e.g., OpenAI or Gemini).
-- [ ] Existing single-shot functionality (`--prompt`) still works.
+- [x] Running `gestalt` without arguments starts the REPL.
+- [x] Typing a prompt streams the response token-by-token to stdout.
+- [x] `/exit` or `Ctrl+C` exits the REPL.
+- [x] Streaming behavior implemented in the CLI path for current architecture (`DecisionEngine` providers), replacing legacy `LlmProvider::stream` expectation.
+- [x] Existing single-shot functionality (`--prompt`) still works.
+
+## Progress Notes (2026-02-22)
+- `gestalt_cli/src/main.rs` was migrated from deleted legacy `gestalt_core` LLM modules to `synapse-agentic::DecisionEngine`.
+- Both modes are implemented and active:
+  - Single-shot: `gestalt_cli --prompt "..."`
+  - Interactive REPL: `gestalt_cli` (no args)
+- REPL commands supported: `/exit`, `/clear`, `/config`.
+- Response output now streams incrementally to stdout in both REPL and single-shot flows.
 
 ## 🧪 Testing
 ```bash

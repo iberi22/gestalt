@@ -9,9 +9,9 @@ _Última actualización: 2025-12-19_
 ## 🔄 Conciencia del Proyecto y Contexto
 
 ### Al iniciar cualquier conversación:
-1. **Siempre leer `PLANNING.md`** para entender la arquitectura, objetivos y restricciones del proyecto.
-2. **Consultar `TASK.md`** antes de comenzar cualquier trabajo. Si la tarea no está listada, añadirla con descripción breve y fecha.
-3. **Usar convenciones de nombres, estructura de archivos y patrones de arquitectura** descritos en `PLANNING.md`.
+1. **Siempre leer `.gitcore/ARCHITECTURE.md`** para entender la arquitectura, objetivos y restricciones del proyecto.
+2. **Consultar `.gitcore/planning/TASK.md` o GitHub Issues** antes de comenzar cualquier trabajo. Si la tarea no está listada, añadirla con descripción breve y fecha.
+3. **Usar convenciones de nombres, estructura de archivos y patrones de arquitectura** descritos en `.gitcore/ARCHITECTURE.md`.
 
 ### Línea de Tiempo:
 4. **Registrar timestamp en todas las operaciones**. El tiempo es la variable primaria del sistema.
@@ -51,8 +51,8 @@ _Última actualización: 2025-12-19_
 
 ## ✅ Completar Tareas
 
-17. **Marcar tareas completadas en `TASK.md`** inmediatamente después de terminarlas.
-18. **Añadir nuevas sub-tareas o TODOs descubiertos** a `TASK.md` bajo "Tareas Descubiertas Durante el Desarrollo".
+17. **Marcar tareas completadas en `.gitcore/planning/TASK.md` o Issues** inmediatamente después de terminarlas.
+18. **Añadir nuevas sub-tareas o TODOs descubiertos** bajo "Tareas Descubiertas" en los archivos de planificación correspondientes en `.gitcore/planning/`.
 19. **Actualizar `CHANGELOG.md`** cuando se complete una feature significativa.
 
 ---
@@ -118,11 +118,12 @@ pub fn example(param1: &str) -> Result<String, Error> {
 
 | Documento | Propósito |
 |-----------|-----------|
-| `PLANNING.md` | Arquitectura y decisiones técnicas |
-| `TASK.md` | Estado actual de tareas |
+| `.gitcore/ARCHITECTURE.md` | Arquitectura y decisiones técnicas |
+| `.gitcore/planning/TASK.md` | Estado actual (Histórico) / Issues (Activo) |
 | `README.md` | Guía de uso y roadmap |
 | `CHANGELOG.md` | Historial de cambios |
 | `RULES.md` | Este archivo |
+| `AGENTS.md` | Configuración de Agentes |
 
 ---
 

@@ -4,33 +4,30 @@
 //! instead of implementing our own OAuth flow.
 
 use oauth2::{
-    basic::BasicClient, ClientId, ClientSecret, TokenUrl,
-    RefreshToken, TokenResponse,
-    reqwest::async_http_client,
+    basic::BasicClient, reqwest::async_http_client, ClientId, ClientSecret, RefreshToken,
+    TokenResponse, TokenUrl,
 };
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use tokio::fs;
-use serde::{Deserialize, Serialize};
 use tracing::info;
 
 /// Get OAuth Client ID from environment variable.
 /// Set GOOGLE_OAUTH_CLIENT_ID in your environment or .env file.
 fn get_oauth_client_id() -> String {
-    std::env::var("GOOGLE_OAUTH_CLIENT_ID")
-        .unwrap_or_else(|_| {
-            tracing::warn!("GOOGLE_OAUTH_CLIENT_ID not set, using default");
-            "YOUR_CLIENT_ID_HERE".to_string()
-        })
+    std::env::var("GOOGLE_OAUTH_CLIENT_ID").unwrap_or_else(|_| {
+        tracing::warn!("GOOGLE_OAUTH_CLIENT_ID not set, using default");
+        "YOUR_CLIENT_ID_HERE".to_string()
+    })
 }
 
 /// Get OAuth Client Secret from environment variable.
 /// Set GOOGLE_OAUTH_CLIENT_SECRET in your environment or .env file.
 fn get_oauth_client_secret() -> String {
-    std::env::var("GOOGLE_OAUTH_CLIENT_SECRET")
-        .unwrap_or_else(|_| {
-            tracing::warn!("GOOGLE_OAUTH_CLIENT_SECRET not set, using default");
-            "YOUR_CLIENT_SECRET_HERE".to_string()
-        })
+    std::env::var("GOOGLE_OAUTH_CLIENT_SECRET").unwrap_or_else(|_| {
+        tracing::warn!("GOOGLE_OAUTH_CLIENT_SECRET not set, using default");
+        "YOUR_CLIENT_SECRET_HERE".to_string()
+    })
 }
 
 /// Token structure matching gemini-cli's oauth_creds.json format.
@@ -112,11 +109,13 @@ pub async fn refresh_access_token(refresh_token: &str) -> anyhow::Result<GeminiC
 
     let new_token = GeminiCliToken {
         access_token: token_result.access_token().secret().clone(),
-        refresh_token: token_result.refresh_token().map(|t| t.secret().clone())
+        refresh_token: token_result
+            .refresh_token()
+            .map(|t| t.secret().clone())
             .or_else(|| Some(refresh_token.to_string())), // Keep old refresh token if not returned
-        expiry_date: token_result.expires_in().map(|d| {
-            chrono::Utc::now().timestamp_millis() + (d.as_secs() as i64 * 1000)
-        }),
+        expiry_date: token_result
+            .expires_in()
+            .map(|d| chrono::Utc::now().timestamp_millis() + (d.as_secs() as i64 * 1000)),
         scope: None,
         token_type: Some("Bearer".to_string()),
         id_token: None,
@@ -130,21 +129,23 @@ pub async fn refresh_access_token(refresh_token: &str) -> anyhow::Result<GeminiC
 
 /// Get a valid access token, refreshing if necessary.
 pub async fn get_valid_access_token() -> anyhow::Result<String> {
-    let cached = load_cached_credentials().await
-        .ok_or_else(|| anyhow::anyhow!(
-            "No Gemini CLI credentials found. Run `gemini` CLI to login first."
-        ))?;
+    let cached = load_cached_credentials().await.ok_or_else(|| {
+        anyhow::anyhow!("No Gemini CLI credentials found. Run `gemini` CLI to login first.")
+    })?;
 
     // Check if token is expired (expiry_date is in milliseconds)
     if let Some(expiry_date) = cached.expiry_date {
         let now = chrono::Utc::now().timestamp_millis();
-        if now >= expiry_date - 60_000 { // Refresh 60 seconds before expiry
+        if now >= expiry_date - 60_000 {
+            // Refresh 60 seconds before expiry
             if let Some(refresh_token) = &cached.refresh_token {
                 info!("Access token expired, refreshing...");
                 let new_token = refresh_access_token(refresh_token).await?;
                 return Ok(new_token.access_token);
             } else {
-                anyhow::bail!("Token expired and no refresh token available. Run `gemini` CLI again.");
+                anyhow::bail!(
+                    "Token expired and no refresh token available. Run `gemini` CLI again."
+                );
             }
         }
     }

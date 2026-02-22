@@ -1,17 +1,38 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:web_socket_channel/web_socket_channel.dart';
 import '../models/agent.dart';
 import '../models/project.dart';
 import '../models/task.dart';
 
 class ApiService {
   final String baseUrl;
+  final String wsUrl;
+  final String token;
 
-  ApiService({this.baseUrl = 'http://127.0.0.1:3000'});
+  ApiService({
+    this.baseUrl = 'http://127.0.0.1:3000',
+    this.wsUrl = 'ws://127.0.0.1:3000',
+    this.token = 'secreto123',
+  });
+
+  Map<String, String> get _authHeaders => {
+    'Authorization': 'Bearer $token',
+  };
+
+  Map<String, String> get _postHeaders => {
+    'Content-Type': 'application/json',
+    'Authorization': 'Bearer $token',
+  };
+
+  WebSocketChannel get timelineStream {
+    final uri = Uri.parse('$wsUrl/stream?token=$token');
+    return WebSocketChannel.connect(uri);
+  }
 
   Future<List<Agent>> getAgents() async {
     try {
-      final response = await http.get(Uri.parse('$baseUrl/agents'));
+      final response = await http.get(Uri.parse('$baseUrl/agents'), headers: _authHeaders);
       if (response.statusCode == 200) {
         final List<dynamic> jsonList = json.decode(response.body);
         return jsonList.map((json) => Agent.fromJson(json)).toList();
@@ -24,7 +45,7 @@ class ApiService {
 
   Future<List<Project>> getProjects() async {
     try {
-      final response = await http.get(Uri.parse('$baseUrl/projects'));
+      final response = await http.get(Uri.parse('$baseUrl/projects'), headers: _authHeaders);
       if (response.statusCode == 200) {
         final List<dynamic> jsonList = json.decode(response.body);
         return jsonList.map((json) => Project.fromJson(json)).toList();
@@ -37,7 +58,7 @@ class ApiService {
 
   Future<List<dynamic>> getTimeline() async {
     try {
-      final response = await http.get(Uri.parse('$baseUrl/timeline'));
+      final response = await http.get(Uri.parse('$baseUrl/timeline'), headers: _authHeaders);
       if (response.statusCode == 200) {
         return json.decode(response.body);
       }
@@ -49,7 +70,7 @@ class ApiService {
 
   Future<List<Task>> getTasks() async {
     try {
-      final response = await http.get(Uri.parse('$baseUrl/tasks'));
+      final response = await http.get(Uri.parse('$baseUrl/tasks'), headers: _authHeaders);
       if (response.statusCode == 200) {
         final List<dynamic> jsonList = json.decode(response.body);
         return jsonList.map((json) => Task.fromJson(json)).toList();
@@ -64,7 +85,7 @@ class ApiService {
     try {
       await http.post(
         Uri.parse('$baseUrl/orchestrate'),
-        headers: {'Content-Type': 'application/json'},
+        headers: _postHeaders,
         body: json.encode({'goal': goal}),
       );
     } catch (e) {
@@ -78,7 +99,7 @@ class ApiService {
     try {
       final response = await http.post(
         Uri.parse('$baseUrl/projects'),
-        headers: {'Content-Type': 'application/json'},
+        headers: _postHeaders,
         body: json.encode({'name': name}),
       );
       return response.statusCode == 201;
@@ -90,7 +111,7 @@ class ApiService {
 
   Future<bool> deleteProject(String id) async {
     try {
-      final response = await http.delete(Uri.parse('$baseUrl/projects/$id'));
+      final response = await http.delete(Uri.parse('$baseUrl/projects/$id'), headers: _authHeaders);
       return response.statusCode == 204;
     } catch (e) {
       print('Error deleting project: $e');
@@ -104,7 +125,7 @@ class ApiService {
     try {
       final response = await http.post(
         Uri.parse('$baseUrl/tasks'),
-        headers: {'Content-Type': 'application/json'},
+        headers: _postHeaders,
         body: json.encode({'project': project, 'description': description}),
       );
       return response.statusCode == 201;
@@ -122,7 +143,7 @@ class ApiService {
 
       final response = await http.put(
         Uri.parse('$baseUrl/tasks/$id'),
-        headers: {'Content-Type': 'application/json'},
+        headers: _postHeaders,
         body: json.encode(body),
       );
       return response.statusCode == 200;
@@ -134,7 +155,7 @@ class ApiService {
 
   Future<bool> deleteTask(String id) async {
     try {
-      final response = await http.delete(Uri.parse('$baseUrl/tasks/$id'));
+      final response = await http.delete(Uri.parse('$baseUrl/tasks/$id'), headers: _authHeaders);
       return response.statusCode == 204;
     } catch (e) {
       print('Error deleting task: $e');
@@ -144,7 +165,7 @@ class ApiService {
 
   Future<bool> runTask(String id) async {
     try {
-      final response = await http.post(Uri.parse('$baseUrl/tasks/$id/run'));
+      final response = await http.post(Uri.parse('$baseUrl/tasks/$id/run'), headers: _authHeaders);
       return response.statusCode == 200;
     } catch (e) {
       print('Error running task: $e');
@@ -154,7 +175,7 @@ class ApiService {
 
   Future<bool> checkHealth() async {
     try {
-      final response = await http.get(Uri.parse('$baseUrl/health'));
+      final response = await http.get(Uri.parse('$baseUrl/health'), headers: _authHeaders);
       return response.statusCode == 200;
     } catch (e) {
       print('Error checking health: $e');
@@ -164,7 +185,7 @@ class ApiService {
 
   Future<List<String>> getModels() async {
     try {
-      final response = await http.get(Uri.parse('$baseUrl/models'));
+      final response = await http.get(Uri.parse('$baseUrl/models'), headers: _authHeaders);
       if (response.statusCode == 200) {
         final List<dynamic> data = json.decode(response.body);
         return data.cast<String>();
@@ -180,7 +201,7 @@ class ApiService {
     try {
       final response = await http.post(
         Uri.parse('$baseUrl/config/model'),
-        headers: {'Content-Type': 'application/json'},
+        headers: _postHeaders,
         body: json.encode({'model_id': modelId}),
       );
       return response.statusCode == 200;
@@ -193,7 +214,7 @@ class ApiService {
   /// Get current agent mode (build/plan)
   Future<Map<String, dynamic>?> getMode() async {
     try {
-      final response = await http.get(Uri.parse('$baseUrl/config/mode'));
+      final response = await http.get(Uri.parse('$baseUrl/config/mode'), headers: _authHeaders);
       if (response.statusCode == 200) {
         return json.decode(response.body);
       }
@@ -208,7 +229,7 @@ class ApiService {
     try {
       final response = await http.post(
         Uri.parse('$baseUrl/config/mode'),
-        headers: {'Content-Type': 'application/json'},
+        headers: _postHeaders,
         body: json.encode({'mode': mode}),
       );
       return response.statusCode == 200;

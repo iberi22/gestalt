@@ -5,28 +5,63 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use tracing::info;
 
+use crate::models::{AgentRuntimeState, RuntimePhase};
 use crate::services::{AgentService, ProjectService, TaskService, WatchService};
 use synapse_agentic::prelude::{DecisionContext, DecisionEngine, EmptyContext, ToolRegistry};
 
 /// Orchestration action executed by AgentRuntime.
 #[derive(Debug, Clone)]
 pub enum OrchestrationAction {
-    CreateProject { name: String, description: Option<String> },
-    CreateTask { project: String, description: String },
-    RunTask { task_id: String },
+    CreateProject {
+        name: String,
+        description: Option<String>,
+    },
+    CreateTask {
+        project: String,
+        description: String,
+    },
+    RunTask {
+        task_id: String,
+    },
     ListProjects,
-    ListTasks { project: Option<String> },
-    GetStatus { project: String },
-    Chat { response: String },
-    ReadFile { path: String },
-    WriteFile { path: String, content: String },
-    ExecuteShell { command: String },
-    StartJob { name: String, command: String },
-    StopJob { name: String },
+    ListTasks {
+        project: Option<String>,
+    },
+    GetStatus {
+        project: String,
+    },
+    Chat {
+        response: String,
+    },
+    ReadFile {
+        path: String,
+    },
+    WriteFile {
+        path: String,
+        content: String,
+    },
+    ExecuteShell {
+        command: String,
+    },
+    StartJob {
+        name: String,
+        command: String,
+    },
+    StopJob {
+        name: String,
+    },
     ListJobs,
-    DelegateTask { agent: String, goal: String },
-    CallAgent { tool: String, args: Value },
-    AwaitJob { job_id: String },
+    DelegateTask {
+        agent: String,
+        goal: String,
+    },
+    CallAgent {
+        tool: String,
+        args: Value,
+    },
+    AwaitJob {
+        job_id: String,
+    },
 }
 
 /// The Autonomous Agent Runtime.
@@ -73,35 +108,150 @@ impl AgentRuntime {
         info!("Goal: {}", goal);
 
         use crate::services::AgentStatus;
-        let _ = self.agent.set_status(&self.agent_id, AgentStatus::Busy).await;
+        let _ = self
+            .agent
+            .set_status(&self.agent_id, AgentStatus::Busy)
+            .await;
 
         let mut conversation_history = Vec::new();
-        conversation_history.push(format!("GOAL: {}\n\nPlease start working on this goal.", goal));
+        conversation_history.push(format!(
+            "GOAL: {}\n\nPlease start working on this goal.",
+            goal
+        ));
+        let started_at = crate::models::FlexibleTimestamp::now();
+        self.persist_state(
+            goal,
+            0,
+            RuntimePhase::Running,
+            None,
+            None,
+            &conversation_history,
+            started_at.clone(),
+            None,
+            None,
+        )
+        .await?;
 
-        for step in 0..self.max_steps {
-            info!("Step {}/{}", step + 1, self.max_steps);
-            let actions = self.next_actions(goal, &conversation_history).await?;
+        let loop_result: Result<()> = async {
+            for step in 0..self.max_steps {
+                info!("Step {}/{}", step + 1, self.max_steps);
+                let actions = self.next_actions(goal, &conversation_history).await?;
 
-            if actions.is_empty() {
-                info!("Agent decided to stop (no actions).");
-                break;
+                if actions.is_empty() {
+                    info!("Agent decided to stop (no actions).");
+                    self.persist_state(
+                        goal,
+                        step,
+                        RuntimePhase::Completed,
+                        None,
+                        Some("Agent returned no actions; loop stopped."),
+                        &conversation_history,
+                        started_at.clone(),
+                        Some(crate::models::FlexibleTimestamp::now()),
+                        None,
+                    )
+                    .await?;
+                    return Ok(());
+                }
+
+                for action in actions {
+                    conversation_history.push(format!("Action: {:?}", action));
+                    let observation = match self.execute_action(&action).await {
+                        Ok(obs) => obs,
+                        Err(e) => format!("Error: {}", e),
+                    };
+                    conversation_history.push(format!("Observation: {}", observation));
+                    self.persist_state(
+                        goal,
+                        step + 1,
+                        RuntimePhase::Running,
+                        Some(&action),
+                        Some(&observation),
+                        &conversation_history,
+                        started_at.clone(),
+                        None,
+                        None,
+                    )
+                    .await?;
+                }
             }
 
-            for action in actions {
-                conversation_history.push(format!("Action: {:?}", action));
-                let observation = match self.execute_action(&action).await {
-                    Ok(obs) => obs,
-                    Err(e) => format!("Error: {}", e),
-                };
-                conversation_history.push(format!("Observation: {}", observation));
-            }
+            self.persist_state(
+                goal,
+                self.max_steps,
+                RuntimePhase::Completed,
+                None,
+                Some("Loop finished."),
+                &conversation_history,
+                started_at.clone(),
+                Some(crate::models::FlexibleTimestamp::now()),
+                None,
+            )
+            .await?;
+            Ok(())
+        }
+        .await;
+
+        let _ = self
+            .agent
+            .set_status(&self.agent_id, AgentStatus::Idle)
+            .await;
+        if let Err(e) = loop_result {
+            let _ = self
+                .persist_state(
+                    goal,
+                    0,
+                    RuntimePhase::Failed,
+                    None,
+                    Some("Loop failed."),
+                    &conversation_history,
+                    started_at,
+                    Some(crate::models::FlexibleTimestamp::now()),
+                    Some(e.to_string()),
+                )
+                .await;
+            return Err(e);
         }
 
-        let _ = self.agent.set_status(&self.agent_id, AgentStatus::Idle).await;
         Ok(())
     }
 
-    async fn next_actions(&self, goal: &str, history: &[String]) -> Result<Vec<OrchestrationAction>> {
+    async fn persist_state(
+        &self,
+        goal: &str,
+        step: usize,
+        phase: RuntimePhase,
+        last_action: Option<&OrchestrationAction>,
+        last_observation: Option<&str>,
+        history: &[String],
+        started_at: crate::models::FlexibleTimestamp,
+        finished_at: Option<crate::models::FlexibleTimestamp>,
+        error: Option<String>,
+    ) -> Result<()> {
+        let mut state = AgentRuntimeState::new(&self.agent_id, goal, self.max_steps);
+        state.phase = phase;
+        state.current_step = step;
+        state.last_action = last_action.map(|a| format!("{:?}", a));
+        state.last_observation = last_observation.map(ToOwned::to_owned);
+        state.history_tail = history.iter().rev().take(20).cloned().collect::<Vec<_>>();
+        state.history_tail.reverse();
+        state.started_at = started_at;
+        state.updated_at = crate::models::FlexibleTimestamp::now();
+        state.finished_at = finished_at;
+        state.error = error;
+
+        let db = self.watch.db();
+        let _saved: AgentRuntimeState = db
+            .upsert("agent_runtime_states", &self.agent_id, &state)
+            .await?;
+        Ok(())
+    }
+
+    async fn next_actions(
+        &self,
+        goal: &str,
+        history: &[String],
+    ) -> Result<Vec<OrchestrationAction>> {
         let history_summary = history
             .iter()
             .rev()
@@ -113,7 +263,10 @@ impl AgentRuntime {
         let context = DecisionContext::new("orchestration")
             .with_summary(format!("goal: {}\n\nhistory:\n{}", goal, history_summary));
         let decision = self.engine.decide(&context).await?;
-        Ok(Self::map_decision_to_actions(&decision.action, &decision.reasoning))
+        Ok(Self::map_decision_to_actions(
+            &decision.action,
+            &decision.reasoning,
+        ))
     }
 
     fn map_decision_to_actions(action: &str, reasoning: &str) -> Vec<OrchestrationAction> {
@@ -132,12 +285,20 @@ impl AgentRuntime {
 
     async fn execute_action(&self, action: &OrchestrationAction) -> Result<String> {
         match action {
-            OrchestrationAction::CreateProject { name, description: _description } => {
+            OrchestrationAction::CreateProject {
+                name,
+                description: _description,
+            } => {
                 self.project.create_project(name, &self.agent_id).await?;
                 Ok(format!("Created Project '{}'", name))
             }
-            OrchestrationAction::CreateTask { project, description } => {
-                self.task.create_task(project, description, &self.agent_id).await?;
+            OrchestrationAction::CreateTask {
+                project,
+                description,
+            } => {
+                self.task
+                    .create_task(project, description, &self.agent_id)
+                    .await?;
                 Ok(format!("Created Task in '{}'", project))
             }
             OrchestrationAction::RunTask { task_id } => {
@@ -154,18 +315,19 @@ impl AgentRuntime {
             }
             OrchestrationAction::GetStatus { project } => {
                 let status = self.project.get_status(project).await?;
-                Ok(format!("Project '{}' is {}% complete", project, status.progress_percent))
+                Ok(format!(
+                    "Project '{}' is {}% complete",
+                    project, status.progress_percent
+                ))
             }
             OrchestrationAction::Chat { response } => {
                 info!("Agent says: {}", response);
                 Ok(format!("Agent said: {}", response))
             }
-            OrchestrationAction::ReadFile { path } => {
-                match tokio::fs::read_to_string(path).await {
-                    Ok(content) => Ok(format!("File '{}' content:\n{}", path, content)),
-                    Err(e) => Ok(format!("Error reading file '{}': {}", path, e)),
-                }
-            }
+            OrchestrationAction::ReadFile { path } => match tokio::fs::read_to_string(path).await {
+                Ok(content) => Ok(format!("File '{}' content:\n{}", path, content)),
+                Err(e) => Ok(format!("Error reading file '{}': {}", path, e)),
+            },
             OrchestrationAction::WriteFile { path, content } => {
                 if let Some(parent) = std::path::Path::new(path).parent() {
                     tokio::fs::create_dir_all(parent).await?;
@@ -218,7 +380,10 @@ impl AgentRuntime {
                         let id = child.id().unwrap_or(0);
                         let mut jobs = self.jobs.lock().await;
                         jobs.insert(name.clone(), child);
-                        Ok(format!("Job '{}' started successfully (PID: {}).", name, id))
+                        Ok(format!(
+                            "Job '{}' started successfully (PID: {}).",
+                            name, id
+                        ))
                     }
                     Err(e) => Ok(format!("Failed to start job '{}': {}", name, e)),
                 }
@@ -260,7 +425,10 @@ impl AgentRuntime {
 
                 let _ = self.agent.connect(&sub_agent_id, Some(agent)).await;
                 match Box::pin(async move { sub_runtime.run_loop(goal).await }).await {
-                    Ok(_) => Ok(format!("Delegated task to '{}' completed successfully.", agent)),
+                    Ok(_) => Ok(format!(
+                        "Delegated task to '{}' completed successfully.",
+                        agent
+                    )),
                     Err(e) => Ok(format!("Delegated task to '{}' failed: {}", agent, e)),
                 }
             }
@@ -286,7 +454,8 @@ impl AgentRuntime {
                 #[cfg(target_os = "windows")]
                 let mut cmd = tokio::process::Command::new("powershell");
                 #[cfg(target_os = "windows")]
-                cmd.arg("-Command").arg(format!("{} {}", tool, argv.join(" ")));
+                cmd.arg("-Command")
+                    .arg(format!("{} {}", tool, argv.join(" ")));
 
                 #[cfg(not(target_os = "windows"))]
                 let mut cmd = tokio::process::Command::new(tool);
@@ -311,7 +480,9 @@ impl AgentRuntime {
                 if let Some(mut child) = jobs.remove(job_id.as_str()) {
                     drop(jobs);
                     match child.wait().await {
-                        Ok(status) => Ok(format!("Job '{}' finished with status: {}", job_id, status)),
+                        Ok(status) => {
+                            Ok(format!("Job '{}' finished with status: {}", job_id, status))
+                        }
                         Err(e) => Ok(format!("Error waiting for job '{}': {}", job_id, e)),
                     }
                 } else {

@@ -1,6 +1,6 @@
 //! CLI module for Gestalt Timeline
 
-pub mod repl;
 mod commands;
+pub mod repl;
 
 pub use commands::{AgentCommands, Cli, Commands};

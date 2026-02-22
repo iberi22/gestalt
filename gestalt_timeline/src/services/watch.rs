@@ -57,6 +57,11 @@ impl WatchService {
         self.running.load(Ordering::SeqCst)
     }
 
+    /// Get a clone of the DB client for internal service coordination.
+    pub fn db(&self) -> SurrealClient {
+        self.db.clone()
+    }
+
     /// Start watching timeline events.
     ///
     /// This is the persistent process that runs until cancelled.
@@ -123,7 +128,11 @@ impl WatchService {
                     ts_utc.format("%H:%M:%S"),
                     event.agent_id,
                     event.event_type,
-                    event.id.as_ref().map(|x| x.to_string()).unwrap_or_else(|| "none".to_string())
+                    event
+                        .id
+                        .as_ref()
+                        .map(|x| x.to_string())
+                        .unwrap_or_else(|| "none".to_string())
                 );
 
                 // Update last_check to strictly follow the latest event seen

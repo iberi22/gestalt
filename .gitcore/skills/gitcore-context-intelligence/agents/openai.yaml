@@ -1,0 +1,4 @@
+interface:
+  display_name: "GitCore Context Intelligence"
+  short_description: "Infers active work from git changes and issues"
+  default_prompt: "Audit git status, local issues, and GitHub issues to infer active work and project state under Git-Core protocol."

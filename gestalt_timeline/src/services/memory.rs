@@ -4,11 +4,11 @@
 //! with basic content-based search. Sprint 3 will add pgvector embeddings.
 
 use anyhow::Result;
+use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::info;
-use chrono::Utc;
 
 use crate::db::SurrealClient;
 
@@ -88,7 +88,8 @@ impl MemoryService {
         let fragment = MemoryFragment::new(agent_id, content, context, tags);
 
         // Persist to SurrealDB
-        let saved = self.db
+        let saved = self
+            .db
             .create("memories", &fragment)
             .await
             .map_err(|e| anyhow::anyhow!("Failed to save memory: {}", e))?;
@@ -100,8 +101,10 @@ impl MemoryService {
             stm.pop_front();
         }
 
-        info!("🧠 Memory saved [agent={}] context='{}' tags={:?}",
-              saved.agent_id, saved.context, saved.tags);
+        info!(
+            "🧠 Memory saved [agent={}] context='{}' tags={:?}",
+            saved.agent_id, saved.context, saved.tags
+        );
 
         Ok(saved)
     }
@@ -114,17 +117,23 @@ impl MemoryService {
         agent_id: Option<&str>,
         limit: usize,
     ) -> Result<Vec<MemoryFragment>> {
-        info!("🔍 Searching memories for '{}' (agent={:?}, limit={})", query, agent_id, limit);
+        info!(
+            "🔍 Searching memories for '{}' (agent={:?}, limit={})",
+            query, agent_id, limit
+        );
 
         // First check short-term cache for quick hits
         let stm = self.short_term.read().await;
         let query_lower = query.to_lowercase();
 
-        let cached: Vec<MemoryFragment> = stm.iter()
+        let cached: Vec<MemoryFragment> = stm
+            .iter()
             .filter(|m| {
                 let agent_match = agent_id.is_none_or(|a| m.agent_id == a);
                 let content_match = m.content.to_lowercase().contains(&query_lower)
-                    || m.tags.iter().any(|t| t.to_lowercase().contains(&query_lower));
+                    || m.tags
+                        .iter()
+                        .any(|t| t.to_lowercase().contains(&query_lower));
                 agent_match && content_match
             })
             .take(limit)
@@ -146,13 +155,10 @@ impl MemoryService {
     }
 
     /// Retrieve recent memories for an agent (most recent first).
-    pub async fn recent(
-        &self,
-        agent_id: &str,
-        limit: usize,
-    ) -> Result<Vec<MemoryFragment>> {
+    pub async fn recent(&self, agent_id: &str, limit: usize) -> Result<Vec<MemoryFragment>> {
         let stm = self.short_term.read().await;
-        let cached: Vec<MemoryFragment> = stm.iter()
+        let cached: Vec<MemoryFragment> = stm
+            .iter()
             .rev()
             .filter(|m| m.agent_id == agent_id)
             .take(limit)

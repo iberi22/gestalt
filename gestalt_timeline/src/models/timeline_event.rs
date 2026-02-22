@@ -113,6 +113,14 @@ pub enum EventType {
     AgentDisconnected,
     /// A CLI command was executed
     CommandExecuted,
+    /// Sub-agent CLI launched in background
+    SubAgentSpawned(String),
+    /// Partial or total output of sub-agent
+    SubAgentOutput(String),
+    /// Sub-agent completed successfully
+    SubAgentCompleted(String),
+    /// Sub-agent failed
+    SubAgentFailed(String),
     /// Custom event type
     Custom(String),
 }
@@ -146,6 +154,18 @@ impl<'de> Deserialize<'de> for EventType {
             "agent_disconnected" => Ok(EventType::AgentDisconnected),
             "command_executed" => Ok(EventType::CommandExecuted),
             other => {
+                if let Some(agent) = other.strip_prefix("sub_agent_spawned:") {
+                    return Ok(EventType::SubAgentSpawned(agent.to_string()));
+                }
+                if let Some(agent) = other.strip_prefix("sub_agent_output:") {
+                    return Ok(EventType::SubAgentOutput(agent.to_string()));
+                }
+                if let Some(agent) = other.strip_prefix("sub_agent_completed:") {
+                    return Ok(EventType::SubAgentCompleted(agent.to_string()));
+                }
+                if let Some(agent) = other.strip_prefix("sub_agent_failed:") {
+                    return Ok(EventType::SubAgentFailed(agent.to_string()));
+                }
                 if let Some(custom) = other.strip_prefix("custom:") {
                     Ok(EventType::Custom(custom.to_string()))
                 } else {
@@ -171,6 +191,10 @@ impl fmt::Display for EventType {
             EventType::AgentConnected => write!(f, "agent_connected"),
             EventType::AgentDisconnected => write!(f, "agent_disconnected"),
             EventType::CommandExecuted => write!(f, "command_executed"),
+            EventType::SubAgentSpawned(s) => write!(f, "sub_agent_spawned:{}", s),
+            EventType::SubAgentOutput(s) => write!(f, "sub_agent_output:{}", s),
+            EventType::SubAgentCompleted(s) => write!(f, "sub_agent_completed:{}", s),
+            EventType::SubAgentFailed(s) => write!(f, "sub_agent_failed:{}", s),
             EventType::Custom(s) => {
                 if s.starts_with("custom:") {
                     write!(f, "{}", s)

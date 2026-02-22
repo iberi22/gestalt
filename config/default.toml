@@ -1,5 +1,5 @@
-# Gestalt Configuration - Ready for MiniMax API
-# Configure your API key to enable MiniMax
+# Gestalt Configuration - MiniMax API Ready
+# Configured by user
 
 # Database Configuration
 [database]
@@ -14,14 +14,8 @@ database = "timeline"
 provider = "minimax"
 model_id = "MiniMax-M2.1"
 
-# Uncomment and configure your API key:
-# minimax_api_key = "${MINIMAX_API_KEY}"
-# Or set environment variable: export MINIMAX_API_KEY="your_key"
-
-# Alternative: Use Gemini
-# [cognition]
-# provider = "gemini"
-# model_id = "gemini-1.5-pro"
+# API Key from environment variable: MINIMAX_API_KEY
+# Already configured by user
 
 # Agent Configuration
 [agent]

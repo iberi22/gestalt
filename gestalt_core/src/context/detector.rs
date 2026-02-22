@@ -1,5 +1,5 @@
-use std::path::Path;
 use super::ProjectType;
+use std::path::Path;
 
 pub fn detect_project_type(path: &Path) -> ProjectType {
     if path.join("Cargo.toml").exists() {

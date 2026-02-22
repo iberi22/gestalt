@@ -3,14 +3,14 @@
 //! Manages headless execution of external CLI agents (like codex, gemini, claude)
 //! and captures their output into the Universal Timeline.
 
-use tokio::process::Command;
-use std::process::Stdio;
-use tokio::io::{AsyncBufReadExt, BufReader};
-use tracing::{info, error};
-use anyhow::Result;
-use std::sync::Arc;
-use crate::services::TimelineService;
 use crate::models::EventType;
+use crate::services::TimelineService;
+use anyhow::Result;
+use std::process::Stdio;
+use std::sync::Arc;
+use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::process::Command;
+use tracing::{error, info};
 
 /// Background dispatcher for CLI agents
 #[derive(Clone)]
@@ -29,13 +29,18 @@ impl DispatcherService {
         let agent_type_str = agent_type.to_string();
         let prompt_str = prompt.to_string();
 
-        info!("Spawning background CLI agent: {} '{}'", agent_type_str, prompt_str);
+        info!(
+            "Spawning background CLI agent: {} '{}'",
+            agent_type_str, prompt_str
+        );
 
         // Record spawn event
-        self.timeline.emit(
-            &agent_type_str,
-            EventType::SubAgentSpawned(format!("{} {}", agent_type_str, prompt_str))
-        ).await?;
+        self.timeline
+            .emit(
+                &agent_type_str,
+                EventType::SubAgentSpawned(format!("{} {}", agent_type_str, prompt_str)),
+            )
+            .await?;
 
         let tl_clone = self.timeline.clone();
 
@@ -59,40 +64,53 @@ impl DispatcherService {
                     let a_type_inner = agent_type_str.clone();
                     tokio::spawn(async move {
                         while let Ok(Some(line)) = reader.next_line().await {
-                            let _ = tl_inner.emit(
-                                &a_type_inner,
-                                EventType::SubAgentOutput(line)
-                            ).await;
+                            let _ = tl_inner
+                                .emit(&a_type_inner, EventType::SubAgentOutput(line))
+                                .await;
                         }
                     });
 
                     match child.wait().await {
                         Ok(status) if status.success() => {
-                            let _ = tl_clone.emit(
-                                &agent_type_str,
-                                EventType::SubAgentCompleted(format!("Exited with {}", status))
-                            ).await;
+                            let _ = tl_clone
+                                .emit(
+                                    &agent_type_str,
+                                    EventType::SubAgentCompleted(format!("Exited with {}", status)),
+                                )
+                                .await;
                         }
                         Ok(status) => {
-                            let _ = tl_clone.emit(
-                                &agent_type_str,
-                                EventType::SubAgentFailed(format!("Exited with error: {}", status))
-                            ).await;
+                            let _ = tl_clone
+                                .emit(
+                                    &agent_type_str,
+                                    EventType::SubAgentFailed(format!(
+                                        "Exited with error: {}",
+                                        status
+                                    )),
+                                )
+                                .await;
                         }
                         Err(e) => {
-                            let _ = tl_clone.emit(
-                                &agent_type_str,
-                                EventType::SubAgentFailed(format!("Execution context failed: {}", e))
-                            ).await;
+                            let _ = tl_clone
+                                .emit(
+                                    &agent_type_str,
+                                    EventType::SubAgentFailed(format!(
+                                        "Execution context failed: {}",
+                                        e
+                                    )),
+                                )
+                                .await;
                         }
                     }
                 }
                 Err(e) => {
                     error!("Failed to spawn {}: {}", agent_type_str, e);
-                    let _ = tl_clone.emit(
-                        &agent_type_str,
-                        EventType::SubAgentFailed(format!("Spawn failed: {}", e))
-                    ).await;
+                    let _ = tl_clone
+                        .emit(
+                            &agent_type_str,
+                            EventType::SubAgentFailed(format!("Spawn failed: {}", e)),
+                        )
+                        .await;
                 }
             }
         });

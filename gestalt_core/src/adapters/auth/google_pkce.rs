@@ -1,15 +1,12 @@
 use oauth2::{
-    basic::BasicClient, ClientId, ClientSecret, TokenUrl, AuthUrl,
-    PkceCodeChallenge,
-    AuthorizationCode, CsrfToken, Scope,
-    reqwest::async_http_client,
-    TokenResponse,
+    basic::BasicClient, reqwest::async_http_client, AuthUrl, AuthorizationCode, ClientId,
+    ClientSecret, CsrfToken, PkceCodeChallenge, Scope, TokenResponse, TokenUrl,
 };
-use std::net::TcpListener;
 use std::io::{BufRead, BufReader, Write};
+use std::net::TcpListener;
 use url::Url;
 
-use crate::adapters::auth::google_oauth::{GeminiCliToken, save_credentials};
+use crate::adapters::auth::google_oauth::{save_credentials, GeminiCliToken};
 
 pub struct GoogleAuthFlow {
     client: BasicClient,
@@ -23,8 +20,9 @@ impl Default for GoogleAuthFlow {
 
 impl GoogleAuthFlow {
     pub fn new() -> Self {
-        let client_id = std::env::var("GOOGLE_OAUTH_CLIENT_ID")
-            .unwrap_or_else(|_| "474415174526-j0j8j8j8j8j8j8j8j8j8j8j8j8j8j8j8.apps.googleusercontent.com".to_string());
+        let client_id = std::env::var("GOOGLE_OAUTH_CLIENT_ID").unwrap_or_else(|_| {
+            "474415174526-j0j8j8j8j8j8j8j8j8j8j8j8j8j8j8j8.apps.googleusercontent.com".to_string()
+        });
         let client_secret = std::env::var("GOOGLE_OAUTH_CLIENT_SECRET")
             .unwrap_or_else(|_| "YOUR_OAUTH_SECRET".to_string());
 
@@ -41,10 +39,15 @@ impl GoogleAuthFlow {
     pub async fn login(&self) -> anyhow::Result<GeminiCliToken> {
         let (pkce_challenge, pkce_verifier) = PkceCodeChallenge::new_random_sha256();
 
-        let (auth_url, _csrf_token) = self.client
+        let (auth_url, _csrf_token) = self
+            .client
             .authorize_url(CsrfToken::new_random)
-            .add_scope(Scope::new("https://www.googleapis.com/auth/cloud-platform".to_string()))
-            .add_scope(Scope::new("https://www.googleapis.com/auth/userinfo.email".to_string()))
+            .add_scope(Scope::new(
+                "https://www.googleapis.com/auth/cloud-platform".to_string(),
+            ))
+            .add_scope(Scope::new(
+                "https://www.googleapis.com/auth/userinfo.email".to_string(),
+            ))
             .set_pkce_challenge(pkce_challenge)
             .url();
 
@@ -77,7 +80,8 @@ impl GoogleAuthFlow {
             );
             stream.write_all(response.as_bytes())?;
 
-            let token_result = self.client
+            let token_result = self
+                .client
                 .exchange_code(AuthorizationCode::new(auth_code))
                 .set_pkce_verifier(pkce_verifier)
                 .request_async(async_http_client)
@@ -86,9 +90,9 @@ impl GoogleAuthFlow {
             let token = GeminiCliToken {
                 access_token: token_result.access_token().secret().clone(),
                 refresh_token: token_result.refresh_token().map(|t| t.secret().clone()),
-                expiry_date: token_result.expires_in().map(|d| {
-                    chrono::Utc::now().timestamp_millis() + (d.as_secs() as i64 * 1000)
-                }),
+                expiry_date: token_result
+                    .expires_in()
+                    .map(|d| chrono::Utc::now().timestamp_millis() + (d.as_secs() as i64 * 1000)),
                 scope: None,
                 token_type: Some("Bearer".to_string()),
                 id_token: None,
@@ -104,10 +108,13 @@ impl GoogleAuthFlow {
 
 fn extract_code(line: &str) -> anyhow::Result<String> {
     let url_parts: Vec<&str> = line.split_whitespace().collect();
-    if url_parts.len() < 2 { anyhow::bail!("Invalid HTTP request"); }
+    if url_parts.len() < 2 {
+        anyhow::bail!("Invalid HTTP request");
+    }
 
     let url = Url::parse(&format!("http://localhost{}", url_parts[1]))?;
-    let code = url.query_pairs()
+    let code = url
+        .query_pairs()
         .find(|(name, _)| name == "code")
         .map(|(_, value)| value.into_owned())
         .ok_or_else(|| anyhow::anyhow!("No code found in URL"))?;

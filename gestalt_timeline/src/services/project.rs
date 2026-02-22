@@ -5,7 +5,9 @@ use surrealdb::sql::Thing;
 use tracing::debug;
 
 use crate::db::SurrealClient;
-use crate::models::{EventType, Project, ProjectStatus, ProjectStatusInfo, Task, FlexibleTimestamp};
+use crate::models::{
+    EventType, FlexibleTimestamp, Project, ProjectStatus, ProjectStatusInfo, Task,
+};
 use crate::services::TimelineService;
 
 /// Helper to convert Option<Thing> to String
@@ -71,7 +73,10 @@ impl ProjectService {
         // Get tasks for this project
         let project_id_str = thing_to_string(&project.id);
         let query = "SELECT * FROM tasks WHERE project_id = $project_id";
-        let tasks: Vec<Task> = self.db.query_with(query, ("project_id", &project_id_str)).await?;
+        let tasks: Vec<Task> = self
+            .db
+            .query_with(query, ("project_id", &project_id_str))
+            .await?;
 
         let total_tasks = tasks.len();
         let completed_tasks = tasks
@@ -125,7 +130,9 @@ impl ProjectService {
 
         // Delete tasks first
         let query = "DELETE FROM tasks WHERE project_id = $project_id";
-        self.db.query_with::<serde_json::Value>(query, ("project_id", project_id)).await?;
+        self.db
+            .query_with::<serde_json::Value>(query, ("project_id", project_id))
+            .await?;
 
         // Delete project
         self.db.delete("projects", project_id).await?;

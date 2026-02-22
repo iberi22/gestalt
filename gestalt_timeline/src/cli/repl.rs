@@ -1,8 +1,8 @@
 use anyhow::Result;
 use rustyline::error::ReadlineError;
 use rustyline::DefaultEditor;
-use tracing::warn;
 use std::sync::Arc;
+use tracing::warn;
 
 use synapse_agentic::prelude::*;
 
@@ -77,16 +77,15 @@ pub async fn run_repl(_agent_id: &str, engine: Arc<DecisionEngine>) -> Result<()
                 };
 
                 println!("🤖 Thinking...");
-                let context = DecisionContext::new("repl")
-                    .with_summary(&prompt_with_context);
+                let context = DecisionContext::new("repl").with_summary(&prompt_with_context);
 
                 match engine.decide(&context).await {
                     Ok(decision) => {
-                         println!("{}", decision.reasoning);
+                        println!("{}", decision.reasoning);
 
-                         // Update local history
-                         messages.push(format!("User: {}", input));
-                         messages.push(format!("AI: {}", decision.reasoning));
+                        // Update local history
+                        messages.push(format!("User: {}", input));
+                        messages.push(format!("AI: {}", decision.reasoning));
                     }
                     Err(e) => {
                         println!("❌ Error: {}", e);

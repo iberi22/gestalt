@@ -16,12 +16,7 @@ async fn init_tool_registry() -> Arc<ToolRegistry> {
     registry
 }
 
-async fn init_services() -> Result<(
-    ProjectService,
-    TaskService,
-    WatchService,
-    AgentService,
-)> {
+async fn init_services() -> Result<(ProjectService, TaskService, WatchService, AgentService)> {
     let db_settings = DatabaseSettings {
         url: "mem://".to_string(),
         user: "root".to_string(),

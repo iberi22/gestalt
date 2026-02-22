@@ -3,30 +3,30 @@
 //! Centralized configuration system with environment variable override.
 //! Uses the `config` crate for TOML/YAML/JSON support.
 
+use config::Config as ConfigBuilder;
 use serde::Deserialize;
 use std::env;
 use std::path::Path;
 use thiserror::Error;
-use config::Config as ConfigBuilder;
 
 /// Configuration errors
 #[derive(Debug, Error)]
 pub enum ConfigError {
     #[error("File not found: {0}")]
     FileNotFound(String),
-    
+
     #[error("Parse error: {0}")]
     ParseError(String),
-    
+
     #[error("Validation error: {0}")]
     ValidationError(String),
-    
+
     #[error("Environment variable error: {0}")]
     EnvError(String),
-    
+
     #[error("IO error: {0}")]
     IoError(#[from] std::io::Error),
-    
+
     #[error("Configuration error: {0}")]
     ConfigError(#[from] config::ConfigError),
 }
@@ -95,41 +95,54 @@ impl GestaltConfig {
     /// Load configuration from file (TOML, YAML, or JSON)
     pub fn from_file(path: &Path) -> Result<Self, ConfigError> {
         if !path.exists() {
-            return Err(ConfigError::FileNotFound(path.to_string_lossy().to_string()));
+            return Err(ConfigError::FileNotFound(
+                path.to_string_lossy().to_string(),
+            ));
         }
-        
+
         let settings = ConfigBuilder::builder()
             .add_source(config::File::with_name(&path.to_string_lossy()))
             .build()?;
-        
-        settings.try_deserialize::<GestaltConfig>().map_err(|e| ConfigError::ParseError(e.to_string()))
+
+        settings
+            .try_deserialize::<GestaltConfig>()
+            .map_err(|e| ConfigError::ParseError(e.to_string()))
     }
-    
+
     /// Load configuration from environment variables
     /// Uses GESTALT_* prefix with double underscores for nesting
     pub fn from_env() -> Result<Self, ConfigError> {
         let mut config = GestaltConfig::default();
-        
+
         // LLM configuration from env
-        if let Ok(api_key) = env::var("GESTALT_LLM__API_KEY") {
+        let llm_api_key = env::var("GESTALT_LLM__API_KEY").ok();
+        let llm_default_provider = env::var("GESTALT_LLM__DEFAULT_PROVIDER").ok();
+        let llm_temperature = env::var("GESTALT_LLM__TEMPERATURE")
+            .ok()
+            .and_then(|v| v.parse().ok());
+        let llm_max_tokens = env::var("GESTALT_LLM__MAX_TOKENS")
+            .ok()
+            .and_then(|v| v.parse().ok());
+
+        if llm_api_key.is_some()
+            || llm_default_provider.is_some()
+            || llm_temperature.is_some()
+            || llm_max_tokens.is_some()
+        {
             config.llm = Some(LlmConfig {
                 providers: vec![ProviderConfig {
                     name: "default".to_string(),
                     provider_type: "default".to_string(),
-                    api_key: Some(api_key),
+                    api_key: llm_api_key,
                     base_url: None,
                     model: None,
                 }],
-                default_provider: env::var("GESTALT_LLM__DEFAULT_PROVIDER").ok(),
-                temperature: env::var("GESTALT_LLM__TEMPERATURE")
-                    .ok()
-                    .and_then(|v| v.parse().ok()),
-                max_tokens: env::var("GESTALT_LLM__MAX_TOKENS")
-                    .ok()
-                    .and_then(|v| v.parse().ok()),
+                default_provider: llm_default_provider,
+                temperature: llm_temperature,
+                max_tokens: llm_max_tokens,
             });
         }
-        
+
         // Database configuration from env
         if let Ok(url) = env::var("GESTALT_DATABASE__URL") {
             config.database = Some(DatabaseConfig {
@@ -138,7 +151,7 @@ impl GestaltConfig {
                 path: env::var("GESTALT_DATABASE__PATH").ok(),
             });
         }
-        
+
         // MCP configuration from env
         if let Ok(server_url) = env::var("GESTALT_MCP__SERVER_URL") {
             config.mcp = Some(McpConfig {
@@ -151,7 +164,7 @@ impl GestaltConfig {
                     .and_then(|v| v.parse().ok()),
             });
         }
-        
+
         // Logging configuration from env
         if let Ok(level) = env::var("GESTALT_LOGGING__LEVEL") {
             config.logging = Some(LoggingConfig {
@@ -160,10 +173,10 @@ impl GestaltConfig {
                 file: env::var("GESTALT_LOGGING__FILE").ok(),
             });
         }
-        
+
         Ok(config)
     }
-    
+
     /// Merge with defaults
     pub fn with_defaults(self) -> Self {
         Self {
@@ -200,10 +213,10 @@ pub fn load_config(config_paths: &[&Path]) -> Result<GestaltConfig, ConfigError>
             return GestaltConfig::from_file(path);
         }
     }
-    
+
     // Fall back to environment
     let config = GestaltConfig::from_env()?;
-    
+
     // Apply defaults
     Ok(config.with_defaults())
 }
@@ -211,32 +224,32 @@ pub fn load_config(config_paths: &[&Path]) -> Result<GestaltConfig, ConfigError>
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_default_config() {
         let config = GestaltConfig::default();
         assert!(config.llm.is_none());
         assert!(config.database.is_none());
     }
-    
+
     #[test]
     fn test_config_with_defaults() {
         let config = GestaltConfig::default().with_defaults();
         assert!(config.llm.is_some());
         assert!(config.database.is_some());
     }
-    
+
     #[test]
     fn test_env_override() {
         // Set environment variable
         env::set_var("GESTALT_LLM__TEMPERATURE", "0.5");
-        
+
         let config = GestaltConfig::from_env();
         assert!(config.is_ok());
         let config = config.unwrap();
         assert!(config.llm.is_some());
         assert_eq!(config.llm.unwrap().temperature, Some(0.5));
-        
+
         // Clean up
         env::remove_var("GESTALT_LLM__TEMPERATURE");
     }

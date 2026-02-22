@@ -1,9 +1,8 @@
-use crate::ports::outbound::llm_provider::{LlmProvider};
-use crate::ports::outbound::repo_manager::{VectorDb, RepoManager};
-use std::sync::Arc;
-use synapse_agentic::prelude::*;
 use super::tools::create_gestalt_tools;
 use super::AgentMode;
+use crate::ports::outbound::repo_manager::{RepoManager, VectorDb};
+use std::sync::Arc;
+use synapse_agentic::prelude::*;
 
 #[derive(Debug)]
 pub enum GestaltInput {
@@ -14,7 +13,6 @@ pub enum GestaltInput {
 }
 
 pub struct GestaltAgent {
-    _llm: Arc<dyn LlmProvider>,
     _vector_db: Arc<dyn VectorDb>,
     _repo_manager: Arc<dyn RepoManager>,
     _mode: AgentMode,
@@ -22,14 +20,9 @@ pub struct GestaltAgent {
 }
 
 impl GestaltAgent {
-    pub async fn new(
-        llm: Arc<dyn LlmProvider>,
-        vector_db: Arc<dyn VectorDb>,
-        repo_manager: Arc<dyn RepoManager>,
-    ) -> Self {
+    pub async fn new(vector_db: Arc<dyn VectorDb>, repo_manager: Arc<dyn RepoManager>) -> Self {
         let registry = create_gestalt_tools(repo_manager.clone(), vector_db.clone()).await;
         Self {
-            _llm: llm,
             _vector_db: vector_db,
             _repo_manager: repo_manager,
             _mode: AgentMode::Build,
@@ -51,14 +44,18 @@ impl Agent for GestaltAgent {
             GestaltInput::Ask { repo_url, question } => {
                 tracing::info!("Agent searching for answer: {}", question);
 
-                // 1. Initialize Decision Engine
+                // 1. Initialize Decision Engine using Synapse framework
                 let engine = DecisionEngine::builder()
-                    .with_provider(crate::adapters::llm::gemini::GeminiProvider::new("gemini-1.5-pro".to_string()))
+                    .with_provider(GeminiProvider::new(
+                        std::env::var("GEMINI_API_KEY").unwrap_or_default(),
+                        "gemini-1.5-pro".to_string(),
+                    ))
                     .build();
 
                 // 2. Main reasoning loop
                 let mut history = String::new();
-                for _ in 0..5 { // Limit to 5 iterations
+                for _ in 0..5 {
+                    // Limit to 5 iterations
                     let context = DecisionContext::new(&question)
                         .with_metadata("repo_url", repo_url.clone())
                         .with_metadata("history", history.clone());
@@ -78,7 +75,7 @@ impl Agent for GestaltAgent {
                 }
                 Ok(())
             }
-            _ => Ok(()) // Other cases handled by basic logic or state machine
+            _ => Ok(()), // Other cases handled by basic logic or state machine
         }
     }
 }

@@ -25,7 +25,10 @@ fn test_add_project_parsing() {
 fn test_add_task_parsing() {
     let cli = Cli::try_parse_from(["gestalt", "add-task", "my-proj", "do work"]).unwrap();
     match cli.command {
-        Some(Commands::AddTask { project, description }) => {
+        Some(Commands::AddTask {
+            project,
+            description,
+        }) => {
             assert_eq!(project, "my-proj");
             assert_eq!(description, "do work");
         }
@@ -55,7 +58,8 @@ fn test_watch_parsing() {
 
 #[test]
 fn test_broadcast_parsing() {
-    let cli = Cli::try_parse_from(["gestalt", "broadcast", "hello", "--project", "proj-1"]).unwrap();
+    let cli =
+        Cli::try_parse_from(["gestalt", "broadcast", "hello", "--project", "proj-1"]).unwrap();
     match cli.command {
         Some(Commands::Broadcast { message, project }) => {
             assert_eq!(message, "hello");

@@ -4,11 +4,11 @@
 //! Persists them to SurrealDB and dispatches to available AgentRuntime workers.
 
 use anyhow::Result;
+use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::mpsc;
-use tracing::{info, warn, error};
-use chrono::Utc;
+use tracing::{error, info, warn};
 
 use crate::db::SurrealClient;
 
@@ -76,26 +76,30 @@ impl TaskQueue {
     /// The caller is responsible for running the dispatch loop with the receiver.
     pub fn new(db: SurrealClient, buffer: usize) -> (Self, mpsc::Receiver<QueuedTask>) {
         let (sender, receiver) = mpsc::channel(buffer);
-        let queue = Self {
-            db,
-            sender,
-        };
+        let queue = Self { db, sender };
         (queue, receiver)
     }
 
     /// Enqueue a task — thread-safe, can be called from any ingestion source.
     pub async fn enqueue(&self, task: QueuedTask) -> Result<()> {
-        info!("📥 [TaskQueue] Enqueuing task: '{}' (source: {:?}, priority: {})",
-              &task.goal[..task.goal.len().min(80)], task.source, task.priority);
+        info!(
+            "📥 [TaskQueue] Enqueuing task: '{}' (source: {:?}, priority: {})",
+            &task.goal[..task.goal.len().min(80)],
+            task.source,
+            task.priority
+        );
 
         // Persist to SurrealDB for durability
-        let _saved = self.db
+        let _saved = self
+            .db
             .create("task_queue", &task)
             .await
             .map_err(|e| anyhow::anyhow!("Failed to persist queued task: {}", e))?;
 
         // Send to dispatch channel
-        self.sender.send(task).await
+        self.sender
+            .send(task)
+            .await
             .map_err(|e| anyhow::anyhow!("TaskQueue channel closed: {}", e))?;
 
         Ok(())
@@ -113,7 +117,10 @@ impl TaskQueue {
             .await
             .map_err(|e| anyhow::anyhow!("Failed to recover pending tasks: {}", e))?;
 
-        info!("🔄 [TaskQueue] Recovered {} pending tasks from DB", pending.len());
+        info!(
+            "🔄 [TaskQueue] Recovered {} pending tasks from DB",
+            pending.len()
+        );
         Ok(pending)
     }
 
@@ -130,39 +137,59 @@ impl TaskQueue {
         F: Fn(String) -> Fut + Send + Sync + Clone + 'static,
         Fut: std::future::Future<Output = Result<crate::services::AgentRuntime>> + Send + 'static,
     {
-        info!("🚦 [TaskQueue] Dispatch loop started (max_concurrent={})", max_concurrent);
+        info!(
+            "🚦 [TaskQueue] Dispatch loop started (max_concurrent={})",
+            max_concurrent
+        );
 
         let semaphore = Arc::new(tokio::sync::Semaphore::new(max_concurrent));
         let db = self.db.clone();
 
         while let Some(task) = receiver.recv().await {
             let goal = task.goal.clone();
-            let task_id = task.id.as_ref().map(|t| t.to_string()).unwrap_or_else(|| "unknown".to_string());
+            let task_id = task
+                .id
+                .as_ref()
+                .map(|t| t.to_string())
+                .unwrap_or_else(|| "unknown".to_string());
             let sem = semaphore.clone();
             let factory = make_runtime.clone();
             let db_clone = db.clone();
 
-            info!("🎯 [TaskQueue] Dispatching task '{}' (id={})", &goal[..goal.len().min(60)], task_id);
+            info!(
+                "🎯 [TaskQueue] Dispatching task '{}' (id={})",
+                &goal[..goal.len().min(60)],
+                task_id
+            );
 
             tokio::spawn(async move {
                 // Acquire semaphore slot (limits concurrency)
                 let _permit = match sem.acquire().await {
                     Ok(p) => p,
-                    Err(e) => { error!("Semaphore error: {}", e); return; }
+                    Err(e) => {
+                        error!("Semaphore error: {}", e);
+                        return;
+                    }
                 };
 
                 // Build agent runtime for this task
                 let agent_id = format!("worker-{}", chrono::Utc::now().timestamp_millis());
                 match factory(agent_id.clone()).await {
                     Ok(runtime) => {
-                        info!("🤖 [TaskQueue] Agent '{}' starting goal: {}", agent_id, &goal[..goal.len().min(60)]);
+                        info!(
+                            "🤖 [TaskQueue] Agent '{}' starting goal: {}",
+                            agent_id,
+                            &goal[..goal.len().min(60)]
+                        );
                         match runtime.run_loop(&goal).await {
                             Ok(_) => {
                                 info!("✅ [TaskQueue] Agent '{}' completed goal.", agent_id);
-                                let _ = db_clone.query_with::<serde_json::Value>(
-                                    "UPDATE task_queue SET status = 'Completed' WHERE id = $id",
-                                    serde_json::json!({ "id": task_id }),
-                                ).await;
+                                let _ = db_clone
+                                    .query_with::<serde_json::Value>(
+                                        "UPDATE task_queue SET status = 'Completed' WHERE id = $id",
+                                        serde_json::json!({ "id": task_id }),
+                                    )
+                                    .await;
                             }
                             Err(e) => {
                                 warn!("❌ [TaskQueue] Agent '{}' failed: {}", agent_id, e);

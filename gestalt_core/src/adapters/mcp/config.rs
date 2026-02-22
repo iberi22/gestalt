@@ -28,6 +28,9 @@ pub async fn load_gemini_mcp_configs() -> anyhow::Result<HashMap<String, McpServ
     let content = fs::read_to_string(&settings_path).await?;
     let settings: GeminiSettings = serde_json::from_str(&content)?;
 
-    info!("Loaded {} MCP servers from Gemini settings", settings.mcp_servers.len());
+    info!(
+        "Loaded {} MCP servers from Gemini settings",
+        settings.mcp_servers.len()
+    );
     Ok(settings.mcp_servers)
 }

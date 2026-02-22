@@ -34,13 +34,13 @@ When user says "I need X" or "Fix Y":
 
 ## 🔄 The Loop (Workflow)
 
-1. **READ**: `.✨/ARCHITECTURE.md` + `gh issue list --assignee @me`
+1. **READ**: `.gitcore/ARCHITECTURE.md` + `gh issue list --assignee @me`
 2. **ACT**: `git checkout -b feat/issue-N` -> Code -> Test
 3. **UPDATE**: `git commit` -> `gh pr create`
 
 ## 🏗️ Architecture First
 Before implementing infrastructure:
-1. Read `.✨/ARCHITECTURE.md`
+1. Read `.gitcore/ARCHITECTURE.md`
 2. If conflict, ARCHITECTURE wins.
 
 ## ⚛️ Atomic Commits

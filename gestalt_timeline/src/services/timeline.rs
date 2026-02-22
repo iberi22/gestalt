@@ -77,10 +77,7 @@ impl TimelineService {
             LIMIT 100
         "#;
 
-        let events: Vec<TimelineEvent> = self
-            .db
-            .query_with(query, ("since", since_time))
-            .await?;
+        let events: Vec<TimelineEvent> = self.db.query_with(query, ("since", since_time)).await?;
 
         Ok(events)
     }
@@ -98,6 +95,22 @@ impl TimelineService {
             .db
             .query_with(query, ("project_id", project_id))
             .await?;
+
+        Ok(events)
+    }
+
+    /// Get events strictly after a specific timestamp.
+    pub async fn get_events_since(
+        &self,
+        since: chrono::DateTime<Utc>,
+    ) -> Result<Vec<TimelineEvent>> {
+        let query = r#"
+            SELECT * FROM timeline_events
+            WHERE timestamp > $since
+            ORDER BY timestamp ASC
+        "#;
+
+        let events: Vec<TimelineEvent> = self.db.query_with(query, ("since", since)).await?;
 
         Ok(events)
     }

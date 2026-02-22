@@ -24,7 +24,7 @@ Your state is GitHub Issues. Not memory. Not files. GitHub Issues.
 
 ## 🛡️ Architecture Verification Rule (MANDATORY)
 **BEFORE implementing ANY infrastructure/tooling:**
-1. Read `.✨/ARCHITECTURE.md` CRITICAL DECISIONS section
+1. Read `.gitcore/ARCHITECTURE.md` CRITICAL DECISIONS section
 2. Verify your implementation matches the decided stack
 3. If issue mentions alternatives, ARCHITECTURE.md decision wins
 
@@ -41,7 +41,7 @@ cargo test -p gestalt_core
 ### Phase 1: READ (Context Loading)
 ```bash
 # 1. Architecture
-cat .✨/ARCHITECTURE.md
+cat .gitcore/ARCHITECTURE.md
 # 2. Current Task
 gh issue list --assignee "@me"
 ```
@@ -61,14 +61,16 @@ git push -u origin HEAD
 gh pr create --fill
 ```
 
-## ⛔ FORBIDDEN FILES
-- ❌ `TODO.md`, `TASKS.md` (Use Issues)
-- ❌ `PLANNING.md` (Use Issues with label `ai-plan`)
+## ⛔ FORBIDDEN FILES (in Root)
+- ❌ `TODO.md`, `TASKS.md` (Moved to `.gitcore/planning/`)
+- ❌ `PLANNING.md` (Moved to `.gitcore/planning/`)
 - ❌ `NOTES.md` (Use Issue Comments)
 
 ## ✅ ALLOWED FILES
 - Source code (`.rs`, `.dart`)
-- `.✨/ARCHITECTURE.md`
+- `.gitcore/ARCHITECTURE.md`
+- `.gitcore/planning/` (Historical Reference)
+- `.gitcore/sprints/` (Sprint progress)
 - `.github/issues/*.md` (File-based issues)
 
 ## 🚀 Proactive Execution

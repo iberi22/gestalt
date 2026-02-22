@@ -1,5 +1,5 @@
+use config::{Config, ConfigError, Environment, File};
 use serde::Deserialize;
-use config::{Config, ConfigError, File, Environment};
 use std::env;
 
 #[derive(Debug, Deserialize, Clone)]
@@ -52,16 +52,13 @@ impl Settings {
             .set_default("cognition.provider", "minimax")?
             .set_default("cognition.model_id", "MiniMax-M2.1")?
             .set_default("agent.id", "cli_default")?
-
             // Merge with config file if exists
             .add_source(File::with_name("config/default").required(false))
             .add_source(File::with_name(&format!("config/{}", run_mode)).required(false))
             .add_source(File::with_name("config").required(false))
-
             // Merge with Environment variables
             .add_source(Environment::with_prefix("GESTALT").separator("_"))
             .add_source(Environment::default().try_parsing(true))
-
             .build()?;
 
         s.try_deserialize()

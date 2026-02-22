@@ -20,8 +20,8 @@ mod timeline_event_tests {
 
     #[test]
     fn test_timeline_event_with_project() {
-        let event = TimelineEvent::new("agent1", EventType::TaskCreated)
-            .with_project("project_123");
+        let event =
+            TimelineEvent::new("agent1", EventType::TaskCreated).with_project("project_123");
 
         assert_eq!(event.project_id, Some("project_123".to_string()));
     }
@@ -39,8 +39,8 @@ mod timeline_event_tests {
     #[test]
     fn test_timeline_event_with_payload() {
         let payload = serde_json::json!({"key": "value", "count": 42});
-        let event = TimelineEvent::new("agent1", EventType::CommandExecuted)
-            .with_payload(payload.clone());
+        let event =
+            TimelineEvent::new("agent1", EventType::CommandExecuted).with_payload(payload.clone());
 
         assert_eq!(event.payload, payload);
     }

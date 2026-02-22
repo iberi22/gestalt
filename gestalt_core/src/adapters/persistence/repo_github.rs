@@ -1,5 +1,5 @@
-use async_trait::async_trait;
 use crate::ports::outbound::repo_manager::{RepoManager, Repository};
+use async_trait::async_trait;
 use octocrab::Octocrab;
 
 pub struct OctoRepoManager {
@@ -8,9 +8,7 @@ pub struct OctoRepoManager {
 
 impl OctoRepoManager {
     pub fn new(token: String) -> anyhow::Result<Self> {
-        let octo = Octocrab::builder()
-            .personal_token(token)
-            .build()?;
+        let octo = Octocrab::builder().personal_token(token).build()?;
         Ok(Self { octo })
     }
 }
@@ -29,22 +27,35 @@ impl RepoManager for OctoRepoManager {
     }
 
     async fn list_repos(&self) -> anyhow::Result<Vec<Repository>> {
-        let repos = self.octo.current().list_repos_for_authenticated_user()
+        let repos = self
+            .octo
+            .current()
+            .list_repos_for_authenticated_user()
             .send()
             .await?;
 
-        Ok(repos.items.into_iter().map(|r| Repository {
-            id: r.id.to_string(),
-            name: r.name,
-            url: r.html_url.map(|u| u.to_string()).unwrap_or_default(),
-            local_path: None,
-        }).collect())
+        Ok(repos
+            .items
+            .into_iter()
+            .map(|r| Repository {
+                id: r.id.to_string(),
+                name: r.name,
+                url: r.html_url.map(|u| u.to_string()).unwrap_or_default(),
+                local_path: None,
+            })
+            .collect())
     }
 }
 
 impl OctoRepoManager {
-    pub async fn close_issue(&self, owner: &str, repo: &str, issue_number: u64) -> anyhow::Result<()> {
-        self.octo.issues(owner, repo)
+    pub async fn close_issue(
+        &self,
+        owner: &str,
+        repo: &str,
+        issue_number: u64,
+    ) -> anyhow::Result<()> {
+        self.octo
+            .issues(owner, repo)
             .update(issue_number)
             .state(octocrab::models::IssueState::Closed)
             .send()
@@ -53,8 +64,16 @@ impl OctoRepoManager {
         Ok(())
     }
 
-    pub async fn create_pr(&self, owner: &str, repo: &str, title: &str, head: &str, base: &str) -> anyhow::Result<()> {
-        self.octo.pulls(owner, repo)
+    pub async fn create_pr(
+        &self,
+        owner: &str,
+        repo: &str,
+        title: &str,
+        head: &str,
+        base: &str,
+    ) -> anyhow::Result<()> {
+        self.octo
+            .pulls(owner, repo)
             .create(title, head, base)
             .send()
             .await?;

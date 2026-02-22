@@ -1,19 +1,24 @@
 use axum::{
-    extract::{State, Json, Path, ws::{WebSocketUpgrade, WebSocket, Message}},
-    http::{StatusCode, HeaderMap},
-    routing::{get, post, put, delete},
+    extract::{
+        ws::{Message, WebSocket, WebSocketUpgrade},
+        Json, Path, State,
+    },
+    http::{HeaderMap, StatusCode},
     middleware::{self, Next},
     response::{IntoResponse, Response},
+    routing::{delete, get, post, put},
     Router,
 };
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use tokio::net::TcpListener;
 use tower_http::cors::CorsLayer;
 use tracing::info;
-use chrono::{DateTime, Utc};
 
-use crate::services::{AgentRuntime, TimelineService, AgentService, ProjectService, TaskService, WatchService};
-use crate::models::{TaskStatus}; // Import TaskStatus
+use crate::models::TaskStatus;
+use crate::services::{
+    AgentRuntime, AgentService, ProjectService, TaskService, TimelineService, WatchService,
+}; // Import TaskStatus
 
 #[derive(Clone)]
 pub struct AppState {
@@ -57,8 +62,6 @@ pub struct UpdateTaskRequest {
 pub struct ScheduleTaskRequest {
     pub time: DateTime<Utc>,
 }
-
-
 
 #[derive(Deserialize)]
 pub struct SetModeRequest {
@@ -153,10 +156,7 @@ async fn auth_middleware(
 }
 
 /// WebSocket Handler for UI Real-Time Streaming
-async fn ws_handler(
-    ws: WebSocketUpgrade,
-    State(state): State<AppState>,
-) -> impl IntoResponse {
+async fn ws_handler(ws: WebSocketUpgrade, State(state): State<AppState>) -> impl IntoResponse {
     ws.on_upgrade(move |socket| handle_socket(socket, state))
 }
 
@@ -229,25 +229,19 @@ async fn run_orchestration(
 }
 
 /// Handler: Get timeline events (pollable)
-async fn get_timeline(
-    State(state): State<AppState>,
-) -> Json<Vec<crate::models::TimelineEvent>> {
+async fn get_timeline(State(state): State<AppState>) -> Json<Vec<crate::models::TimelineEvent>> {
     let events = state.timeline.get_timeline(None).await.unwrap_or_default();
     Json(events)
 }
 
 /// Handler: Get agents status
-async fn get_agents(
-    State(state): State<AppState>,
-) -> Json<Vec<crate::services::Agent>> {
+async fn get_agents(State(state): State<AppState>) -> Json<Vec<crate::services::Agent>> {
     let agents = state.agent.list_agents().await.unwrap_or_default();
     Json(agents)
 }
 
 /// Handler: Get all projects
-async fn get_projects(
-    State(state): State<AppState>,
-) -> Json<Vec<crate::models::Project>> {
+async fn get_projects(State(state): State<AppState>) -> Json<Vec<crate::models::Project>> {
     let projects = state.project.list_projects().await.unwrap_or_default();
     Json(projects)
 }
@@ -258,7 +252,11 @@ async fn create_project(
     Json(payload): Json<CreateProjectRequest>,
 ) -> (StatusCode, Json<Option<crate::models::Project>>) {
     // Hardcoded agent ID for now since we lack auth middleware on API
-    match state.project.create_project(&payload.name, "system-api").await {
+    match state
+        .project
+        .create_project(&payload.name, "system-api")
+        .await
+    {
         Ok(project) => (StatusCode::CREATED, Json(Some(project))),
         Err(e) => {
             info!("Failed to create project: {}", e);
@@ -268,10 +266,7 @@ async fn create_project(
 }
 
 /// Handler: Delete project
-async fn delete_project(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-) -> StatusCode {
+async fn delete_project(State(state): State<AppState>, Path(id): Path<String>) -> StatusCode {
     match state.project.delete_project(&id, "system-api").await {
         Ok(_) => StatusCode::NO_CONTENT,
         Err(e) => {
@@ -282,14 +277,12 @@ async fn delete_project(
 }
 
 /// Handler: Get all tasks (optionally filtered by project query param - simplified for now)
-async fn get_tasks(
-    State(state): State<AppState>,
-) -> Json<Vec<crate::models::Task>> {
+async fn get_tasks(State(state): State<AppState>) -> Json<Vec<crate::models::Task>> {
     // List all tasks by iterating projects (inefficient but works for MVP) or adding list_all to TaskService
     // Assuming we added list_tasks(None) -> all tasks support in TaskService which we did!
     match state.task.list_tasks(None).await {
         Ok(tasks) => Json(tasks),
-        Err(_) => Json(vec![])
+        Err(_) => Json(vec![]),
     }
 }
 
@@ -298,7 +291,11 @@ async fn create_task(
     State(state): State<AppState>,
     Json(payload): Json<CreateTaskRequest>,
 ) -> (StatusCode, Json<Option<crate::models::Task>>) {
-    match state.task.create_task(&payload.project, &payload.description, "system-api").await {
+    match state
+        .task
+        .create_task(&payload.project, &payload.description, "system-api")
+        .await
+    {
         Ok(task) => (StatusCode::CREATED, Json(Some(task))),
         Err(e) => {
             info!("Failed to create task: {}", e);
@@ -313,15 +310,21 @@ async fn update_task(
     Path(id): Path<String>,
     Json(payload): Json<UpdateTaskRequest>,
 ) -> (StatusCode, Json<Option<crate::models::Task>>) {
-    let status = payload.status.and_then(|s| match s.to_lowercase().as_str() {
-        "todo" => Some(TaskStatus::Pending),
-        "running" | "inprogress" => Some(TaskStatus::Running),
-        "completed" | "done" => Some(TaskStatus::Completed),
-        "cancelled" | "failed" => Some(TaskStatus::Cancelled),
-        _ => None,
-    });
+    let status = payload
+        .status
+        .and_then(|s| match s.to_lowercase().as_str() {
+            "todo" => Some(TaskStatus::Pending),
+            "running" | "inprogress" => Some(TaskStatus::Running),
+            "completed" | "done" => Some(TaskStatus::Completed),
+            "cancelled" | "failed" => Some(TaskStatus::Cancelled),
+            _ => None,
+        });
 
-    match state.task.update_task(&id, payload.description, status, "system-api").await {
+    match state
+        .task
+        .update_task(&id, payload.description, status, "system-api")
+        .await
+    {
         Ok(task) => (StatusCode::OK, Json(Some(task))),
         Err(e) => {
             info!("Failed to update task: {}", e);
@@ -331,10 +334,7 @@ async fn update_task(
 }
 
 /// Handler: Delete task
-async fn delete_task(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-) -> StatusCode {
+async fn delete_task(State(state): State<AppState>, Path(id): Path<String>) -> StatusCode {
     match state.task.delete_task(&id, "system-api").await {
         Ok(_) => StatusCode::NO_CONTENT,
         Err(e) => {
@@ -345,15 +345,12 @@ async fn delete_task(
 }
 
 /// Handler: Run task
-async fn run_task_endpoint(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-) -> StatusCode {
+async fn run_task_endpoint(State(state): State<AppState>, Path(id): Path<String>) -> StatusCode {
     match state.task.run_task(&id, "system-api").await {
         Ok(_) => StatusCode::OK,
         Err(e) => {
-             info!("Failed to run task: {}", e);
-             StatusCode::INTERNAL_SERVER_ERROR
+            info!("Failed to run task: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
         }
     }
 }
@@ -364,16 +361,18 @@ async fn schedule_task_endpoint(
     Path(id): Path<String>,
     Json(payload): Json<ScheduleTaskRequest>,
 ) -> StatusCode {
-    match state.task.schedule_task(&id, payload.time, "system-api").await {
+    match state
+        .task
+        .schedule_task(&id, payload.time, "system-api")
+        .await
+    {
         Ok(_) => StatusCode::OK,
         Err(e) => {
-             info!("Failed to schedule task: {}", e);
-             StatusCode::INTERNAL_SERVER_ERROR
+            info!("Failed to schedule task: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
         }
     }
 }
-
-
 
 /// Handler: Simple health check
 async fn health_check() -> StatusCode {
@@ -381,9 +380,7 @@ async fn health_check() -> StatusCode {
 }
 
 /// Handler: Get current agent mode
-async fn get_agent_mode(
-    State(_state): State<AppState>,
-) -> Json<ModeResponse> {
+async fn get_agent_mode(State(_state): State<AppState>) -> Json<ModeResponse> {
     // For now, return default. In production, this would read from AgentOrchestrator state.
     Json(ModeResponse {
         mode: "build".to_string(),
@@ -397,9 +394,15 @@ async fn set_agent_mode(
     Json(payload): Json<SetModeRequest>,
 ) -> (StatusCode, Json<ModeResponse>) {
     let is_read_only = payload.mode.to_lowercase() == "plan";
-    info!("Agent mode set to: {} (read_only: {})", payload.mode, is_read_only);
-    (StatusCode::OK, Json(ModeResponse {
-        mode: payload.mode,
-        is_read_only,
-    }))
+    info!(
+        "Agent mode set to: {} (read_only: {})",
+        payload.mode, is_read_only
+    );
+    (
+        StatusCode::OK,
+        Json(ModeResponse {
+            mode: payload.mode,
+            is_read_only,
+        }),
+    )
 }

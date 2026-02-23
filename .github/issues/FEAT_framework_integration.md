@@ -1,8 +1,9 @@
 ---
+github_issue: 33
 title: "Integrate Resilience and Compaction framework improvements"
 labels:
   - enhancement
-  - framework
+  - rust
   - ai-plan
 assignees: ["@me"]
 ---
@@ -20,3 +21,4 @@ Integrate `synapse-agentic`'s `resilience` and `compaction` modules into `gestal
 ## Verification
 - `cargo check -p gestalt_timeline`
 - `cargo test -p gestalt_timeline --lib services::context_compaction`
+

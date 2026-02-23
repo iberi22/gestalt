@@ -1,4 +1,5 @@
 ---
+github_issue: 32
 title: "Investigar tendencias de agentes (OpenManus y Frameworks)"
 labels:
   - ai-plan
@@ -13,3 +14,4 @@ Investigar tendencias de comportamiento de uso de agentes, analizando casos de �
 - [x] Investigar OpenManus y su arquitectura/enfoque.
 - [x] Investigar los mejores frameworks simplificados (CrewAI, LangGraph, AutoGen).
 - [x] Proponer mejoras arquitectónicas y lógicas para `synapse-agentic` y `gestalt-rust`.
+

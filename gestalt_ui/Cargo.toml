@@ -1,0 +1,31 @@
+[package]
+name = "gestalt_ui"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+eframe = { version = "0.33.3", features = [
+    "accesskit",     # Make egui comptaible with screen readers. NOTE: adds a lot of dependencies.
+    "default_fonts", # Embed the default egui fonts.
+    "glow",         # Use the glow rendering backend.
+    "persistence",   # Enable restoring window state (size, position, etc)
+] }
+egui = "0.33.3"
+serde = { version = "1.0", features = ["derive"] }
+tokio = { version = "1.35", features = ["full"] }
+tracing = "0.1"
+tracing-subscriber = "0.3"
+anyhow = "1.0"
+chrono = { version = "0.4", features = ["serde"] }
+serde_json = "1.0"
+
+# Project dependencies
+gestalt_core = { path = "../gestalt_core" }
+gestalt_timeline = { path = "../gestalt_timeline" }
+
+[profile.release]
+opt-level = 2 # fast and small wasm
+
+# Optimize all dependencies even in debug builds:
+[profile.dev.package."*"]
+opt-level = 2

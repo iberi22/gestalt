@@ -39,35 +39,69 @@ async fn init_decision_engine(
     let model_id = &settings.model_id;
 
     let mut builder = DecisionEngine::builder();
+    let mut providers_added = 0usize;
 
-    match provider_name.as_str() {
-        "minimax" => {
+    // Primary provider requested by config.
+    if provider_name == "minimax" || provider_name == "auto" {
+        if let Some(api_key) = settings
+            .minimax_api_key
+            .clone()
+            .or_else(|| std::env::var("MINIMAX_API_KEY").ok())
+        {
             info!("🚀 Initializing MiniMax decision provider...");
-            let api_key = settings
-                .minimax_api_key
-                .clone()
-                .or_else(|| std::env::var("MINIMAX_API_KEY").ok())
-                .ok_or_else(|| anyhow::anyhow!("MINIMAX_API_KEY not found"))?;
-
-            // For now, group_id placeholder as synapse-agentic MinimaxProvider expects it
             let group_id = std::env::var("MINIMAX_GROUP_ID").unwrap_or_default();
-
             builder =
                 builder.with_provider(MinimaxProvider::new(api_key, group_id, model_id.clone()));
+            providers_added += 1;
+        } else if provider_name == "minimax" {
+            warn!("MINIMAX selected but MINIMAX_API_KEY not found; attempting fallback providers.");
         }
-        "gemini" => {
-            info!("🚀 Initializing Gemini decision provider...");
-            let api_key = settings
-                .gemini_api_key
-                .clone()
-                .or_else(|| std::env::var("GEMINI_API_KEY").ok())
-                .ok_or_else(|| anyhow::anyhow!("GEMINI_API_KEY not found"))?;
+    }
 
+    if provider_name == "gemini" || provider_name == "auto" {
+        if let Some(api_key) = settings
+            .gemini_api_key
+            .clone()
+            .or_else(|| std::env::var("GEMINI_API_KEY").ok())
+        {
+            info!("🚀 Initializing Gemini decision provider...");
             builder = builder.with_provider(GeminiProvider::new(api_key, model_id.clone()));
+            providers_added += 1;
+        } else if provider_name == "gemini" {
+            warn!("Gemini selected but GEMINI_API_KEY not found; attempting fallback providers.");
         }
-        _ => {
-            warn!("🚀 Unknown provider '{}', decision engine will use rule-based fallback if no others added.", provider_name);
+    }
+
+    // Secondary fallback provider if specific provider fails or is unavailable.
+    if provider_name == "gemini" {
+        if let Some(api_key) = settings
+            .minimax_api_key
+            .clone()
+            .or_else(|| std::env::var("MINIMAX_API_KEY").ok())
+        {
+            let group_id = std::env::var("MINIMAX_GROUP_ID").unwrap_or_default();
+            builder =
+                builder.with_provider(MinimaxProvider::new(api_key, group_id, model_id.clone()));
+            providers_added += 1;
         }
+    } else if provider_name == "minimax" {
+        if let Some(api_key) = settings
+            .gemini_api_key
+            .clone()
+            .or_else(|| std::env::var("GEMINI_API_KEY").ok())
+        {
+            builder = builder.with_provider(GeminiProvider::new(api_key, model_id.clone()));
+            providers_added += 1;
+        }
+    } else if provider_name != "auto" {
+        warn!(
+            "Unknown provider '{}', engine will use rule-based mode if no providers are configured.",
+            provider_name
+        );
+    }
+
+    if providers_added == 0 {
+        warn!("No external LLM providers configured; using rule-based decision mode.");
     }
 
     Ok(Arc::new(builder.build()))

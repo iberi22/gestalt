@@ -113,6 +113,15 @@ impl AgentRuntime {
         watch: WatchService,
         agent: AgentService,
     ) -> Self {
+        // Use the first available provider from the engine for context compaction
+        let compactor_provider = engine.providers().get(0).cloned().unwrap_or_else(|| {
+            // Fallback (though engine should have at least the StochasticRotator now)
+            Arc::new(synapse_agentic::prelude::GeminiProvider::new(
+                "".into(),
+                "gpt-4o".into(),
+            ))
+        });
+
         Self {
             agent_id,
             engine,
@@ -126,7 +135,7 @@ impl AgentRuntime {
                 .and_then(|v| v.parse::<usize>().ok()),
             jobs: Arc::new(Mutex::new(HashMap::new())),
             vfs: Arc::new(OverlayFs::new()),
-            compactor: ContextCompactor::new("gpt-4o"),
+            compactor: ContextCompactor::new(compactor_provider, "gpt-4o"),
             hive: Arc::new(Mutex::new(Hive::new())),
         }
     }
@@ -184,7 +193,7 @@ impl AgentRuntime {
                     }
                 }
 
-                let outcome = self.compactor.compact(&mut conversation_history);
+                let outcome = self.compactor.compact(&mut conversation_history).await;
                 if outcome.compacted {
                     info!(
                         "Context compacted: {} -> {} tokens",
@@ -307,37 +316,15 @@ impl AgentRuntime {
 
         let context = DecisionContext::new("orchestration")
             .with_summary(format!("goal: {}\n\nhistory:\n{}", goal, history_summary));
-        let decision = self.decide_with_failover(&context).await?;
+
+        // Use native engine resilience (configured with StochasticRotator in main)
+        let decision = self.engine.decide(&context).await?;
         Ok(Self::map_decision_to_actions(
             &decision.action,
             &decision.reasoning,
         ))
     }
 
-    async fn decide_with_failover(
-        &self,
-        context: &DecisionContext,
-    ) -> Result<synapse_agentic::prelude::Decision> {
-        let mut last_error: Option<anyhow::Error> = None;
-        let mut backoff_ms = 250u64;
-
-        for attempt in 1..=3 {
-            match self.engine.decide(context).await {
-                Ok(decision) => return Ok(decision),
-                Err(err) => {
-                    warn!(
-                        "Decision provider attempt {} failed for agent '{}': {}",
-                        attempt, self.agent_id, err
-                    );
-                    last_error = Some(err);
-                    sleep(Duration::from_millis(backoff_ms)).await;
-                    backoff_ms *= 2;
-                }
-            }
-        }
-
-        Err(last_error.unwrap_or_else(|| anyhow::anyhow!("decision failover exhausted")))
-    }
 
     fn map_decision_to_actions(action: &str, reasoning: &str) -> Vec<OrchestrationAction> {
         match action.trim().to_lowercase().as_str() {

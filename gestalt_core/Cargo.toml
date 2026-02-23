@@ -30,6 +30,7 @@ tracing-subscriber = "0.3"
 
 # Git
 git2 = "0.18"
+octocrab = "0.38"
 
 # OAuth2 helpers
 dirs = "5.0"

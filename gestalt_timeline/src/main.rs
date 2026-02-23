@@ -38,23 +38,23 @@ async fn init_decision_engine(
     let provider_name = settings.provider.to_lowercase();
     let model_id = &settings.model_id;
 
-    let mut builder = DecisionEngine::builder();
+    // Use framework's resilience components for transparent failover
+    let store = Arc::new(InMemoryCooldownStore::new());
+    let mut rotator = StochasticRotator::new(store);
     let mut providers_added = 0usize;
 
-    // Primary provider requested by config.
+    // Primary provider implementation
     if provider_name == "minimax" || provider_name == "auto" {
         if let Some(api_key) = settings
             .minimax_api_key
             .clone()
             .or_else(|| std::env::var("MINIMAX_API_KEY").ok())
         {
-            info!("🚀 Initializing MiniMax decision provider...");
+            info!("🚀 Initializing MiniMax resilient provider...");
             let group_id = std::env::var("MINIMAX_GROUP_ID").unwrap_or_default();
-            builder =
-                builder.with_provider(MinimaxProvider::new(api_key, group_id, model_id.clone()));
+            let provider = MinimaxProvider::new(api_key, group_id, model_id.clone());
+            rotator.add_provider(ProviderId::new("minimax", model_id), Arc::new(provider));
             providers_added += 1;
-        } else if provider_name == "minimax" {
-            warn!("MINIMAX selected but MINIMAX_API_KEY not found; attempting fallback providers.");
         }
     }
 
@@ -64,15 +64,14 @@ async fn init_decision_engine(
             .clone()
             .or_else(|| std::env::var("GEMINI_API_KEY").ok())
         {
-            info!("🚀 Initializing Gemini decision provider...");
-            builder = builder.with_provider(GeminiProvider::new(api_key, model_id.clone()));
+            info!("🚀 Initializing Gemini resilient provider...");
+            let provider = GeminiProvider::new(api_key, model_id.clone());
+            rotator.add_provider(ProviderId::new("gemini", model_id), Arc::new(provider));
             providers_added += 1;
-        } else if provider_name == "gemini" {
-            warn!("Gemini selected but GEMINI_API_KEY not found; attempting fallback providers.");
         }
     }
 
-    // Secondary fallback provider if specific provider fails or is unavailable.
+    // Secondary fallback configurations (cross-registering)
     if provider_name == "gemini" {
         if let Some(api_key) = settings
             .minimax_api_key
@@ -80,8 +79,11 @@ async fn init_decision_engine(
             .or_else(|| std::env::var("MINIMAX_API_KEY").ok())
         {
             let group_id = std::env::var("MINIMAX_GROUP_ID").unwrap_or_default();
-            builder =
-                builder.with_provider(MinimaxProvider::new(api_key, group_id, model_id.clone()));
+            let provider = MinimaxProvider::new(api_key, group_id, model_id.clone());
+            rotator.add_provider(
+                ProviderId::new("minimax-fallback", model_id),
+                Arc::new(provider),
+            );
             providers_added += 1;
         }
     } else if provider_name == "minimax" {
@@ -90,21 +92,27 @@ async fn init_decision_engine(
             .clone()
             .or_else(|| std::env::var("GEMINI_API_KEY").ok())
         {
-            builder = builder.with_provider(GeminiProvider::new(api_key, model_id.clone()));
+            let provider = GeminiProvider::new(api_key, model_id.clone());
+            rotator.add_provider(
+                ProviderId::new("gemini-fallback", model_id),
+                Arc::new(provider),
+            );
             providers_added += 1;
         }
-    } else if provider_name != "auto" {
-        warn!(
-            "Unknown provider '{}', engine will use rule-based mode if no providers are configured.",
-            provider_name
-        );
     }
 
     if providers_added == 0 {
         warn!("No external LLM providers configured; using rule-based decision mode.");
+        Ok(Arc::new(DecisionEngine::builder().build()))
+    } else {
+        // The engine now uses the stochastic rotator as its single entry point
+        // providing transparent failover between all added providers.
+        Ok(Arc::new(
+            DecisionEngine::builder()
+                .with_provider(rotator)
+                .build(),
+        ))
     }
-
-    Ok(Arc::new(builder.build()))
 }
 
 /// Initialize native tools for AgentRuntime.

@@ -10,7 +10,7 @@ pub struct SurrealDbAdapter {
 
 impl SurrealDbAdapter {
     pub async fn new() -> anyhow::Result<Self> {
-        let db: Surreal<surrealdb::engine::local::Db> = Surreal::new::<surrealdb::engine::local::Mem>(()).await?;
+        let db = Surreal::new::<surrealdb::engine::local::Mem>(()).await?;
         db.use_ns("neural").use_db("link").await?;
         Ok(Self { db })
     }

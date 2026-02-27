@@ -13,6 +13,7 @@ pub struct AgentRuntimeState {
     pub goal: String,
     pub phase: RuntimePhase,
     pub current_step: usize,
+    /// `0` means elastic (no fixed limit); otherwise hard safety cap.
     pub max_steps: usize,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_action: Option<String>,

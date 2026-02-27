@@ -35,32 +35,52 @@
 **Implementation:**
 - `PLANNING.md` moved to `.gitcore/planning/PLANNING.md`.
 - `TASK.md` moved to `.gitcore/planning/TASK.md`.
-- Any legacy planning docs outside `.gitcore/planning/` are historical references only and must not be used as active tracker.
+- Any legacy planning docs outside `.gitcore/planning/` are historical references only and must not be used as an active tracker.
+
+### 5. Virtual File System (VFS) Overlay
+**Decision:** Agents operate in a volatile memory-mapped workspace before persistent commit.
+**Rationale:** Multiple agents can edit the same codebase simultaneously without Git branch conflicts or corrupting the main disk.
+**Implementation:** `VirtualFs` adapter wraps `tokio::fs`, providing read-through and write-in-memory capabilities. Implementation: `OverlayFs`.
+
+### 6. Elastic Autonomous Loops (Resilience)
+**Decision:** Remove fixed step limits in favor of context compaction and dynamic delegation.
+**Rationale:** Complex tasks require n-depth reasoning that exceeds static loop counters.
+**Implementation:**
+- **Context Compaction**: Automated summarization of older reasoning steps using `tiktoken-rs` for estimation and LLM-based summary.
+- **Dynamic Delegation**: Large goals are automatically split into sub-agent tasks.
+
+### 7. Synapse-Agentic Integration (Hive Model)
+**Decision:** Adopt the "Hive" actor model for agent lifecycle management.
+**Rationale:** Standardizes resiliency, supervision (auto-restart on panic), and failover strategies.
+**Implementation:** `AgentRuntime` leverages `synapse_agentic::framework::Hive` for agent supervision and inter-agent communication.
 
 ## Component Diagram
 ```mermaid
 graph TD
-    CLI[gestalt_cli] -->|Command| Runtime[AgentRuntime]
-    Runtime -->|Prompt| LLM[Bedrock/Gemini/Ollama]
+    CLI[gestalt_cli] -->|Command| Hive[Synapse Hive]
+    Hive -->|Supervision| Runtime[AgentRuntime]
+    Runtime -->|Prompt| LLM[ResilientProvider]
     Runtime -->|Action| Tools
+    Runtime -->|VFS| ShadowFS[VirtualFS Overlay]
     Runtime -->|Async| Jobs[JobManager]
-    Tools -->|Git-Core| ExtAgents[External Agents (gh, aws)]
+    ShadowFS -.->|Final Flush| Disk[(Physical Disk)]
+    Tools -->|Git-Core| ExtAgents[External Agents]
     Jobs -->|Status| Runtime
 ```
 
 ## 🕐 Timeline Design
 
-### Concept Central
-El **timestamp** es la variable primaria de todo el sistema. Cada acción, comando, resultado o cambio de estado se registra en una línea de tiempo universal accesible por todos los agentes.
+### Central Concept
+The **timestamp** is the primary variable of the entire system. Every action, command, result, or state change is recorded in a universal timeline accessible by all agents.
 
-### Modelo de Datos: TimelineEvent
+### Data Model: TimelineEvent
 
 ```rust
 pub struct TimelineEvent {
-    pub id: String,              // Unique ID (ULID preferido)
-    pub timestamp: DateTime<Utc>, // ⭐ Variable primaria
-    pub agent_id: String,         // Qué agente ejecutó la acción
-    pub event_type: EventType,    // Tipo de evento
+    pub id: String,              // Unique ID (ULID preferred)
+    pub timestamp: DateTime<Utc>, // ⭐ Primary variable
+    pub agent_id: String,         // Which agent executed the action
+    pub event_type: EventType,    // Event type
     pub project_id: Option<String>,
     pub task_id: Option<String>,
     pub payload: serde_json::Value,
@@ -81,30 +101,30 @@ pub enum EventType {
 }
 ```
 
-## 🖥️ Especificación CLI
+## 🖥️ CLI Specification
 
-### Comandos Base
+### Base Commands
 
-| Comando | Descripción | Ejemplo |
+| Command | Description | Example |
 |---------|-------------|---------|
-| `add-project <nombre>` | Registra nuevo proyecto | `gestalt add-project my-app` |
-| `add-task <proyecto> <desc>` | Añade subtarea | `gestalt add-task my-app "Fix bugs"` |
-| `run-task <task_id>` | Ejecuta tarea (async) | `gestalt run-task task_123` |
-| `list-projects` | Lista proyectos | `gestalt list-projects` |
-| `list-tasks [proyecto]` | Lista tareas | `gestalt list-tasks my-app` |
-| `status <proyecto>` | Muestra progreso | `gestalt status my-app` |
-| `timeline [--since=1h]` | Muestra línea de tiempo | `gestalt timeline --since=2h` |
+| `add-project <name>` | Registers a new project | `gestalt add-project my-app` |
+| `add-task <project> <desc>` | Adds a subtask | `gestalt add-task my-app "Fix bugs"` |
+| `run-task <task_id>` | Executes a task (async) | `gestalt run-task task_123` |
+| `list-projects` | Lists projects | `gestalt list-projects` |
+| `list-tasks [project]` | Lists tasks | `gestalt list-tasks my-app` |
+| `status <project>` | Shows progress | `gestalt status my-app` |
+| `timeline [--since=1h]` | Shows timeline | `gestalt timeline --since=2h` |
 
-## 🔄 Flujo de Ejecución
+## 🔄 Execution Flow
 
 ```mermaid
 sequenceDiagram
-    participant Agent as Agente Externo
+    participant Agent as External Agent
     participant CLI as Gestalt CLI
     participant TL as Timeline Service
     participant DB as SurrealDB
 
-    Agent->>CLI: gestalt add-task proj1 "tarea"
+    Agent->>CLI: gestalt add-task proj1 "task"
     CLI->>TL: register_event(TaskCreated)
     TL->>DB: INSERT timeline_event
     TL->>DB: INSERT task

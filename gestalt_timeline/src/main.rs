@@ -6,8 +6,8 @@ use gestalt_timeline::cli::{repl, AgentCommands, Cli, Commands};
 use gestalt_timeline::config::Settings;
 use gestalt_timeline::db::SurrealClient;
 use gestalt_timeline::services::{
-    start_server, AgentRuntime, AgentService, AuthService, DispatcherService, MemoryService,
-    ProjectService, QueuedTask, TaskQueue, TaskService, TaskSource, TelegramService,
+    start_server, AgentRuntime, AgentService, AuthService, DispatcherService, IndexService,
+    MemoryService, ProjectService, QueuedTask, TaskQueue, TaskService, TaskSource, TelegramService,
     TimelineService, WatchService,
 };
 use std::path::Path;
@@ -631,13 +631,25 @@ async fn main() -> anyhow::Result<()> {
             }
 
             println!("📥 Indexing repository: {}", url);
-            // Placeholder for actual indexing logic via AgentOrchestrator
-            // In production, this would call gestalt_core::application::agent::AgentOrchestrator::index_repo
-            println!("⚠️ Note: Full RAG indexing not yet implemented. This is a placeholder.");
-            if cli.json {
-                println!(r#"{{"status": "pending", "url": "{}"}}"#, url);
-            } else {
-                println!("✅ Repository queued for indexing: {}", url);
+            let index_service = IndexService::new(db.clone());
+            match index_service.index_repo(&url).await {
+                Ok(_) => {
+                    if cli.json {
+                        println!(r#"{{"status": "completed", "url": "{}"}}"#, url);
+                    } else {
+                        println!("✅ Repository indexed successfully: {}", url);
+                    }
+                }
+                Err(e) => {
+                    if cli.json {
+                        println!(
+                            r#"{{"status": "error", "url": "{}", "error": "{}"}}"#,
+                            url, e
+                        );
+                    } else {
+                        eprintln!("❌ Failed to index repository {}: {}", url, e);
+                    }
+                }
             }
         }
 

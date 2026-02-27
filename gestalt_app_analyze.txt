@@ -1,0 +1,487 @@
+Resolving dependencies...
+Downloading packages...
+  characters 1.4.0 (1.4.1 available)
+  ffi 2.1.4 (2.2.0 available)
+  flutter_lints 2.0.3 (6.0.0 available)
+  glass_kit 3.0.0 (4.0.2 available)
+  google_fonts 6.3.3 (8.0.2 available)
+  lints 2.1.1 (6.1.0 available)
+  matcher 0.12.17 (0.12.19 available)
+  material_color_utilities 0.11.1 (0.13.0 available)
+  meta 1.17.0 (1.18.1 available)
+  path_provider_foundation 2.5.1 (2.6.0 available)
+  source_span 1.10.1 (1.10.2 available)
+  test_api 0.7.7 (0.7.10 available)
+Got dependencies!
+12 packages have newer versions incompatible with dependency constraints.
+Try `flutter pub outdated` for more information.
+Analyzing gestalt_app...
+
+  error • Target of URI doesn't exist: 'package:gestalt_app/src/rust/frb_generated.dart' • gestalt_app/integration_test/simple_test.dart:3:8 • uri_does_not_exist
+  error • Undefined name 'RustLib' • gestalt_app/integration_test/simple_test.dart:8:30 • undefined_identifier
+  error • The name 'MyApp' isn't a class • gestalt_app/integration_test/simple_test.dart:10:35 • creation_with_non_type
+  error • Target of URI doesn't exist: 'package:gestalt_app/src/rust/api/simple.dart' • gestalt_app/lib/main.dart:2:8 • uri_does_not_exist
+  error • Target of URI doesn't exist: 'package:gestalt_app/src/rust/frb_generated.dart' • gestalt_app/lib/main.dart:3:8 • uri_does_not_exist
+  error • Undefined name 'RustLib' • gestalt_app/lib/main.dart:6:9 • undefined_identifier
+  error • The method 'askAgent' isn't defined for the type '_AgentScreenState' • gestalt_app/lib/main.dart:44:30 • undefined_method
+   info • Don't invoke 'print' in production code • gestalt_app/lib/main.dart:51:7 • avoid_print
+  error • Target of URI doesn't exist: 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart' • gestalt_app/lib/src/rust/api/simple.dart:7:8 • uri_does_not_exist
+  error • The getter 'api' isn't defined for the type 'RustLib' • gestalt_app/lib/src/rust/api/simple.dart:10:22 • undefined_getter
+  error • Target of URI doesn't exist: 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart' • gestalt_app/lib/src/rust/frb_generated.dart:12:8 • uri_does_not_exist
+  error • Classes can only extend other classes • gestalt_app/lib/src/rust/frb_generated.dart:15:23 • extends_non_class
+  error • Undefined name 'internal' used as an annotation • gestalt_app/lib/src/rust/frb_generated.dart:16:3 • undefined_annotation
+  error • Undefined class 'BaseHandler' • gestalt_app/lib/src/rust/frb_generated.dart:24:5 • undefined_class
+  error • Undefined class 'ExternalLibrary' • gestalt_app/lib/src/rust/frb_generated.dart:25:5 • undefined_class
+  error • The method 'initImpl' isn't defined for the type 'RustLib' • gestalt_app/lib/src/rust/frb_generated.dart:28:20 • undefined_method
+  error • The method 'initMockImpl' isn't defined for the type 'RustLib' • gestalt_app/lib/src/rust/frb_generated.dart:39:14 • undefined_method
+  error • The method 'disposeImpl' isn't defined for the type 'RustLib' • gestalt_app/lib/src/rust/frb_generated.dart:46:37 • undefined_method
+  error • Undefined class 'ApiImplConstructor' • gestalt_app/lib/src/rust/frb_generated.dart:49:3 • undefined_class
+warning • The getter doesn't override an inherited getter • gestalt_app/lib/src/rust/frb_generated.dart:49:55 • override_on_non_overriding_member
+  error • Undefined class 'WireConstructor' • gestalt_app/lib/src/rust/frb_generated.dart:53:3 • undefined_class
+warning • The getter doesn't override an inherited getter • gestalt_app/lib/src/rust/frb_generated.dart:53:36 • override_on_non_overriding_member
+warning • The method doesn't override an inherited method • gestalt_app/lib/src/rust/frb_generated.dart:57:16 • override_on_non_overriding_member
+  error • Undefined name 'api' • gestalt_app/lib/src/rust/frb_generated.dart:58:11 • undefined_identifier
+  error • Undefined class 'ExternalLibraryLoaderConfig' • gestalt_app/lib/src/rust/frb_generated.dart:62:3 • undefined_class
+warning • The getter doesn't override an inherited getter • gestalt_app/lib/src/rust/frb_generated.dart:62:35 • override_on_non_overriding_member
+warning • The getter doesn't override an inherited getter • gestalt_app/lib/src/rust/frb_generated.dart:66:14 • override_on_non_overriding_member
+warning • The getter doesn't override an inherited getter • gestalt_app/lib/src/rust/frb_generated.dart:69:11 • override_on_non_overriding_member
+  error • Const variables must be initialized with a constant value • gestalt_app/lib/src/rust/frb_generated.dart:72:7 • const_initialized_with_non_constant_value
+  error • The method 'ExternalLibraryLoaderConfig' isn't defined for the type 'RustLib' • gestalt_app/lib/src/rust/frb_generated.dart:72:7 • undefined_method
+  error • Classes can only extend other classes • gestalt_app/lib/src/rust/frb_generated.dart:79:35 • extends_non_class
+  error • Undefined name 'handler' • gestalt_app/lib/src/rust/frb_generated.dart:95:12 • undefined_identifier
+  error • The method 'NormalTask' isn't defined for the type 'RustLibApiImpl' • gestalt_app/lib/src/rust/frb_generated.dart:96:7 • undefined_method
+  error • The method 'SseSerializer' isn't defined for the type 'RustLibApiImpl' • gestalt_app/lib/src/rust/frb_generated.dart:98:30 • undefined_method
+  error • Undefined name 'generalizedFrbRustBinding' • gestalt_app/lib/src/rust/frb_generated.dart:98:44 • undefined_identifier
+  error • The method 'pdeCallFfi' isn't defined for the type 'RustLibApiImpl' • gestalt_app/lib/src/rust/frb_generated.dart:100:11 • undefined_method
+  error • Undefined name 'generalizedFrbRustBinding' • gestalt_app/lib/src/rust/frb_generated.dart:101:13 • undefined_identifier
+  error • The method 'SseCodec' isn't defined for the type 'RustLibApiImpl' • gestalt_app/lib/src/rust/frb_generated.dart:107:16 • undefined_method
+  error • Undefined class 'TaskConstMeta' • gestalt_app/lib/src/rust/frb_generated.dart:118:3 • undefined_class
+  error • The name 'TaskConstMeta' isn't a class • gestalt_app/lib/src/rust/frb_generated.dart:119:13 • creation_with_non_type
+  error • Undefined name 'handler' • gestalt_app/lib/src/rust/frb_generated.dart:123:12 • undefined_identifier
+  error • The method 'NormalTask' isn't defined for the type 'RustLibApiImpl' • gestalt_app/lib/src/rust/frb_generated.dart:124:7 • undefined_method
+  error • The method 'SseSerializer' isn't defined for the type 'RustLibApiImpl' • gestalt_app/lib/src/rust/frb_generated.dart:126:30 • undefined_method
+  error • Undefined name 'generalizedFrbRustBinding' • gestalt_app/lib/src/rust/frb_generated.dart:126:44 • undefined_identifier
+  error • The method 'pdeCallFfi' isn't defined for the type 'RustLibApiImpl' • gestalt_app/lib/src/rust/frb_generated.dart:127:11 • undefined_method
+  error • Undefined name 'generalizedFrbRustBinding' • gestalt_app/lib/src/rust/frb_generated.dart:128:13 • undefined_identifier
+  error • The method 'SseCodec' isn't defined for the type 'RustLibApiImpl' • gestalt_app/lib/src/rust/frb_generated.dart:134:16 • undefined_method
+  error • Undefined class 'TaskConstMeta' • gestalt_app/lib/src/rust/frb_generated.dart:145:3 • undefined_class
+  error • The name 'TaskConstMeta' isn't a class • gestalt_app/lib/src/rust/frb_generated.dart:146:13 • creation_with_non_type
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.dart:148:3 • undefined_annotation
+  error • Undefined class 'AnyhowException' • gestalt_app/lib/src/rust/frb_generated.dart:149:3 • undefined_class
+  error • The method 'AnyhowException' isn't defined for the type 'RustLibApiImpl' • gestalt_app/lib/src/rust/frb_generated.dart:151:12 • undefined_method
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.dart:154:3 • undefined_annotation
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.dart:160:3 • undefined_annotation
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.dart:166:3 • undefined_annotation
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.dart:172:3 • undefined_annotation
+  error • Undefined class 'Uint8List' • gestalt_app/lib/src/rust/frb_generated.dart:173:3 • undefined_class
+  error • The name 'Uint8List' isn't a type, so it can't be used in an 'as' expression • gestalt_app/lib/src/rust/frb_generated.dart:175:19 • cast_to_non_type
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.dart:178:3 • undefined_annotation
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.dart:184:3 • undefined_annotation
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.dart:196:3 • undefined_annotation
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.dart:202:3 • undefined_annotation
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.dart:215:3 • undefined_annotation
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.dart:221:3 • undefined_annotation
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.dart:227:3 • undefined_annotation
+  error • Undefined class 'AnyhowException' • gestalt_app/lib/src/rust/frb_generated.dart:228:3 • undefined_class
+  error • Undefined class 'SseDeserializer' • gestalt_app/lib/src/rust/frb_generated.dart:228:46 • undefined_class
+  error • The method 'AnyhowException' isn't defined for the type 'RustLibApiImpl' • gestalt_app/lib/src/rust/frb_generated.dart:231:12 • undefined_method
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.dart:234:3 • undefined_annotation
+  error • Undefined class 'SseDeserializer' • gestalt_app/lib/src/rust/frb_generated.dart:235:28 • undefined_class
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.dart:241:3 • undefined_annotation
+  error • Undefined class 'SseDeserializer' • gestalt_app/lib/src/rust/frb_generated.dart:242:47 • undefined_class
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.dart:247:3 • undefined_annotation
+  error • Undefined class 'SseDeserializer' • gestalt_app/lib/src/rust/frb_generated.dart:248:23 • undefined_class
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.dart:253:3 • undefined_annotation
+  error • Undefined class 'Uint8List' • gestalt_app/lib/src/rust/frb_generated.dart:254:3 • undefined_class
+  error • Undefined class 'SseDeserializer' • gestalt_app/lib/src/rust/frb_generated.dart:254:45 • undefined_class
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.dart:260:3 • undefined_annotation
+  error • Undefined class 'SseDeserializer' • gestalt_app/lib/src/rust/frb_generated.dart:262:5 • undefined_class
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.dart:273:3 • undefined_annotation
+  error • Undefined class 'SseDeserializer' • gestalt_app/lib/src/rust/frb_generated.dart:274:45 • undefined_class
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.dart:284:3 • undefined_annotation
+  error • Undefined class 'SseDeserializer' • gestalt_app/lib/src/rust/frb_generated.dart:285:22 • undefined_class
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.dart:290:3 • undefined_annotation
+  error • Undefined class 'SseDeserializer' • gestalt_app/lib/src/rust/frb_generated.dart:291:35 • undefined_class
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.dart:303:3 • undefined_annotation
+  error • Undefined class 'SseDeserializer' • gestalt_app/lib/src/rust/frb_generated.dart:304:24 • undefined_class
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.dart:308:3 • undefined_annotation
+  error • Undefined class 'SseDeserializer' • gestalt_app/lib/src/rust/frb_generated.dart:309:37 • undefined_class
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.dart:315:3 • undefined_annotation
+  error • Undefined class 'SseDeserializer' • gestalt_app/lib/src/rust/frb_generated.dart:316:24 • undefined_class
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.dart:321:3 • undefined_annotation
+  error • Undefined class 'AnyhowException' • gestalt_app/lib/src/rust/frb_generated.dart:323:5 • undefined_class
+  error • Undefined class 'SseSerializer' • gestalt_app/lib/src/rust/frb_generated.dart:324:5 • undefined_class
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.dart:330:3 • undefined_annotation
+  error • Undefined class 'SseSerializer' • gestalt_app/lib/src/rust/frb_generated.dart:331:39 • undefined_class
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.dart:336:3 • undefined_annotation
+  error • Undefined class 'SseSerializer' • gestalt_app/lib/src/rust/frb_generated.dart:339:5 • undefined_class
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.dart:345:3 • undefined_annotation
+  error • Undefined class 'SseSerializer' • gestalt_app/lib/src/rust/frb_generated.dart:346:34 • undefined_class
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.dart:351:3 • undefined_annotation
+  error • Undefined class 'Uint8List' • gestalt_app/lib/src/rust/frb_generated.dart:353:5 • undefined_class
+  error • Undefined class 'SseSerializer' • gestalt_app/lib/src/rust/frb_generated.dart:354:5 • undefined_class
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.dart:361:3 • undefined_annotation
+  error • Undefined class 'SseSerializer' • gestalt_app/lib/src/rust/frb_generated.dart:364:5 • undefined_class
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.dart:374:3 • undefined_annotation
+  error • Undefined class 'SseSerializer' • gestalt_app/lib/src/rust/frb_generated.dart:377:5 • undefined_class
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.dart:384:3 • undefined_annotation
+  error • Undefined class 'SseSerializer' • gestalt_app/lib/src/rust/frb_generated.dart:385:33 • undefined_class
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.dart:390:3 • undefined_annotation
+  error • Undefined class 'SseSerializer' • gestalt_app/lib/src/rust/frb_generated.dart:391:46 • undefined_class
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.dart:398:3 • undefined_annotation
+  error • Undefined class 'SseSerializer' • gestalt_app/lib/src/rust/frb_generated.dart:399:35 • undefined_class
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.dart:403:3 • undefined_annotation
+  error • Undefined class 'SseSerializer' • gestalt_app/lib/src/rust/frb_generated.dart:404:48 • undefined_class
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.dart:409:3 • undefined_annotation
+  error • Undefined class 'SseSerializer' • gestalt_app/lib/src/rust/frb_generated.dart:410:35 • undefined_class
+  error • Target of URI doesn't exist: 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated_io.dart' • gestalt_app/lib/src/rust/frb_generated.io.dart:11:8 • uri_does_not_exist
+  error • Classes can only extend other classes • gestalt_app/lib/src/rust/frb_generated.io.dart:13:47 • extends_non_class
+  error • No associated named super constructor parameter • gestalt_app/lib/src/rust/frb_generated.io.dart:15:20 • super_formal_parameter_without_associated_named
+  error • No associated named super constructor parameter • gestalt_app/lib/src/rust/frb_generated.io.dart:16:20 • super_formal_parameter_without_associated_named
+  error • No associated named super constructor parameter • gestalt_app/lib/src/rust/frb_generated.io.dart:17:20 • super_formal_parameter_without_associated_named
+  error • No associated named super constructor parameter • gestalt_app/lib/src/rust/frb_generated.io.dart:18:20 • super_formal_parameter_without_associated_named
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.io.dart:21:3 • undefined_annotation
+  error • Undefined class 'AnyhowException' • gestalt_app/lib/src/rust/frb_generated.io.dart:22:3 • undefined_class
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.io.dart:24:3 • undefined_annotation
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.io.dart:27:3 • undefined_annotation
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.io.dart:30:3 • undefined_annotation
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.io.dart:33:3 • undefined_annotation
+  error • Undefined class 'Uint8List' • gestalt_app/lib/src/rust/frb_generated.io.dart:34:3 • undefined_class
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.io.dart:36:3 • undefined_annotation
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.io.dart:39:3 • undefined_annotation
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.io.dart:42:3 • undefined_annotation
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.io.dart:45:3 • undefined_annotation
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.io.dart:48:3 • undefined_annotation
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.io.dart:51:3 • undefined_annotation
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.io.dart:54:3 • undefined_annotation
+  error • Undefined class 'AnyhowException' • gestalt_app/lib/src/rust/frb_generated.io.dart:55:3 • undefined_class
+  error • Undefined class 'SseDeserializer' • gestalt_app/lib/src/rust/frb_generated.io.dart:55:46 • undefined_class
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.io.dart:57:3 • undefined_annotation
+  error • Undefined class 'SseDeserializer' • gestalt_app/lib/src/rust/frb_generated.io.dart:58:28 • undefined_class
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.io.dart:60:3 • undefined_annotation
+  error • Undefined class 'SseDeserializer' • gestalt_app/lib/src/rust/frb_generated.io.dart:61:47 • undefined_class
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.io.dart:63:3 • undefined_annotation
+  error • Undefined class 'SseDeserializer' • gestalt_app/lib/src/rust/frb_generated.io.dart:64:23 • undefined_class
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.io.dart:66:3 • undefined_annotation
+  error • Undefined class 'Uint8List' • gestalt_app/lib/src/rust/frb_generated.io.dart:67:3 • undefined_class
+  error • Undefined class 'SseDeserializer' • gestalt_app/lib/src/rust/frb_generated.io.dart:67:45 • undefined_class
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.io.dart:69:3 • undefined_annotation
+  error • Undefined class 'SseDeserializer' • gestalt_app/lib/src/rust/frb_generated.io.dart:71:5 • undefined_class
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.io.dart:74:3 • undefined_annotation
+  error • Undefined class 'SseDeserializer' • gestalt_app/lib/src/rust/frb_generated.io.dart:75:45 • undefined_class
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.io.dart:77:3 • undefined_annotation
+  error • Undefined class 'SseDeserializer' • gestalt_app/lib/src/rust/frb_generated.io.dart:78:22 • undefined_class
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.io.dart:80:3 • undefined_annotation
+  error • Undefined class 'SseDeserializer' • gestalt_app/lib/src/rust/frb_generated.io.dart:81:35 • undefined_class
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.io.dart:83:3 • undefined_annotation
+  error • Undefined class 'SseDeserializer' • gestalt_app/lib/src/rust/frb_generated.io.dart:84:24 • undefined_class
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.io.dart:86:3 • undefined_annotation
+  error • Undefined class 'SseDeserializer' • gestalt_app/lib/src/rust/frb_generated.io.dart:87:37 • undefined_class
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.io.dart:89:3 • undefined_annotation
+  error • Undefined class 'SseDeserializer' • gestalt_app/lib/src/rust/frb_generated.io.dart:90:24 • undefined_class
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.io.dart:92:3 • undefined_annotation
+  error • Undefined class 'AnyhowException' • gestalt_app/lib/src/rust/frb_generated.io.dart:94:5 • undefined_class
+  error • Undefined class 'SseSerializer' • gestalt_app/lib/src/rust/frb_generated.io.dart:95:5 • undefined_class
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.io.dart:98:3 • undefined_annotation
+  error • Undefined class 'SseSerializer' • gestalt_app/lib/src/rust/frb_generated.io.dart:99:39 • undefined_class
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.io.dart:101:3 • undefined_annotation
+  error • Undefined class 'SseSerializer' • gestalt_app/lib/src/rust/frb_generated.io.dart:104:5 • undefined_class
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.io.dart:107:3 • undefined_annotation
+  error • Undefined class 'SseSerializer' • gestalt_app/lib/src/rust/frb_generated.io.dart:108:34 • undefined_class
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.io.dart:110:3 • undefined_annotation
+  error • Undefined class 'Uint8List' • gestalt_app/lib/src/rust/frb_generated.io.dart:112:5 • undefined_class
+  error • Undefined class 'SseSerializer' • gestalt_app/lib/src/rust/frb_generated.io.dart:113:5 • undefined_class
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.io.dart:116:3 • undefined_annotation
+  error • Undefined class 'SseSerializer' • gestalt_app/lib/src/rust/frb_generated.io.dart:119:5 • undefined_class
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.io.dart:122:3 • undefined_annotation
+  error • Undefined class 'SseSerializer' • gestalt_app/lib/src/rust/frb_generated.io.dart:125:5 • undefined_class
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.io.dart:128:3 • undefined_annotation
+  error • Undefined class 'SseSerializer' • gestalt_app/lib/src/rust/frb_generated.io.dart:129:33 • undefined_class
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.io.dart:131:3 • undefined_annotation
+  error • Undefined class 'SseSerializer' • gestalt_app/lib/src/rust/frb_generated.io.dart:132:46 • undefined_class
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.io.dart:134:3 • undefined_annotation
+  error • Undefined class 'SseSerializer' • gestalt_app/lib/src/rust/frb_generated.io.dart:135:35 • undefined_class
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.io.dart:137:3 • undefined_annotation
+  error • Undefined class 'SseSerializer' • gestalt_app/lib/src/rust/frb_generated.io.dart:138:48 • undefined_class
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.io.dart:140:3 • undefined_annotation
+  error • Undefined class 'SseSerializer' • gestalt_app/lib/src/rust/frb_generated.io.dart:141:35 • undefined_class
+  error • Classes and mixins can only implement other classes and mixins • gestalt_app/lib/src/rust/frb_generated.io.dart:146:30 • implements_non_class
+  error • Undefined class 'ExternalLibrary' • gestalt_app/lib/src/rust/frb_generated.io.dart:147:43 • undefined_class
+  error • Target of URI doesn't exist: 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated_web.dart' • gestalt_app/lib/src/rust/frb_generated.web.dart:13:8 • uri_does_not_exist
+  error • Classes can only extend other classes • gestalt_app/lib/src/rust/frb_generated.web.dart:15:47 • extends_non_class
+  error • No associated named super constructor parameter • gestalt_app/lib/src/rust/frb_generated.web.dart:17:20 • super_formal_parameter_without_associated_named
+  error • No associated named super constructor parameter • gestalt_app/lib/src/rust/frb_generated.web.dart:18:20 • super_formal_parameter_without_associated_named
+  error • No associated named super constructor parameter • gestalt_app/lib/src/rust/frb_generated.web.dart:19:20 • super_formal_parameter_without_associated_named
+  error • No associated named super constructor parameter • gestalt_app/lib/src/rust/frb_generated.web.dart:20:20 • super_formal_parameter_without_associated_named
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.web.dart:23:3 • undefined_annotation
+  error • Undefined class 'AnyhowException' • gestalt_app/lib/src/rust/frb_generated.web.dart:24:3 • undefined_class
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.web.dart:26:3 • undefined_annotation
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.web.dart:29:3 • undefined_annotation
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.web.dart:32:3 • undefined_annotation
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.web.dart:35:3 • undefined_annotation
+  error • Undefined class 'Uint8List' • gestalt_app/lib/src/rust/frb_generated.web.dart:36:3 • undefined_class
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.web.dart:38:3 • undefined_annotation
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.web.dart:41:3 • undefined_annotation
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.web.dart:44:3 • undefined_annotation
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.web.dart:47:3 • undefined_annotation
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.web.dart:50:3 • undefined_annotation
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.web.dart:53:3 • undefined_annotation
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.web.dart:56:3 • undefined_annotation
+  error • Undefined class 'AnyhowException' • gestalt_app/lib/src/rust/frb_generated.web.dart:57:3 • undefined_class
+  error • Undefined class 'SseDeserializer' • gestalt_app/lib/src/rust/frb_generated.web.dart:57:46 • undefined_class
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.web.dart:59:3 • undefined_annotation
+  error • Undefined class 'SseDeserializer' • gestalt_app/lib/src/rust/frb_generated.web.dart:60:28 • undefined_class
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.web.dart:62:3 • undefined_annotation
+  error • Undefined class 'SseDeserializer' • gestalt_app/lib/src/rust/frb_generated.web.dart:63:47 • undefined_class
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.web.dart:65:3 • undefined_annotation
+  error • Undefined class 'SseDeserializer' • gestalt_app/lib/src/rust/frb_generated.web.dart:66:23 • undefined_class
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.web.dart:68:3 • undefined_annotation
+  error • Undefined class 'Uint8List' • gestalt_app/lib/src/rust/frb_generated.web.dart:69:3 • undefined_class
+  error • Undefined class 'SseDeserializer' • gestalt_app/lib/src/rust/frb_generated.web.dart:69:45 • undefined_class
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.web.dart:71:3 • undefined_annotation
+  error • Undefined class 'SseDeserializer' • gestalt_app/lib/src/rust/frb_generated.web.dart:73:5 • undefined_class
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.web.dart:76:3 • undefined_annotation
+  error • Undefined class 'SseDeserializer' • gestalt_app/lib/src/rust/frb_generated.web.dart:77:45 • undefined_class
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.web.dart:79:3 • undefined_annotation
+  error • Undefined class 'SseDeserializer' • gestalt_app/lib/src/rust/frb_generated.web.dart:80:22 • undefined_class
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.web.dart:82:3 • undefined_annotation
+  error • Undefined class 'SseDeserializer' • gestalt_app/lib/src/rust/frb_generated.web.dart:83:35 • undefined_class
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.web.dart:85:3 • undefined_annotation
+  error • Undefined class 'SseDeserializer' • gestalt_app/lib/src/rust/frb_generated.web.dart:86:24 • undefined_class
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.web.dart:88:3 • undefined_annotation
+  error • Undefined class 'SseDeserializer' • gestalt_app/lib/src/rust/frb_generated.web.dart:89:37 • undefined_class
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.web.dart:91:3 • undefined_annotation
+  error • Undefined class 'SseDeserializer' • gestalt_app/lib/src/rust/frb_generated.web.dart:92:24 • undefined_class
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.web.dart:94:3 • undefined_annotation
+  error • Undefined class 'AnyhowException' • gestalt_app/lib/src/rust/frb_generated.web.dart:96:5 • undefined_class
+  error • Undefined class 'SseSerializer' • gestalt_app/lib/src/rust/frb_generated.web.dart:97:5 • undefined_class
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.web.dart:100:3 • undefined_annotation
+  error • Undefined class 'SseSerializer' • gestalt_app/lib/src/rust/frb_generated.web.dart:101:39 • undefined_class
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.web.dart:103:3 • undefined_annotation
+  error • Undefined class 'SseSerializer' • gestalt_app/lib/src/rust/frb_generated.web.dart:106:5 • undefined_class
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.web.dart:109:3 • undefined_annotation
+  error • Undefined class 'SseSerializer' • gestalt_app/lib/src/rust/frb_generated.web.dart:110:34 • undefined_class
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.web.dart:112:3 • undefined_annotation
+  error • Undefined class 'Uint8List' • gestalt_app/lib/src/rust/frb_generated.web.dart:114:5 • undefined_class
+  error • Undefined class 'SseSerializer' • gestalt_app/lib/src/rust/frb_generated.web.dart:115:5 • undefined_class
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.web.dart:118:3 • undefined_annotation
+  error • Undefined class 'SseSerializer' • gestalt_app/lib/src/rust/frb_generated.web.dart:121:5 • undefined_class
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.web.dart:124:3 • undefined_annotation
+  error • Undefined class 'SseSerializer' • gestalt_app/lib/src/rust/frb_generated.web.dart:127:5 • undefined_class
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.web.dart:130:3 • undefined_annotation
+  error • Undefined class 'SseSerializer' • gestalt_app/lib/src/rust/frb_generated.web.dart:131:33 • undefined_class
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.web.dart:133:3 • undefined_annotation
+  error • Undefined class 'SseSerializer' • gestalt_app/lib/src/rust/frb_generated.web.dart:134:46 • undefined_class
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.web.dart:136:3 • undefined_annotation
+  error • Undefined class 'SseSerializer' • gestalt_app/lib/src/rust/frb_generated.web.dart:137:35 • undefined_class
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.web.dart:139:3 • undefined_annotation
+  error • Undefined class 'SseSerializer' • gestalt_app/lib/src/rust/frb_generated.web.dart:140:48 • undefined_class
+  error • Undefined name 'protected' used as an annotation • gestalt_app/lib/src/rust/frb_generated.web.dart:142:3 • undefined_annotation
+  error • Undefined class 'SseSerializer' • gestalt_app/lib/src/rust/frb_generated.web.dart:143:35 • undefined_class
+  error • Classes and mixins can only implement other classes and mixins • gestalt_app/lib/src/rust/frb_generated.web.dart:148:30 • implements_non_class
+  error • Undefined class 'ExternalLibrary' • gestalt_app/lib/src/rust/frb_generated.web.dart:149:35 • undefined_class
+  error • Undefined name 'JS' used as an annotation • gestalt_app/lib/src/rust/frb_generated.web.dart:152:1 • undefined_annotation
+  error • Undefined name 'JS' used as an annotation • gestalt_app/lib/src/rust/frb_generated.web.dart:155:1 • undefined_annotation
+  error • Undefined name 'anonymous' used as an annotation • gestalt_app/lib/src/rust/frb_generated.web.dart:156:1 • undefined_annotation
+  error • Undefined class 'JSObject' • gestalt_app/lib/src/rust/frb_generated.web.dart:157:36 • undefined_class
+  error • Extension types can't implement 'InvalidType' • gestalt_app/lib/src/rust/frb_generated.web.dart:157:59 • extension_type_implements_disallowed_type
+  error • Target of URI doesn't exist: 'package:build_tool/build_tool.dart' • gestalt_app/rust_builder/cargokit/build_tool/bin/build_tool.dart:4:8 • uri_does_not_exist
+  error • Target of URI doesn't exist: 'package:version/version.dart' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/android_environment.dart:10:8 • uri_does_not_exist
+  error • Undefined name 'Version' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/android_environment.dart:130:30 • undefined_identifier
+  error • Undefined class 'Version' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/android_environment.dart:170:45 • undefined_class
+  error • Target of URI doesn't exist: 'package:ed25519_edwards/ed25519_edwards.dart' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/artifacts_provider.dart:6:8 • uri_does_not_exist
+  error • Target of URI doesn't exist: 'package:logging/logging.dart' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/artifacts_provider.dart:8:8 • uri_does_not_exist
+  error • The function 'Logger' isn't defined • gestalt_app/rust_builder/cargokit/build_tool/lib/src/artifacts_provider.dart:45:14 • undefined_function
+  error • The method 'verify' isn't defined for the type 'ArtifactProvider' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/artifacts_provider.dart:212:9 • undefined_method
+  error • Target of URI doesn't exist: 'package:logging/logging.dart' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/build_gradle.dart:6:8 • uri_does_not_exist
+  error • The function 'Logger' isn't defined • gestalt_app/rust_builder/cargokit/build_tool/lib/src/build_gradle.dart:15:13 • undefined_function
+  error • Target of URI doesn't exist: 'package:args/command_runner.dart' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/build_tool.dart:6:8 • uri_does_not_exist
+  error • Target of URI doesn't exist: 'package:ed25519_edwards/ed25519_edwards.dart' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/build_tool.dart:7:8 • uri_does_not_exist
+  error • Target of URI doesn't exist: 'package:github/github.dart' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/build_tool.dart:8:8 • uri_does_not_exist
+  error • Target of URI doesn't exist: 'package:hex/hex.dart' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/build_tool.dart:9:8 • uri_does_not_exist
+  error • Target of URI doesn't exist: 'package:logging/logging.dart' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/build_tool.dart:10:8 • uri_does_not_exist
+  error • The function 'Logger' isn't defined • gestalt_app/rust_builder/cargokit/build_tool/lib/src/build_tool.dart:23:13 • undefined_function
+  error • Classes can only extend other classes • gestalt_app/rust_builder/cargokit/build_tool/lib/src/build_tool.dart:25:37 • extends_non_class
+warning • The method doesn't override an inherited method • gestalt_app/rust_builder/cargokit/build_tool/lib/src/build_tool.dart:29:16 • override_on_non_overriding_member
+warning • The field doesn't override an inherited getter or setter • gestalt_app/rust_builder/cargokit/build_tool/lib/src/build_tool.dart:43:9 • override_on_non_overriding_member
+warning • The field doesn't override an inherited getter or setter • gestalt_app/rust_builder/cargokit/build_tool/lib/src/build_tool.dart:46:9 • override_on_non_overriding_member
+warning • The field doesn't override an inherited getter or setter • gestalt_app/rust_builder/cargokit/build_tool/lib/src/build_tool.dart:57:9 • override_on_non_overriding_member
+warning • The field doesn't override an inherited getter or setter • gestalt_app/rust_builder/cargokit/build_tool/lib/src/build_tool.dart:60:9 • override_on_non_overriding_member
+warning • The field doesn't override an inherited getter or setter • gestalt_app/rust_builder/cargokit/build_tool/lib/src/build_tool.dart:71:9 • override_on_non_overriding_member
+warning • The field doesn't override an inherited getter or setter • gestalt_app/rust_builder/cargokit/build_tool/lib/src/build_tool.dart:74:9 • override_on_non_overriding_member
+  error • Classes can only extend other classes • gestalt_app/rust_builder/cargokit/build_tool/lib/src/build_tool.dart:83:29 • extends_non_class
+warning • The field doesn't override an inherited getter or setter • gestalt_app/rust_builder/cargokit/build_tool/lib/src/build_tool.dart:85:9 • override_on_non_overriding_member
+warning • The field doesn't override an inherited getter or setter • gestalt_app/rust_builder/cargokit/build_tool/lib/src/build_tool.dart:88:9 • override_on_non_overriding_member
+warning • The method doesn't override an inherited method • gestalt_app/rust_builder/cargokit/build_tool/lib/src/build_tool.dart:91:8 • override_on_non_overriding_member
+  error • The method 'generateKey' isn't defined for the type 'GenKeyCommand' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/build_tool.dart:92:16 • undefined_method
+  error • Undefined name 'HEX' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/build_tool.dart:93:21 • undefined_identifier
+  error • Undefined name 'HEX' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/build_tool.dart:94:20 • undefined_identifier
+  error • Classes can only extend other classes • gestalt_app/rust_builder/cargokit/build_tool/lib/src/build_tool.dart:100:41 • extends_non_class
+  error • Undefined name 'argParser' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/build_tool.dart:102:5 • undefined_identifier
+warning • The field doesn't override an inherited getter or setter • gestalt_app/rust_builder/cargokit/build_tool/lib/src/build_tool.dart:142:9 • override_on_non_overriding_member
+warning • The field doesn't override an inherited getter or setter • gestalt_app/rust_builder/cargokit/build_tool/lib/src/build_tool.dart:145:9 • override_on_non_overriding_member
+warning • The method doesn't override an inherited method • gestalt_app/rust_builder/cargokit/build_tool/lib/src/build_tool.dart:151:16 • override_on_non_overriding_member
+  error • Undefined name 'argResults' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/build_tool.dart:152:21 • undefined_identifier
+  error • Undefined name 'HEX' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/build_tool.dart:165:24 • undefined_identifier
+  error • Undefined name 'argResults' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/build_tool.dart:169:25 • undefined_identifier
+  error • Undefined name 'argResults' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/build_tool.dart:174:9 • undefined_identifier
+  error • Undefined name 'argResults' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/build_tool.dart:183:27 • undefined_identifier
+  error • The method 'PrivateKey' isn't defined for the type 'PrecompileBinariesCommand' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/build_tool.dart:192:19 • undefined_method
+  error • Undefined name 'RepositorySlug' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/build_tool.dart:195:23 • undefined_identifier
+  error • Undefined name 'argResults' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/build_tool.dart:195:43 • undefined_identifier
+  error • Undefined name 'argResults' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/build_tool.dart:197:27 • undefined_identifier
+  error • Undefined name 'argResults' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/build_tool.dart:198:26 • undefined_identifier
+  error • Undefined name 'argResults' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/build_tool.dart:200:16 • undefined_identifier
+  error • Classes can only extend other classes • gestalt_app/rust_builder/cargokit/build_tool/lib/src/build_tool.dart:207:37 • extends_non_class
+  error • Undefined name 'argParser' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/build_tool.dart:209:5 • undefined_identifier
+warning • The field doesn't override an inherited getter or setter • gestalt_app/rust_builder/cargokit/build_tool/lib/src/build_tool.dart:217:9 • override_on_non_overriding_member
+warning • The field doesn't override an inherited getter or setter • gestalt_app/rust_builder/cargokit/build_tool/lib/src/build_tool.dart:220:9 • override_on_non_overriding_member
+warning • The method doesn't override an inherited method • gestalt_app/rust_builder/cargokit/build_tool/lib/src/build_tool.dart:225:16 • override_on_non_overriding_member
+  error • Undefined name 'argResults' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/build_tool.dart:226:25 • undefined_identifier
+  error • The function 'CommandRunner' isn't defined • gestalt_app/rust_builder/cargokit/build_tool/lib/src/build_tool.dart:243:20 • undefined_function
+  error • Target of URI doesn't exist: 'package:logging/logging.dart' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/builder.dart:5:8 • uri_does_not_exist
+  error • The function 'Logger' isn't defined • gestalt_app/rust_builder/cargokit/build_tool/lib/src/builder.dart:16:14 • undefined_function
+  error • Target of URI doesn't exist: 'package:toml/toml.dart' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/cargo.dart:7:8 • uri_does_not_exist
+  error • Undefined name 'TomlDocument' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/cargo.dart:31:18 • undefined_identifier
+  error • Target of URI doesn't exist: 'package:convert/convert.dart' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/crate_hash.dart:9:8 • uri_does_not_exist
+  error • The method 'AccumulatorSink' isn't defined for the type 'CrateHash' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/crate_hash.dart:55:20 • undefined_method
+  error • The method 'AccumulatorSink' isn't defined for the type 'CrateHash' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/crate_hash.dart:73:20 • undefined_method
+  error • Undefined name 'hex' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/crate_hash.dart:98:12 • undefined_identifier
+  error • Target of URI doesn't exist: 'package:logging/logging.dart' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/logging.dart:6:8 • uri_does_not_exist
+  error • Undefined class 'LogRecord' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/logging.dart:13:11 • undefined_class
+  error • Undefined name 'Level' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/logging.dart:15:28 • undefined_identifier
+  error • Undefined name 'Logger' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/logging.dart:35:3 • undefined_identifier
+  error • Undefined name 'Level' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/logging.dart:35:23 • undefined_identifier
+  error • Undefined name 'Logger' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/logging.dart:36:3 • undefined_identifier
+  error • Undefined class 'LogRecord' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/logging.dart:36:32 • undefined_class
+  error • The function 'LogRecord' isn't defined • gestalt_app/rust_builder/cargokit/build_tool/lib/src/logging.dart:40:14 • undefined_function
+  error • Undefined name 'Logger' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/logging.dart:51:3 • undefined_identifier
+  error • Undefined name 'Level' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/logging.dart:51:23 • undefined_identifier
+  error • Target of URI doesn't exist: 'package:ed25519_edwards/ed25519_edwards.dart' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/options.dart:7:8 • uri_does_not_exist
+  error • Target of URI doesn't exist: 'package:hex/hex.dart' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/options.dart:8:8 • uri_does_not_exist
+  error • Target of URI doesn't exist: 'package:logging/logging.dart' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/options.dart:9:8 • uri_does_not_exist
+  error • Target of URI doesn't exist: 'package:yaml/yaml.dart' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/options.dart:12:8 • uri_does_not_exist
+  error • The function 'Logger' isn't defined • gestalt_app/rust_builder/cargokit/build_tool/lib/src/options.dart:18:14 • undefined_function
+  error • Undefined class 'YamlNode' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/options.dart:65:39 • undefined_class
+  error • Undefined class 'YamlScalar' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/options.dart:66:19 • undefined_class
+  error • Undefined class 'YamlNode' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/options.dart:78:34 • undefined_class
+  error • The name 'YamlMap' isn't defined, so it can't be used in an 'is' expression • gestalt_app/rust_builder/cargokit/build_tool/lib/src/options.dart:79:18 • type_test_with_undefined_name
+warning • Dead code • gestalt_app/rust_builder/cargokit/build_tool/lib/src/options.dart:79:27 • dead_code
+  error • Undefined class 'YamlScalar' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/options.dart:85:20 • undefined_class
+  error • Undefined class 'YamlScalar' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/options.dart:87:27 • undefined_class
+  error • Undefined class 'YamlList' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/options.dart:88:24 • undefined_class
+  error • The name 'YamlNode' isn't a type, so it can't be used as a type argument • gestalt_app/rust_builder/cargokit/build_tool/lib/src/options.dart:88:45 • non_type_as_type_argument
+  error • Undefined class 'YamlScalar' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/options.dart:90:30 • undefined_class
+  error • The property 'value' can't be unconditionally accessed because the receiver can be 'null' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/options.dart:95:39 • unchecked_use_of_nullable_value
+  error • Undefined class 'YamlMap' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/options.dart:111:14 • undefined_class
+  error • The name 'YamlNode' isn't a type, so it can't be used as a type argument • gestalt_app/rust_builder/cargokit/build_tool/lib/src/options.dart:113:16 • non_type_as_type_argument
+warning • The declaration 'valueMap' isn't referenced • gestalt_app/rust_builder/cargokit/build_tool/lib/src/options.dart:113:30 • unused_element
+  error • Undefined name 'nodes' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/options.dart:114:7 • undefined_identifier
+  error • Undefined class 'PublicKey' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/options.dart:119:9 • undefined_class
+  error • Undefined class 'PublicKey' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/options.dart:126:10 • undefined_class
+  error • Undefined name 'HEX' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/options.dart:127:19 • undefined_identifier
+  error • The method 'PublicKey' isn't defined for the type 'PrecompiledBinaries' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/options.dart:132:12 • undefined_method
+  error • Undefined class 'YamlNode' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/options.dart:135:36 • undefined_class
+  error • Undefined class 'YamlMap' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/options.dart:136:19 • undefined_class
+  error • The name 'YamlNode' isn't a type, so it can't be used as a type argument • gestalt_app/rust_builder/cargokit/build_tool/lib/src/options.dart:136:50 • non_type_as_type_argument
+  error • Undefined class 'YamlNode' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/options.dart:139:27 • undefined_class
+  error • Undefined class 'YamlNode' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/options.dart:140:27 • undefined_class
+  error • Undefined class 'YamlScalar' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/options.dart:143:11 • undefined_class
+  error • Undefined class 'YamlScalar' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/options.dart:148:11 • undefined_class
+  error • Undefined class 'YamlNode' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/options.dart:176:37 • undefined_class
+  error • The name 'YamlMap' isn't defined, so it can't be used in an 'is' expression • gestalt_app/rust_builder/cargokit/build_tool/lib/src/options.dart:177:18 • type_test_with_undefined_name
+warning • Dead code • gestalt_app/rust_builder/cargokit/build_tool/lib/src/options.dart:177:27 • dead_code
+  error • Undefined class 'YamlScalar' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/options.dart:186:18 • undefined_class
+  error • Undefined class 'YamlNode' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/options.dart:187:20 • undefined_class
+  error • The name 'YamlMap' isn't defined, so it can't be used in an 'is' expression • gestalt_app/rust_builder/cargokit/build_tool/lib/src/options.dart:189:22 • type_test_with_undefined_name
+warning • Dead code • gestalt_app/rust_builder/cargokit/build_tool/lib/src/options.dart:189:31 • dead_code
+  error • Undefined class 'YamlNode' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/options.dart:192:30 • undefined_class
+  error • Undefined class 'YamlScalar' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/options.dart:193:24 • undefined_class
+  error • Undefined class 'YamlScalar' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/options.dart:205:33 • undefined_class
+  error • The method 'loadYamlNode' isn't defined for the type 'CargokitCrateOptions' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/options.dart:225:24 • undefined_method
+  error • Undefined class 'YamlNode' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/options.dart:249:36 • undefined_class
+  error • The name 'YamlMap' isn't defined, so it can't be used in an 'is' expression • gestalt_app/rust_builder/cargokit/build_tool/lib/src/options.dart:250:18 • type_test_with_undefined_name
+warning • Dead code • gestalt_app/rust_builder/cargokit/build_tool/lib/src/options.dart:250:27 • dead_code
+  error • Undefined class 'YamlScalar' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/options.dart:257:26 • undefined_class
+  error • Undefined class 'YamlScalar' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/options.dart:258:30 • undefined_class
+  error • Undefined class 'YamlScalar' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/options.dart:265:33 • undefined_class
+  error • Undefined class 'YamlScalar' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/options.dart:266:30 • undefined_class
+  error • The method 'loadYamlNode' isn't defined for the type 'CargokitUserOptions' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/options.dart:292:26 • undefined_method
+  error • Target of URI doesn't exist: 'package:ed25519_edwards/ed25519_edwards.dart' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/precompile_binaries.dart:6:8 • uri_does_not_exist
+  error • Target of URI doesn't exist: 'package:github/github.dart' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/precompile_binaries.dart:7:8 • uri_does_not_exist
+  error • Target of URI doesn't exist: 'package:logging/logging.dart' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/precompile_binaries.dart:8:8 • uri_does_not_exist
+  error • The function 'Logger' isn't defined • gestalt_app/rust_builder/cargokit/build_tool/lib/src/precompile_binaries.dart:19:14 • undefined_function
+  error • Undefined class 'PrivateKey' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/precompile_binaries.dart:34:9 • undefined_class
+  error • Undefined class 'RepositorySlug' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/precompile_binaries.dart:36:9 • undefined_class
+  error • The method 'GitHub' isn't defined for the type 'PrecompileBinaries' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/precompile_binaries.dart:70:20 • undefined_method
+  error • Undefined name 'Authentication' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/precompile_binaries.dart:70:33 • undefined_identifier
+  error • The name 'CreateReleaseAsset' isn't a type, so it can't be used as a type argument • gestalt_app/rust_builder/cargokit/build_tool/lib/src/precompile_binaries.dart:125:23 • non_type_as_type_argument
+  error • The method 'CreateReleaseAsset' isn't defined for the type 'PrecompileBinaries' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/precompile_binaries.dart:133:24 • undefined_method
+  error • The method 'sign' isn't defined for the type 'PrecompileBinaries' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/precompile_binaries.dart:138:27 • undefined_method
+  error • The method 'CreateReleaseAsset' isn't defined for the type 'PrecompileBinaries' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/precompile_binaries.dart:139:33 • undefined_method
+  error • The method 'verify' isn't defined for the type 'PrecompileBinaries' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/precompile_binaries.dart:144:25 • undefined_method
+  error • The method 'public' isn't defined for the type 'PrecompileBinaries' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/precompile_binaries.dart:144:32 • undefined_method
+  error • The property 'name' can't be unconditionally accessed because the receiver can be 'null' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/precompile_binaries.dart:151:58 • unchecked_use_of_nullable_value
+  error • The name 'Release' isn't a type, so it can't be used as a type argument • gestalt_app/rust_builder/cargokit/build_tool/lib/src/precompile_binaries.dart:176:10 • non_type_as_type_argument
+  error • Undefined class 'RepositoriesService' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/precompile_binaries.dart:177:14 • undefined_class
+  error • Undefined class 'Release' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/precompile_binaries.dart:182:5 • undefined_class
+  error • The name 'ReleaseNotFound' isn't a type and can't be used in an on-catch clause • gestalt_app/rust_builder/cargokit/build_tool/lib/src/precompile_binaries.dart:186:10 • non_type_in_catch_clause
+  error • Undefined name 'CreateRelease' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/precompile_binaries.dart:190:11 • undefined_identifier
+  error • Target of URI doesn't exist: 'package:logging/logging.dart' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/util.dart:7:8 • uri_does_not_exist
+  error • The function 'Logger' isn't defined • gestalt_app/rust_builder/cargokit/build_tool/lib/src/util.dart:13:13 • undefined_function
+  error • Target of URI doesn't exist: 'package:ed25519_edwards/ed25519_edwards.dart' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/verify_binaries.dart:6:8 • uri_does_not_exist
+  error • The method 'verify' isn't defined for the type 'VerifyBinaries' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/verify_binaries.dart:71:16 • undefined_method
+warning • Unused import: 'package:gestalt_app/screens/main_layout.dart' • integration_test/app_test.dart:5:8 • unused_import
+   info • The private field _events could be 'final' • lib/agent_view.dart:18:17 • prefer_final_fields
+   info • Use 'const' with the constructor to improve performance • lib/agent_view.dart:174:19 • prefer_const_constructors
+   info • Use 'const' literals as arguments to constructors of '@immutable' classes • lib/agent_view.dart:176:20 • prefer_const_literals_to_create_immutables
+   info • Use 'const' with the constructor to improve performance • lib/agent_view.dart:177:11 • prefer_const_constructors
+warning • Duplicate import • lib/screens/dashboard_screen.dart:4:8 • duplicate_import
+warning • Unused import: '../widgets/project_card.dart' • lib/screens/dashboard_screen.dart:10:8 • unused_import
+   info • The private field _logs could be 'final' • lib/screens/dashboard_screen.dart:28:17 • prefer_final_fields
+   info • 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss • lib/screens/dashboard_screen.dart:192:39 • deprecated_member_use
+  error • The named parameter 'height' is required, but there's no corresponding argument • lib/screens/dashboard_screen.dart:227:20 • missing_required_argument
+   info • 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss • lib/screens/dashboard_screen.dart:231:41 • deprecated_member_use
+   info • Use 'const' with the constructor to improve performance • lib/screens/dashboard_screen.dart:235:19 • prefer_const_constructors
+   info • Use 'const' with the constructor to improve performance • lib/screens/dashboard_screen.dart:237:28 • prefer_const_constructors
+   info • Use 'const' literals as arguments to constructors of '@immutable' classes • lib/screens/dashboard_screen.dart:238:33 • prefer_const_literals_to_create_immutables
+  error • The named parameter 'width' is required, but there's no corresponding argument • lib/screens/dashboard_screen.dart:262:12 • missing_required_argument
+   info • 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss • lib/screens/dashboard_screen.dart:266:26 • deprecated_member_use
+   info • 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss • lib/screens/dashboard_screen.dart:274:30 • deprecated_member_use
+   info • 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss • lib/screens/main_layout.dart:49:37 • deprecated_member_use
+   info • 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss • lib/screens/main_layout.dart:97:53 • deprecated_member_use
+   info • 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss • lib/screens/main_layout.dart:100:55 • deprecated_member_use
+   info • Don't use 'BuildContext's across async gaps, guarded by an unrelated 'mounted' check • lib/screens/project_detail_screen.dart:56:48 • use_build_context_synchronously
+   info • Don't use 'BuildContext's across async gaps • lib/screens/project_detail_screen.dart:79:29 • use_build_context_synchronously
+   info • Don't use 'BuildContext's across async gaps • lib/screens/project_detail_screen.dart:82:29 • use_build_context_synchronously
+warning • Dead code • lib/screens/project_detail_screen.dart:115:57 • dead_code
+warning • The left operand can't be null, so the right operand is never executed • lib/screens/project_detail_screen.dart:115:60 • dead_null_aware_expression
+   info • Use 'const' with the constructor to improve performance • lib/screens/project_detail_screen.dart:116:63 • prefer_const_constructors
+   info • Don't use 'BuildContext's across async gaps, guarded by an unrelated 'mounted' check • lib/screens/project_list_screen.dart:51:48 • use_build_context_synchronously
+   info • Don't invoke 'print' in production code • lib/services/api_service.dart:41:7 • avoid_print
+   info • Don't invoke 'print' in production code • lib/services/api_service.dart:54:7 • avoid_print
+   info • Don't invoke 'print' in production code • lib/services/api_service.dart:66:7 • avoid_print
+   info • Don't invoke 'print' in production code • lib/services/api_service.dart:79:7 • avoid_print
+   info • Don't invoke 'print' in production code • lib/services/api_service.dart:92:7 • avoid_print
+   info • Don't invoke 'print' in production code • lib/services/api_service.dart:107:7 • avoid_print
+   info • Don't invoke 'print' in production code • lib/services/api_service.dart:117:7 • avoid_print
+   info • Don't invoke 'print' in production code • lib/services/api_service.dart:133:7 • avoid_print
+   info • Don't invoke 'print' in production code • lib/services/api_service.dart:151:7 • avoid_print
+   info • Don't invoke 'print' in production code • lib/services/api_service.dart:161:7 • avoid_print
+   info • Don't invoke 'print' in production code • lib/services/api_service.dart:171:7 • avoid_print
+   info • Don't invoke 'print' in production code • lib/services/api_service.dart:181:7 • avoid_print
+   info • Don't invoke 'print' in production code • lib/services/api_service.dart:195:7 • avoid_print
+   info • Don't invoke 'print' in production code • lib/services/api_service.dart:209:7 • avoid_print
+   info • Don't invoke 'print' in production code • lib/services/api_service.dart:222:7 • avoid_print
+   info • Don't invoke 'print' in production code • lib/services/api_service.dart:237:7 • avoid_print
+   info • 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss • lib/theme/neo_glass_theme.dart:26:27 • deprecated_member_use
+   info • 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss • lib/theme/neo_glass_theme.dart:28:46 • deprecated_member_use
+   info • 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss • lib/widgets/agent_status_pill.dart:31:22 • deprecated_member_use
+   info • 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss • lib/widgets/agent_status_pill.dart:33:41 • deprecated_member_use
+   info • 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss • lib/widgets/agent_status_pill.dart:52:28 • deprecated_member_use
+   info • Use 'const' with the constructor to improve performance • lib/widgets/project_card.dart:43:19 • prefer_const_constructors
+   info • 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss • lib/widgets/project_card.dart:49:46 • deprecated_member_use
+   info • 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss • lib/widgets/project_card.dart:51:65 • deprecated_member_use
+warning • Unused import: 'package:flutter/material.dart' • test/widget_test.dart:8:8 • unused_import
+
+466 issues found. (ran in 5.3s)

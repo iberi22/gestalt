@@ -54,13 +54,12 @@ impl VectorDb for SurrealDbAdapter {
         collection: &str,
         vector: Vec<f32>,
         limit: usize,
-    ) -> anyhow::Result<Vec<serde_json::Value>> {
-        // SurrealDB 1.x doesn't have native vector search, use simple query for now
-        let table = collection.to_string();
+    ) -> anyhow::Result<Vec<ScoredResult>> {
         let mut response = self
             .db
-            .query("SELECT * FROM type::table($table) LIMIT $limit")
-            .bind(("table", table))
+            .query("SELECT id, metadata, vector::distance::cosine(embedding, $vector) AS score FROM type::table($table) ORDER BY score ASC LIMIT $limit")
+            .bind(("vector", vector))
+            .bind(("table", collection.to_string()))
             .bind(("limit", limit))
             .await?;
 

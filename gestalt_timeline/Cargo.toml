@@ -65,7 +65,7 @@ gestalt_core = { path = "../gestalt_core" }
 teloxide = { version = "0.17.0", features = ["macros"] }
 
 # Synapse Agentic - Framework base for Hive, Memory, Resilience, Compaction
-synapse-agentic = { path = "../../synapse-agentic", default-features = false, features = ["mcp", "db-surreal"] }
+synapse-agentic = { path = "../synapse-agentic", default-features = false }
 
 # Unique IDs (for MemoryFragment)
 uuid = { version = "1", features = ["v4", "serde"] }

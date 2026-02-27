@@ -1,94 +1,106 @@
 # 🧠 PLANNING.md - Gestalt Timeline Orchestrator
 
-> **Meta-Agente Orquestador CLI con Línea de Tiempo Universal**
+> **CLI Orchestrator Meta-Agent with Universal Timeline**
 
-_Última actualización: 2025-12-19_
-
----
-
-## 📋 Resumen del Proyecto
-
-**Gestalt Timeline** es un sistema CLI diseñado para que múltiples agentes de IA (como VS Code Copilot, Antigravity, o cualquier sistema externo) puedan coordinar proyectos y subtareas en paralelo, utilizando una **línea de tiempo universal** como eje central de todas las operaciones.
-
-### 🎯 Objetivo Principal
-Crear un MVP funcional que permita a varios agentes coordinar proyectos y subtareas en paralelo, mostrando resultados en CLI y persistiendo estado en SurrealDB con **timestamp como variable primaria** en todas las operaciones.
+_Last update: 2026-02-22_
 
 ---
 
-## 🏗️ Arquitectura del Sistema
+## 📋 Project Summary
+
+**Gestalt Timeline** is a CLI system designed so that multiple AI agents (such as VS Code Copilot, Antigravity, or any external system) can coordinate projects and subtasks in parallel, using a **universal timeline** as the central axis of all operations.
+
+### 🎯 Main Objective
+Create a functional system that allows various agents to coordinate projects and subtasks in parallel, showing results in CLI and persisting state in SurrealDB with **timestamp as the primary variable** in all operations.
+
+---
+
+## 🏗️ System Architecture
 
 ```mermaid
 graph TB
-    subgraph "Agentes Externos"
+    subgraph "External Agents"
         A1[VS Code Copilot]
         A2[Antigravity]
-        A3[Otros Agentes CLI]
+        A3[Other CLI Agents]
     end
 
     subgraph "Gestalt CLI"
         CLI[CLI Interface]
+        Hive[Synapse Hive]
         TL[Timeline Service]
         TS[Task Service]
         PS[Project Service]
+        VFS[Virtual File System]
     end
 
-    subgraph "Persistencia"
+    subgraph "Persistence"
         SDB[(SurrealDB)]
+        Disk[(Physical Disk)]
     end
 
     A1 --> CLI
     A2 --> CLI
     A3 --> CLI
-    CLI --> TL
+    CLI --> Hive
+    Hive --> TL
     TL --> TS
     TL --> PS
     TS --> SDB
     PS --> SDB
     TL --> SDB
+    VFS -.->|Final Flush| Disk
+    TS -.->|Write| VFS
 ```
 
-### Componentes Principales
+### Main Components
 
-| Componente | Descripción |
+| Component | Description |
 |------------|-------------|
-| **Timeline Service** | Núcleo del sistema. Registra cada acción con timestamp UTC. Todos los agentes acceden a esta línea de tiempo en tiempo real. |
-| **Task Service** | Gestiona subtareas, ejecución asincrónica y resultados. |
-| **Project Service** | Maneja proyectos, estados y prioridades. |
-| **CLI Interface** | Expone comandos para agentes externos. |
-| **SurrealDB** | Persistencia de memoria, estado y línea de tiempo. |
+| **Timeline Service** | System core. Records every action with UTC timestamp. All agents access this timeline in real-time. |
+| **Task Service** | Manages subtasks, asynchronous execution, and results. |
+| **Project Service** | Manages projects, states, and priorities. |
+| **CLI Interface** | Exposes commands for external agents. |
+| **SurrealDB** | Persistence for memory, state, and timeline. |
+| **Virtual File System (VFS)** | Isolation layer for agent file operations. |
+| **Synapse Hive** | Agent supervisor and resilience framework. |
 
 ---
 
-## 🛠️ Stack Tecnológico
+## 🛠️ Technological Stack
 
-| Categoría | Tecnología | Justificación |
+| Category | Technology | Justification |
 |-----------|------------|---------------|
-| **Lenguaje** | Rust | Seguridad, rendimiento, concurrencia nativa |
-| **Runtime Async** | `tokio` | Concurrencia de alto rendimiento |
-| **Base de Datos** | SurrealDB | NoSQL multi-modelo, tiempo real, graph queries |
-| **CLI Framework** | `clap` | CLI declarativo y robusto |
-| **Serialización** | `serde` | JSON/CBOR nativo para SurrealDB |
-| **Logging** | `tracing` | Observabilidad estructurada |
+| **Language** | Rust | Safety, performance, native concurrency |
+| **Async Runtime** | `tokio` | High-performance concurrency |
+| **Database** | SurrealDB | Multi-model NoSQL, real-time, graph queries |
+| **CLI Framework** | `clap` | Declarative and robust CLI |
+| **Serialization** | `serde` | Native JSON/CBOR for SurrealDB |
+| **Logging** | `tracing` | Structured observability |
+| **Framework** | `synapse-agentic` | Actor model, Hive, Memory, Resilience |
 
 ---
 
-## 📦 Estructura del Proyecto
+## 📦 Project Structure
 
 ```
 gestalt-rust/
-├── gestalt_timeline/           # 🆕 Nuevo crate para el orquestador
+├── gestalt_timeline/           # Orchestrator crate
 │   ├── Cargo.toml
 │   └── src/
-│       ├── main.rs             # Entry point CLI
+│       ├── main.rs             # CLI Entry point
 │       ├── lib.rs              # Core exports
 │       ├── cli/
 │       │   ├── mod.rs
-│       │   └── commands.rs     # Definición de comandos
+│       │   └── commands.rs     # Command definitions
 │       ├── services/
 │       │   ├── mod.rs
-│       │   ├── timeline.rs     # Timeline Service (núcleo)
+│       │   ├── timeline.rs     # Timeline Service (core)
 │       │   ├── project.rs      # Project Service
-│       │   └── task.rs         # Task Service
+│       │   ├── task.rs         # Task Service
+│       │   ├── vfs.rs          # Virtual File System (Isolation)
+│       │   ├── context_compaction.rs # Context Compactor
+│       │   └── reviewer_merge_agent.rs # Merge Approval Agent
 │       ├── models/
 │       │   ├── mod.rs
 │       │   ├── timeline_event.rs
@@ -96,12 +108,15 @@ gestalt-rust/
 │       │   └── task.rs
 │       └── db/
 │           ├── mod.rs
-│           └── surreal.rs      # Cliente SurrealDB
-├── gestalt_core/               # Existente
-├── gestalt_cli/                # Existente
-├── gestalt_app/                # Existente
-├── PLANNING.md
-├── TASK.md
+│           └── surreal.rs      # SurrealDB client
+├── gestalt_core/               # Shared logic
+├── .gitcore/                   # Git-Core Protocol (Source of Truth)
+│   ├── ARCHITECTURE.md
+│   └── planning/
+│       ├── PLANNING.md
+│       └── TASK.md
+├── docs/
+│   └── agent-docs/             # Strategic agent documentation
 ├── CHANGELOG.md
 ├── README.md
 └── .gitignore
@@ -109,139 +124,70 @@ gestalt-rust/
 
 ---
 
-## 🕐 Diseño de la Línea de Tiempo
+## 🕐 Timeline Design
 
-### Concepto Central
-El **timestamp** es la variable primaria de todo el sistema. Cada acción, comando, resultado o cambio de estado se registra en una línea de tiempo universal accesible por todos los agentes.
+### Central Concept
+The **timestamp** is the primary variable of the entire system. Every action, command, result, or state change is recorded in a universal timeline accessible by all agents.
 
-### Modelo de Datos: TimelineEvent
+---
 
+## 🚀 Phase 6: Advanced Resilience and Isolation (Shadow Workspace)
+
+**Objective:** Evolve Gestalt from a CLI tool to a swarm of local autonomous agents with total isolation.
+
+### 1. Virtual File System (VFS) Overlay
+Implemented a file system adapter that allows agents to read from disco but write to a volatile memory layer.
+- **Read-Through**: Cache of physical files.
+- **Write-In-Memory**: Changes do not touch `main` until the Supervisor approves the "Flush".
+- **Zero Branching**: Avoids unnecessary Git branch pollution.
+
+### 2. Elastic Loops & Context Compaction
+Integrated logic so that agents can operate indefinitely without losing the thread.
+- **Compaction**: Recursive summary of external token windows.
+- **Hive Model**: Migration to the `synapse-agentic` actor model for supervision and failover.
+
+---
+
+## ⚙️ Technical Considerations
+
+### Persistent Parallel Process
+For the `watch` mode that does not terminate while in execution:
 ```rust
-pub struct TimelineEvent {
-    pub id: String,              // Unique ID (ULID preferido)
-    pub timestamp: DateTime<Utc>, // ⭐ Variable primaria
-    pub agent_id: String,         // Qué agente ejecutó la acción
-    pub event_type: EventType,    // Tipo de evento
-    pub project_id: Option<String>,
-    pub task_id: Option<String>,
-    pub payload: serde_json::Value,
-    pub metadata: HashMap<String, String>,
-}
-
-pub enum EventType {
-    ProjectCreated,
-    ProjectUpdated,
-    TaskCreated,
-    TaskStarted,
-    TaskCompleted,
-    TaskFailed,
-    AgentConnected,
-    AgentDisconnected,
-    CommandExecuted,
-    Custom(String),
-}
-```
-
-### Queries Temporales
-SurrealDB permite queries sobre rangos de tiempo:
-```sql
--- Eventos de las últimas 24 horas
-SELECT * FROM timeline_events
-WHERE timestamp > time::now() - 24h
-ORDER BY timestamp DESC;
-
--- Timeline de un proyecto específico
-SELECT * FROM timeline_events
-WHERE project_id = $project_id
-ORDER BY timestamp ASC;
-```
-
----
-
-## 🖥️ Especificación CLI
-
-### Comandos Base
-
-| Comando | Descripción | Ejemplo |
-|---------|-------------|---------|
-| `add-project <nombre>` | Registra nuevo proyecto | `gestalt add-project my-app` |
-| `add-task <proyecto> <desc>` | Añade subtarea | `gestalt add-task my-app "Fix bugs"` |
-| `run-task <task_id>` | Ejecuta tarea (async) | `gestalt run-task task_123` |
-| `list-projects` | Lista proyectos | `gestalt list-projects` |
-| `list-tasks [proyecto]` | Lista tareas | `gestalt list-tasks my-app` |
-| `status <proyecto>` | Muestra progreso | `gestalt status my-app` |
-| `timeline [--since=1h]` | Muestra línea de tiempo | `gestalt timeline --since=2h` |
-
-### Comandos Avanzados (Fase 2)
-
-| Comando | Descripción |
-|---------|-------------|
-| `watch` | Modo observador en tiempo real (proceso que no termina) |
-| `broadcast <msg>` | Envía mensaje a todos los agentes conectados |
-| `subscribe <proyecto>` | Suscribirse a eventos de un proyecto |
-
----
-
-## 🔄 Flujo de Ejecución
-
-```mermaid
-sequenceDiagram
-    participant Agent as Agente Externo
-    participant CLI as Gestalt CLI
-    participant TL as Timeline Service
-    participant DB as SurrealDB
-
-    Agent->>CLI: gestalt add-task proj1 "tarea"
-    CLI->>TL: register_event(TaskCreated)
-    TL->>DB: INSERT timeline_event
-    TL->>DB: INSERT task
-    DB-->>TL: OK
-    TL-->>CLI: task_id
-    CLI-->>Agent: ✅ Task created: task_123
-```
-
----
-
-## ⚙️ Consideraciones Técnicas
-
-### Proceso Paralelo Persistente
-Para el modo `watch` que no termina mientras esté en ejecución:
-```rust
-// Proceso que escucha eventos en tiempo real
+// Process that listens for events in real-time
 #[tokio::main]
 async fn run_watch_mode() {
     let mut stream = db.live::<TimelineEvent>("timeline_events").await?;
     while let Some(event) = stream.next().await {
-        // Procesar y mostrar evento
+        // Process and display event
         println!("{}: {}", event.timestamp, event.event_type);
     }
 }
 ```
 
-### Conexión de Agentes Externos
-Agentes como VS Code Copilot pueden invocar comandos directamente:
+### External Agent Connection
+Agents like VS Code Copilot can invoke commands directly:
 ```bash
-# Desde cualquier terminal o script
+# From any terminal or script
 gestalt add-task "my-project" "Implement feature X"
-gestalt timeline --json  # Salida JSON para parsing
+gestalt timeline --json  # JSON output for parsing
 ```
 
 ---
 
-## 🚧 Restricciones y Decisiones
+## 🚧 Restrictions and Decisions
 
-1. **No UI** - Solo CLI para máxima portabilidad entre agentes
-2. **Rust puro** - Sin dependencias de Python o Node
-3. **SurrealDB embebido o remoto** - Configurable vía env vars
-4. **Timestamps UTC** - Siempre en UTC, conversión en cliente
-5. **Salida JSON opcional** - Flag `--json` para integración programática
+1. **No UI** - CLI only for maximum portability between agents.
+2. **Pure Rust** - No Python or Node dependencies.
+3. **Embedded or Remote SurrealDB** - Configurable via env vars.
+4. **UTC Timestamps** - Always in UTC, conversion at client side.
+5. **Optional JSON Output** - `--json` flag for programmatic integration.
 
 ---
 
-## 📝 Notas para Agentes de IA
+## 📝 Notes for AI Agents
 
-- **Siempre leer `PLANNING.md`** al inicio de cualquier conversación
-- **Consultar `TASK.md`** antes de comenzar cualquier trabajo
-- **Registrar todas las acciones** en la línea de tiempo
-- **Usar timestamps UTC** en todas las operaciones
-- **Formato de comandos estricto** para parsing confiable
+- **Always read `PLANNING.md`** at the beginning of any conversation.
+- **Consult `TASK.md`** before starting any work.
+- **Record all actions** in the timeline.
+- **Use UTC timestamps** in all operations.
+- **Strict command format** for reliable parsing.

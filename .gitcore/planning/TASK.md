@@ -1,143 +1,154 @@
-# 📋 TASK.md - Gestión de Tareas: Gestalt Timeline Orchestrator
+# 📋 TASK.md - Task Management: Gestalt Timeline Orchestrator
 
-_Última actualización: 2025-12-20_
+_Last update: 2026-02-22_
 
 ---
 
-## 🎯 Resumen Ejecutivo y Estado Actual
+## 🎯 Executive Summary and Current Status
 
-**Estado General:** ✅ 100% - Proyecto completo, 27 tests pasando
+**General Status:** ✅ 100% - Project complete, all phases implemented.
 
-MVP completo. Todas las fases implementadas: CLI base, tiempo real, multi-agente. 27 tests (17 unitarios + 10 integración) pasando.
+MVP complete. All phases implemented: base CLI, real-time, multi-agent coordination, AI orchestration, and advanced isolation.
 
-**Progreso por Componente:**
-- [x] 🏗️ Infraestructura (SurrealDB): 100%
-- [x] 🔗 Servicios (Timeline, Task, Project, Agent, Watch): 100%
+**Progress per Component:**
+- [x] 🏗️ Infrastructure (SurrealDB): 100%
+- [x] 🔗 Services (Timeline, Task, Project, Agent, Watch, VFS, Compaction): 100%
 - [x] 🖥️ CLI Interface: 100%
-- [x] 🧪 Testing: 100% (27 tests)
-- [x] 📚 Documentación: 100%
+- [x] 🧪 Testing: 100%
+- [x] 📚 Documentation: 100%
 
 ---
 
-## 🚀 Fase 1: MVP Base
+## 🚀 Phase 1: Base MVP
 
-**Objetivo:** Crear el sistema CLI funcional con persistencia en SurrealDB y línea de tiempo.
+**Objective:** Create the functional CLI system with SurrealDB persistence and timeline.
 
-| ID | Tarea | Prioridad | Estado | Responsable |
+| ID | Task | Priority | Status | Owner |
 |----|-------|-----------|--------|-------------|
-| F1-01 | Crear crate `gestalt_timeline` | ALTA | ✅ Completado | Agent |
-| F1-02 | Configurar dependencias (tokio, surrealdb, clap) | ALTA | ✅ Completado | Agent |
-| F1-03 | Implementar conexión SurrealDB | ALTA | ✅ Completado | Agent |
-| F1-04 | Definir modelos (TimelineEvent, Project, Task) | ALTA | ✅ Completado | Agent |
-| F1-05 | Implementar Timeline Service | ALTA | ✅ Completado | Agent |
-| F1-06 | Implementar Project Service | MEDIA | ✅ Completado | Agent |
-| F1-07 | Implementar Task Service | MEDIA | ✅ Completado | Agent |
-| F1-08 | Crear CLI con comandos base | ALTA | ✅ Completado | Agent |
-| F1-09 | Implementar `add-project` | ALTA | ✅ Completado | Agent |
-| F1-10 | Implementar `add-task` | ALTA | ✅ Completado | Agent |
-| F1-11 | Implementar `run-task` (async) | ALTA | ✅ Completado | Agent |
-| F1-12 | Implementar `list-projects` / `list-tasks` | MEDIA | ✅ Completado | Agent |
-| F1-13 | Implementar `status` | MEDIA | ✅ Completado | Agent |
-| F1-14 | Implementar `timeline` | ALTA | ✅ Completado | Agent |
-| F1-15 | Añadir flag `--json` para salida JSON | MEDIA | ✅ Completado | Agent |
-| F1-16 | Tests unitarios para servicios | MEDIA | ✅ Completado | Agent |
-| F1-17 | Tests de integración CLI | MEDIA | ✅ Completado | Agent |
-
-**Leyenda de Estado:**
-- `⬜ Pendiente`
-- `⚙️ En Progreso`
-- `✅ Completado`
-- `❌ Bloqueado`
+| F1-01 | Create `gestalt_timeline` crate | HIGH | ✅ Completed | Agent |
+| F1-02 | Configure dependencies (tokio, surrealdb, clap) | HIGH | ✅ Completed | Agent |
+| F1-03 | Implement SurrealDB connection | HIGH | ✅ Completed | Agent |
+| F1-04 | Define models (TimelineEvent, Project, Task) | HIGH | ✅ Completed | Agent |
+| F1-05 | Implement Timeline Service | HIGH | ✅ Completed | Agent |
+| F1-06 | Implement Project Service | MEDIUM | ✅ Completed | Agent |
+| F1-07 | Implement Task Service | MEDIUM | ✅ Completed | Agent |
+| F1-08 | Create CLI with base commands | HIGH | ✅ Completed | Agent |
+| F1-09 | Implement `add-project` | HIGH | ✅ Completed | Agent |
+| F1-10 | Implement `add-task` | HIGH | ✅ Completed | Agent |
+| F1-11 | Implement `run-task` (async) | HIGH | ✅ Completed | Agent |
+| F1-12 | Implement `list-projects` / `list-tasks` | MEDIUM | ✅ Completed | Agent |
+| F1-13 | Implement `status` | MEDIUM | ✅ Completed | Agent |
+| F1-14 | Implement `timeline` | HIGH | ✅ Completed | Agent |
+| F1-15 | Add `--json` flag for JSON output | MEDIUM | ✅ Completed | Agent |
+| F1-16 | Unit tests for services | MEDIUM | ✅ Completed | Agent |
+| F1-17 | CLI integration tests | MEDIUM | ✅ Completed | Agent |
 
 ---
 
-## 🚀 Fase 2: Modo Watch y Tiempo Real
+## 🚀 Phase 2: Watch Mode and Real-Time
 
-**Objetivo:** Implementar proceso persistente que no termine y permita observación en tiempo real.
+**Objective:** Implement persistent process that doesn't terminate and allows real-time observation.
 
-| ID | Tarea | Prioridad | Estado | Responsable |
+| ID | Task | Priority | Status | Owner |
 |----|-------|-----------|--------|-------------|
-| F2-01 | Implementar comando `watch` | ALTA | ✅ Completado | Agent |
-| F2-02 | Suscripción live a eventos SurrealDB | ALTA | ✅ Completado | Agent |
-| F2-03 | Implementar `broadcast` | MEDIA | ✅ Completado | Agent |
-| F2-04 | Implementar `subscribe` | MEDIA | ✅ Completado | Agent |
-| F2-05 | Manejo de señales (Ctrl+C graceful) | MEDIA | ✅ Completado | Agent |
+| F2-01 | Implement `watch` command | HIGH | ✅ Completed | Agent |
+| F2-02 | Live subscription to SurrealDB events | HIGH | ✅ Completed | Agent |
+| F2-03 | Implement `broadcast` | MEDIUM | ✅ Completed | Agent |
+| F2-04 | Implement `subscribe` | MEDIUM | ✅ Completed | Agent |
+| F2-05 | Signal handling (graceful Ctrl+C) | MEDIUM | ✅ Completed | Agent |
 
 ---
 
-## 🚀 Fase 3: Integración Multi-Agente
+## 🚀 Phase 3: Multi-Agent Integration
 
-**Objetivo:** Permitir que múltiples agentes se conecten y coordinen.
+**Objective:** Allow multiple agents to connect and coordinate.
 
-| ID | Tarea | Prioridad | Estado | Responsable |
+| ID | Task | Priority | Status | Owner |
 |----|-------|-----------|--------|-------------|
-| F3-01 | Registro de agentes conectados | ALTA | ✅ Completado | Agent |
-| F3-02 | Identificación de agente por env var | MEDIA | ✅ Completado | Agent |
-| F3-03 | Logs por agente en timeline | MEDIA | ✅ Completado | Agent |
-| F3-04 | Protocolo de comunicación inter-agente | BAJA | ✅ Completado | Agent |
+| F3-01 | Register connected agents | HIGH | ✅ Completed | Agent |
+| F3-02 | Agent identification via env var | MEDIUM | ✅ Completed | Agent |
+| F3-03 | Per-agent logs in timeline | MEDIUM | ✅ Completed | Agent |
+| F3-04 | Inter-agent communication protocol | LOW | ✅ Completed | Agent |
 
 ---
 
-## 🚀 Fase 4: Integración AI (AWS Bedrock)
+## 🚀 Phase 4: AI Integration (AWS Bedrock)
 
-**Objetivo:** Orquestar flujos de trabajo mediante Claude Sonnet 4.5.
+**Objective:** Orchestrate workflows via Claude Sonnet / Gemini.
 
-| ID | Tarea | Prioridad | Estado | Responsable |
+| ID | Task | Priority | Status | Owner |
 |----|-------|-----------|--------|-------------|
-| F4-01 | Agregar dependencias AWS SDK | ALTA | ✅ Completado | Agent |
-| F4-02 | Implementar LLMService | ALTA | ✅ Completado | Agent |
-| F4-03 | Comando `ai-chat` | ALTA | ✅ Completado | Agent |
-| F4-04 | Comando `ai-orchestrate` | ALTA | ✅ Completado | Agent |
-| F4-05 | Dry-run mode para orquestación | MEDIA | ✅ Completado | Agent |
+| F4-01 | Add AWS SDK dependencies | HIGH | ✅ Completed | Agent |
+| F4-02 | Implement LLMService | HIGH | ✅ Completed | Agent |
+| F4-03 | `ai-chat` command | HIGH | ✅ Completed | Agent |
+| F4-04 | `ai-orchestrate` command | HIGH | ✅ Completed | Agent |
+| F4-05 | Dry-run mode for orchestration | MEDIUM | ✅ Completed | Agent |
 
 ---
 
-## 🚀 Fase 5: Integración UI & API
+## 🚀 Phase 5: UI & API Integration
 
-**Objetivo:** Exponer la funcionalidad mediante API HTTP y conectar con aplicación Flutter.
+**Objective:** Expose functionality via HTTP API and connect with auxiliary apps.
 
-| ID | Tarea | Prioridad | Estado | Responsable |
+| ID | Task | Priority | Status | Owner |
 |----|-------|-----------|--------|-------------|
-| F5-01 | Crear `AgentRuntime` loop autónomo | ALTA | ✅ Completado | Agent |
-| F5-02 | Implementar servidor HTTP (Axum) | ALTA | ✅ Completado | Agent |
-| F5-03 | API Endpoint `/orchestrate` | ALTA | ✅ Completado | Agent |
-| F5-04 | API Endpoint `/timeline` (polling) | ALTA | ✅ Completado | Agent |
-| F5-05 | Crear aplicación Flutter (`gestalt_app`) | MEDIA | ✅ Completado | Agent |
-| F5-06 | Implementar vista de chat en Flutter | MEDIA | ✅ Completado | Agent |
-| F5-07 | Test E2E de Runtime (Mocked) | ALTA | ✅ Completado | Agent |
+| F5-01 | Create `AgentRuntime` autonomous loop | HIGH | ✅ Completed | Agent |
+| F5-02 | Implement HTTP server (Axum) | HIGH | ✅ Completed | Agent |
+| F5-03 | API Endpoint `/orchestrate` | HIGH | ✅ Completed | Agent |
+| F5-04 | API Endpoint `/timeline` (polling) | HIGH | ✅ Completed | Agent |
+| F5-05 | Create Flutter application (`gestalt_app`) | MEDIUM | ✅ Completed | Agent |
+| F5-06 | Implement chat view in Flutter | MEDIUM | ✅ Completed | Agent |
+| F5-07 | Runtime E2E test (Mocked) | HIGH | ✅ Completed | Agent |
 
 ---
 
-## ✅ Hitos Principales
+## 🚀 Phase 6: Advanced Resilience and Isolation
 
-- [x] **Hito 1:** Documentación inicial completada
-- [x] **Hito 2:** CLI base funcional con `add-project` y `list-projects`
-- [x] **Hito 3:** Timeline Service operativo
-- [x] **Hito 4:** Ejecución asincrónica de tareas
-- [x] **Hito 5:** Modo `watch` en tiempo real
-- [x] **Hito 6:** Multi-agente coordinado
+**Objective:** Implement Shadow Workspace and elastic agent engine.
 
----
-
-## 👾 Deuda Técnica y Mejoras Pendientes
-
-| ID | Tarea | Prioridad | Estado | Responsable |
+| ID | Task | Priority | Status | Owner |
 |----|-------|-----------|--------|-------------|
-| TD-01 | Migrar configuración a archivo TOML | BAJA | ✅ Completado | Agent |
-| TD-02 | Añadir métricas de rendimiento | BAJA | ✅ Completado | Agent |
+| F6-01 | Implement `VirtualFs` Service (VFS Overlay) | HIGH | ✅ Completed | Agent |
+| F6-02 | Integrate `VirtualFs` into `AgentRuntime` | HIGH | ✅ Completed | Agent |
+| F6-03 | Implement Context Compaction Engine | HIGH | ✅ Completed | Agent |
+| F6-04 | Refactor `run_loop` for Elastic Autonomy | HIGH | ✅ Completed | Agent |
+| F6-05 | Migration to `synapse_agentic::framework::Hive` | HIGH | ✅ Completed | Agent |
+| F6-06 | Implement Locking System (File Locking) | MEDIUM | ✅ Completed | Agent |
+| F6-07 | Create Integrator Agent (Reviewer/Merge Agent) | MEDIUM | ✅ Completed | Agent |
 
 ---
 
-## 📝 Tareas Descubiertas Durante el Desarrollo
+## ✅ Main Milestones
 
-| ID | Tarea | Prioridad | Estado | Responsable |
+- [x] **Milestone 1:** Initial documentation completed
+- [x] **Milestone 2:** Functional base CLI with `add-project`
+- [x] **Milestone 3:** Timeline Service operational
+- [x] **Milestone 4:** Asynchronous task execution
+- [x] **Milestone 5:** Real-time `watch` mode
+- [x] **Milestone 6:** Coordinated multi-agent system
+- [x] **Milestone 7:** Total isolation (VFS) and Elastic Resilience
+
+---
+
+## 👾 Technical Debt and Remaining Improvements
+
+| ID | Task | Priority | Status | Owner |
 |----|-------|-----------|--------|-------------|
-| DD-01 | Fix type mismatch: Project.id Option<Thing> vs String | ALTA | ✅ Completado | Agent |
+| TD-01 | Migrate configuration to TOML file | LOW | ✅ Completed | Agent |
+| TD-02 | Add performance metrics | LOW | ✅ Completed | Agent |
 
 ---
 
-## 🔗 Referencias
+## 📝 Discovered Tasks During Development
 
-- Ver `PLANNING.md` para arquitectura y decisiones técnicas
-- Ver `README.md` para instrucciones de uso
-- Ver `CHANGELOG.md` para historial de cambios
+| ID | Task | Priority | Status | Owner |
+|----|-------|-----------|--------|-------------|
+| DD-01 | Fix type mismatch: Project.id Option<Thing> vs String | HIGH | ✅ Completed | Agent |
+
+---
+
+## 🔗 References
+
+- See `ARCHITECTURE.md` for architecture and technical decisions.
+- See `README.md` for usage instructions.
+- See `CHANGELOG.md` for change history.

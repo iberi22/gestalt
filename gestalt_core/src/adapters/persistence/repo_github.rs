@@ -40,7 +40,7 @@ impl RepoManager for OctoRepoManager {
             .map(|r| Repository {
                 id: r.id.to_string(),
                 name: r.name,
-                url: r.html_url.map(|u| u.to_string()).unwrap_or_default(),
+                url: r.html_url.map(|u: url::Url| u.to_string()).unwrap_or_default(),
                 local_path: None,
             })
             .collect())

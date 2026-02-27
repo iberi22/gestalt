@@ -1,0 +1,7 @@
+    Checking synapse-agentic v0.1.0 (/app/synapse-agentic)
+    Checking gestalt_mcp v0.1.0 (/app/gestalt_mcp)
+    Checking gestalt_core v0.1.0 (/app/gestalt_core)
+    Checking gestalt_timeline v0.1.0 (/app/gestalt_timeline)
+    Checking rust_lib_gestalt_terminal v0.1.0 (/app/gestalt_terminal/rust)
+    Checking gestalt_cli v0.1.0 (/app/gestalt_cli)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 4.86s

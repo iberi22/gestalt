@@ -1,0 +1,46 @@
+   Compiling synapse-agentic v0.1.0 (/app/synapse-agentic)
+error[E0433]: failed to resolve: use of unresolved module or unlinked crate `tokio`
+ --> synapse-agentic/src/lib.rs:6:9
+  |
+6 |     use tokio::sync::RwLock;
+  |         ^^^^^ use of unresolved module or unlinked crate `tokio`
+  |
+  = help: if you wanted to use a crate named `tokio`, use `cargo add tokio` to add it to your `Cargo.toml`
+
+error[E0282]: type annotations needed
+  --> synapse-agentic/src/lib.rs:88:17
+   |
+88 |             let mut tools = self.tools.write().await;
+   |                 ^^^^^^^^^
+89 |             tools.insert(tool.name().to_string(), Arc::new(tool));
+   |             ----- type must be known at this point
+   |
+help: consider giving `tools` an explicit type
+   |
+88 |             let mut tools: /* Type */ = self.tools.write().await;
+   |                          ++++++++++++
+
+error[E0282]: type annotations needed
+  --> synapse-agentic/src/lib.rs:92:17
+   |
+92 |             let tools = self.tools.read().await;
+   |                 ^^^^^
+93 |             if let Some(tool) = tools.get(name) {
+   |                                 ----- type must be known at this point
+   |
+help: consider giving `tools` an explicit type
+   |
+92 |             let tools: /* Type */ = self.tools.read().await;
+   |                      ++++++++++++
+
+error[E0282]: type annotations needed
+  --> synapse-agentic/src/lib.rs:94:28
+   |
+94 |                 let tool = tool.clone();
+   |                            ^^^^ cannot infer type
+
+Some errors have detailed explanations: E0282, E0433.
+For more information about an error, try `rustc --explain E0282`.
+error: could not compile `synapse-agentic` (lib) due to 4 previous errors
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `synapse-agentic` (lib test) due to 4 previous errors

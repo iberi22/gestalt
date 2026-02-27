@@ -2,6 +2,8 @@
 members = [
     "gestalt_core",
     "gestalt_cli",
-    "gestalt_timeline", "gestalt_mcp",
+    "gestalt_timeline",
+    "gestalt_mcp",
+    "gestalt_terminal/rust",
 ]
 resolver = "2"

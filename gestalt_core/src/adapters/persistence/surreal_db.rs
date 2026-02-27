@@ -42,10 +42,11 @@ impl VectorDb for SurrealDbAdapter {
         limit: usize,
     ) -> anyhow::Result<Vec<serde_json::Value>> {
         // SurrealDB 1.x doesn't have native vector search, use simple query for now
+        let table = collection.to_string();
         let mut response = self
             .db
             .query("SELECT * FROM type::table($table) LIMIT $limit")
-            .bind(("table", collection.to_string()))
+            .bind(("table", table))
             .bind(("limit", limit))
             .await?;
 

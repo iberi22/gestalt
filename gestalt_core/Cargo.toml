@@ -55,7 +55,7 @@ hf-hub = { version = "0.3.2", features = ["tokio"] }
 tokenizers = "0.20.0"
 octocrab = "0.38"
 surrealdb = { version = "2.0.5", features = ["kv-mem"] }
-synapse-agentic = { path = "../../synapse-agentic" }
+synapse-agentic = { path = "../synapse-agentic" }
 
 
 [lib]

@@ -58,7 +58,7 @@ async-stream = "0.3.6"
 
 # Database
 surrealdb = { version = "2.0.5", features = ["kv-mem"] }
-synapse-agentic = { path = "../synapse-agentic" }
+# synapse-agentic = { path = "../../synapse-agentic" }
 
 
 [lib]

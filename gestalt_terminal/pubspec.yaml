@@ -39,6 +39,9 @@ dependencies:
   google_fonts: ^6.2.1
   rust_lib_gestalt_terminal:
     path: rust_builder
+  xterm: ^4.0.0
+  flutter_animate: ^4.5.2
+  http: ^1.6.0
 
 dev_dependencies:
   flutter_test:
@@ -61,7 +64,8 @@ flutter:
   uses-material-design: true
 
   # To add assets to your application, add an assets section, like this:
-  # assets:
+  assets:
+    - assets/
   #   - images/a_dot_burr.jpeg
   #   - images/a_dot_ham.jpeg
 

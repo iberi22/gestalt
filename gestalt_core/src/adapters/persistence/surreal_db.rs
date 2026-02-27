@@ -10,7 +10,7 @@ pub struct SurrealDbAdapter {
 
 impl SurrealDbAdapter {
     pub async fn new() -> anyhow::Result<Self> {
-        let db = Surreal::new::<surrealdb::engine::local::Mem>(()).await?;
+        let db: Surreal<surrealdb::engine::local::Db> = Surreal::new::<surrealdb::engine::local::Mem>(()).await?;
         db.use_ns("neural").use_db("link").await?;
         Ok(Self { db })
     }
@@ -54,8 +54,9 @@ impl VectorDb for SurrealDbAdapter {
         collection: &str,
         vector: Vec<f32>,
         limit: usize,
-    ) -> anyhow::Result<Vec<ScoredResult>> {
-        let mut response = self
+    ) -> anyhow::Result<Vec<serde_json::Value>> {
+        // SurrealDB 1.x doesn't have native vector search, use simple query for now
+        let mut response: surrealdb::Response = self
             .db
             .query("SELECT id, metadata, vector::distance::cosine(embedding, $vector) AS score FROM type::table($table) ORDER BY score ASC LIMIT $limit")
             .bind(("vector", vector))

@@ -118,6 +118,28 @@ impl SurrealClient {
             DEFINE FIELD updated_at ON agent_runtime_states TYPE datetime;
             DEFINE FIELD finished_at ON agent_runtime_states TYPE option<datetime>;
             DEFINE INDEX idx_runtime_agent ON agent_runtime_states FIELDS agent_id UNIQUE;
+
+            DEFINE TABLE repositories SCHEMAFULL;
+            DEFINE FIELD url ON repositories TYPE string;
+            DEFINE FIELD name ON repositories TYPE string;
+            DEFINE FIELD local_path ON repositories TYPE option<string>;
+            DEFINE FIELD created_at ON repositories TYPE datetime;
+            DEFINE INDEX idx_repo_url ON repositories FIELDS url UNIQUE;
+
+            DEFINE TABLE documents SCHEMAFULL;
+            DEFINE FIELD repo_id ON documents TYPE string;
+            DEFINE FIELD path ON documents TYPE string;
+            DEFINE FIELD checksum ON documents TYPE string;
+            DEFINE FIELD created_at ON documents TYPE datetime;
+            DEFINE FIELD updated_at ON documents TYPE datetime;
+            DEFINE INDEX idx_doc_path ON documents FIELDS [repo_id, path] UNIQUE;
+
+            DEFINE TABLE chunks SCHEMAFULL;
+            DEFINE FIELD doc_id ON chunks TYPE string;
+            DEFINE FIELD content ON chunks TYPE string;
+            DEFINE FIELD chunk_index ON chunks TYPE int;
+            DEFINE FIELD created_at ON chunks TYPE datetime;
+            DEFINE INDEX idx_chunk_doc ON chunks FIELDS doc_id;
             "#,
         )
         .await

@@ -3,5 +3,6 @@ members = [
     "gestalt_core",
     "gestalt_cli",
     "gestalt_timeline", "gestalt_mcp",
+    "synapse-agentic",
 ]
 resolver = "2"

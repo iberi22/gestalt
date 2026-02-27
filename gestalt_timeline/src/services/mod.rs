@@ -6,6 +6,7 @@ pub mod dispatcher;
 pub mod memory;
 mod project;
 mod runtime;
+mod index;
 mod server;
 mod task;
 pub mod task_queue;
@@ -18,6 +19,7 @@ pub use auth::AuthService;
 
 pub use dispatcher::DispatcherService;
 pub use memory::{MemoryFragment, MemoryService};
+pub use index::IndexService;
 pub use project::ProjectService;
 pub use runtime::{AgentRuntime, OrchestrationAction};
 pub use server::start_server;

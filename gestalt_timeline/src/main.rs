@@ -6,8 +6,8 @@ use gestalt_timeline::cli::{repl, AgentCommands, Cli, Commands};
 use gestalt_timeline::config::Settings;
 use gestalt_timeline::db::SurrealClient;
 use gestalt_timeline::services::{
-    start_server, AgentRuntime, AgentService, AuthService, DispatcherService, MemoryService,
-    ProjectService, QueuedTask, TaskQueue, TaskService, TaskSource, TelegramService,
+    start_server, AgentRuntime, AgentService, AuthService, DispatcherService, IndexService,
+    MemoryService, ProjectService, QueuedTask, TaskQueue, TaskService, TaskSource, TelegramService,
     TimelineService, WatchService,
 };
 use std::path::Path;
@@ -545,6 +545,7 @@ async fn main() -> anyhow::Result<()> {
             // Initialize decision engine
             let engine = init_decision_engine(&settings.cognition).await?;
             let registry = init_tool_registry().await;
+            let memory_service = MemoryService::new(db.clone());
 
             // Initialize Agent Runtime
             let runtime = AgentRuntime::new(
@@ -555,6 +556,7 @@ async fn main() -> anyhow::Result<()> {
                 task_service.clone(),
                 watch_service.clone(),
                 agent_service.clone(),
+                memory_service,
             );
 
             println!("🔄 Starting Autonomous Agent Loop: '{}'", workflow);
@@ -569,6 +571,7 @@ async fn main() -> anyhow::Result<()> {
             // Initialize decision engine
             let engine = init_decision_engine(&settings.cognition).await?;
             let registry = init_tool_registry().await;
+            let memory_service = MemoryService::new(db.clone());
 
             // Initialize Agent Runtime
             let runtime = AgentRuntime::new(
@@ -579,6 +582,7 @@ async fn main() -> anyhow::Result<()> {
                 task_service.clone(),
                 watch_service.clone(),
                 agent_service.clone(),
+                memory_service,
             );
 
             start_server(
@@ -631,13 +635,25 @@ async fn main() -> anyhow::Result<()> {
             }
 
             println!("📥 Indexing repository: {}", url);
-            // Placeholder for actual indexing logic via AgentOrchestrator
-            // In production, this would call gestalt_core::application::agent::AgentOrchestrator::index_repo
-            println!("⚠️ Note: Full RAG indexing not yet implemented. This is a placeholder.");
-            if cli.json {
-                println!(r#"{{"status": "pending", "url": "{}"}}"#, url);
-            } else {
-                println!("✅ Repository queued for indexing: {}", url);
+            let index_service = IndexService::new(db.clone());
+            match index_service.index_repo(&url).await {
+                Ok(_) => {
+                    if cli.json {
+                        println!(r#"{{"status": "completed", "url": "{}"}}"#, url);
+                    } else {
+                        println!("✅ Repository indexed successfully: {}", url);
+                    }
+                }
+                Err(e) => {
+                    if cli.json {
+                        println!(
+                            r#"{{"status": "error", "url": "{}", "error": "{}"}}"#,
+                            url, e
+                        );
+                    } else {
+                        eprintln!("❌ Failed to index repository {}: {}", url, e);
+                    }
+                }
             }
         }
 
@@ -709,6 +725,7 @@ async fn main() -> anyhow::Result<()> {
             let timeline_clone = timeline_service.clone();
 
             // Start REST API server in background
+            let memory_service = MemoryService::new(db.clone());
             let api_runtime = AgentRuntime::new(
                 agent_id.clone(),
                 cognition.clone(),
@@ -717,6 +734,7 @@ async fn main() -> anyhow::Result<()> {
                 task_service.clone(),
                 watch_service.clone(),
                 agent_service.clone(),
+                memory_service.clone(),
             );
             let api_handle = tokio::spawn(async move {
                 if let Err(e) = start_server(
@@ -747,6 +765,7 @@ async fn main() -> anyhow::Result<()> {
                 "⚙️  TaskQueue dispatch loop starting with {} max workers",
                 workers
             );
+            let tq_memory = memory_service.clone();
             tq_clone
                 .run_dispatch_loop(task_receiver, workers, move |agent_id_str| {
                     let engine = tq_engine.clone();
@@ -755,6 +774,7 @@ async fn main() -> anyhow::Result<()> {
                     let task = tq_task.clone();
                     let watch = tq_watch.clone();
                     let agent = tq_agent.clone();
+                    let memory = tq_memory.clone();
                     async move {
                         Ok(AgentRuntime::new(
                             agent_id_str,
@@ -764,6 +784,7 @@ async fn main() -> anyhow::Result<()> {
                             task,
                             watch,
                             agent,
+                            memory,
                         ))
                     }
                 })

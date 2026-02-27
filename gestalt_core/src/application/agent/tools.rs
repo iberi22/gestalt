@@ -1,4 +1,5 @@
 use crate::context::scanner;
+use crate::domain::rag::embeddings::{DummyEmbeddingModel, EmbeddingModel};
 use crate::ports::outbound::repo_manager::{RepoManager, VectorDb};
 use serde_json::{json, Value};
 use std::path::Path;
@@ -11,7 +12,17 @@ pub async fn create_gestalt_tools(
 ) -> ToolRegistry {
     let registry = ToolRegistry::new();
     registry.register_tool(ScanWorkspaceTool).await;
-    registry.register_tool(SearchCodeTool { vector_db }).await;
+
+    // Use dummy embedding model for now as we don't have the model files easily accessible in all environments
+    // In a real scenario, we'd initialize BertEmbeddingModel here.
+    let embedding_model = Arc::new(DummyEmbeddingModel::new(384));
+
+    registry
+        .register_tool(SearchCodeTool {
+            vector_db,
+            embedding_model,
+        })
+        .await;
     registry.register_tool(ExecuteShellTool).await;
     registry.register_tool(ReadFileTool).await;
     registry.register_tool(WriteFileTool).await;
@@ -47,6 +58,7 @@ impl Tool for ScanWorkspaceTool {
 
 pub struct SearchCodeTool {
     vector_db: Arc<dyn VectorDb>,
+    embedding_model: Arc<dyn EmbeddingModel>,
 }
 
 #[async_trait]
@@ -69,14 +81,17 @@ impl Tool for SearchCodeTool {
     }
 
     async fn call(&self, _ctx: &dyn ToolContext, args: Value) -> anyhow::Result<Value> {
-        let _query = args.get("query").and_then(|v| v.as_str()).unwrap_or("");
+        let query = args
+            .get("query")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("Missing 'query' parameter"))?;
         let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(5) as usize;
 
-        // In a real implementation, we'd embed the query first.
-        // For now, using a dummy zero vector just to verify trait linkage
+        let query_embedding = self.embedding_model.embed(query).await?;
+
         let similar = self
             .vector_db
-            .search_similar("code", vec![0.0; 384], limit)
+            .search_similar("code", query_embedding, limit)
             .await?;
 
         Ok(json!({ "results": similar }))

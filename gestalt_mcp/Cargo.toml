@@ -14,6 +14,9 @@ anyhow = "1.0"
 thiserror = "1.0"
 futures = "0.3"
 async-trait = "0.1"
+walkdir = "2.5"
+reqwest = { version = "0.12", features = ["blocking"] }
+clap = { version = "4", features = ["derive"] }
 
 # Using the SDK found in core, assuming it is available or we will implement needed parts
 # mcp-protocol-sdk = "0.5.1"  <-- Commented out for now, I'll rely on implementation or check if it builds.

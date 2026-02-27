@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 pub mod genui;
+pub mod rag;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Role {

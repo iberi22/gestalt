@@ -15,18 +15,18 @@ pub struct AgentRuntimeState {
     pub current_step: usize,
     /// `0` means elastic (no fixed limit); otherwise hard safety cap.
     pub max_steps: usize,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_action: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_observation: Option<String>,
     pub history_tail: Vec<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
     #[serde(with = "crate::models::timestamp")]
     pub started_at: FlexibleTimestamp,
     #[serde(with = "crate::models::timestamp")]
     pub updated_at: FlexibleTimestamp,
-    #[serde(with = "crate::models::timestamp::option")]
+    #[serde(default, with = "crate::models::timestamp::option")]
     pub finished_at: Option<FlexibleTimestamp>,
 }
 

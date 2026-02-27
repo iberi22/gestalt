@@ -2,9 +2,14 @@ pub mod prelude {
     pub use async_trait::async_trait;
     pub use serde_json::Value;
     pub use anyhow::Result;
+    use std::sync::Arc;
+    use tokio::sync::RwLock;
+    use std::collections::HashMap;
 
+    #[derive(Default)]
     pub struct DecisionEngine;
     impl DecisionEngine {
+        pub fn new() -> Self { Self }
         pub fn builder() -> DecisionEngineBuilder { DecisionEngineBuilder }
         pub async fn decide(&self, _ctx: &DecisionContext) -> Result<Decision> { Ok(Decision::default()) }
     }
@@ -33,11 +38,28 @@ pub mod prelude {
     }
 
     pub struct ToolRegistry {
+        tools: Arc<RwLock<HashMap<String, Box<dyn Tool>>>>,
+    }
+    impl Default for ToolRegistry {
+        fn default() -> Self {
+            Self {
+                tools: Arc::new(RwLock::new(HashMap::new())),
+            }
+        }
     }
     impl ToolRegistry {
-        pub fn new() -> Self { Self {} }
-        pub async fn register_tool<T: Tool + 'static>(&self, _tool: T) {}
-        pub async fn call(&self, _name: &str, _ctx: &dyn ToolContext, _args: Value) -> Result<Value> { Ok(Value::Null) }
+        pub fn new() -> Self { Self::default() }
+        pub async fn register_tool<T: Tool + 'static>(&self, tool: T) {
+            self.tools.write().await.insert(tool.name().to_string(), Box::new(tool));
+        }
+        pub async fn call(&self, name: &str, ctx: &dyn ToolContext, args: Value) -> Result<Value> {
+            let tools = self.tools.read().await;
+            if let Some(tool) = tools.get(name) {
+                tool.call(ctx, args).await
+            } else {
+                Err(anyhow::anyhow!("Tool not found: {}", name))
+            }
+        }
     }
 
     pub struct DecisionContext {
@@ -46,7 +68,11 @@ pub mod prelude {
     impl DecisionContext {
         pub fn new(summary: &str) -> Self { Self { summary: summary.to_string() } }
         pub fn with_metadata(self, _k: &str, _v: String) -> Self { self }
-        pub fn with_summary(self, _s: String) -> Self { self }
+        pub fn with_summary(mut self, _s: impl Into<String>) -> Self {
+            self.summary = _s.into();
+            self
+        }
+        pub fn with_data(self, _data: Value) -> Self { self }
     }
 
     pub struct EmptyContext;

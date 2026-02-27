@@ -90,7 +90,7 @@ impl Indexer {
 
             git2::Repository::clone(url, &path)?;
 
-            let name = url.split('/').last().unwrap_or("unknown").trim_end_matches(".git").to_string();
+            let name = url.split('/').next_back().unwrap_or("unknown").trim_end_matches(".git").to_string();
 
             Ok((
                 RepositoryMetadata {
@@ -110,9 +110,13 @@ impl Indexer {
         for entry in WalkDir::new(root).into_iter().filter_map(|e| e.ok()) {
             if entry.file_type().is_file() {
                 let path = entry.path();
+                let relative = path.strip_prefix(root).unwrap_or(path);
 
                 // Skip hidden directories (like .git)
-                if path.components().any(|c| c.as_os_str().to_string_lossy().starts_with('.')) {
+                if relative
+                    .components()
+                    .any(|c| c.as_os_str().to_string_lossy().starts_with('.'))
+                {
                     continue;
                 }
 
@@ -197,12 +201,7 @@ mod tests {
         assert_eq!(chunks.len(), 3);
         assert_eq!(chunks[0].content, "abcdefghij");
         assert_eq!(chunks[1].content, "ijklmnopqr");
-        assert_eq!(chunks[2].content, "stuvwxyz");
-        // Wait, my manual calculation was slightly off but let's check the code logic.
-        // start=0, end=10. chunk="abcdefghij", index=0. start = 10 - 2 = 8.
-        // start=8, end=18. chunk="ijklmnopqr", index=1. start = 18 - 2 = 16.
-        // start=16, end=26. chunk="stuvwxyz", index=2. 26 == 26, break.
-        // Correct.
+        assert_eq!(chunks[2].content, "qrstuvwxyz");
     }
 
     #[test]

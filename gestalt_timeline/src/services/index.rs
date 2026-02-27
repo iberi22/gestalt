@@ -120,7 +120,7 @@ impl IndexService {
 
     async fn persist_doc(&self, doc_id: &str, record: DocumentRecord) -> Result<()> {
         // 1. Update document checksum and updated_at
-        self.db.query_with(
+        let _: Vec<serde_json::Value> = self.db.query_with(
             "UPDATE type::thing($doc_id) SET checksum = $checksum, updated_at = $now",
             serde_json::json!({
                 "doc_id": doc_id,
@@ -130,7 +130,7 @@ impl IndexService {
         ).await?;
 
         // 2. Delete old chunks
-        self.db.query_with(
+        let _: Vec<serde_json::Value> = self.db.query_with(
             "DELETE chunks WHERE doc_id = $doc_id",
             serde_json::json!({ "doc_id": doc_id })
         ).await?;

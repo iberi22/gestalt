@@ -20,6 +20,8 @@ jobs:
       contents: read
       pull-requests: write
       checks: read
+    env:
+      GH_TOKEN: ${{ github.token }}
     
     steps:
       - name: Get PR Info
@@ -65,6 +67,7 @@ jobs:
           echo "ci_passed=$CI_PASSED" >> $GITHUB_OUTPUT
 
       - name: Guardian Decision
+        id: decision
         run: |
           PR=${{ steps.pr-info.outputs.pr_number }}
           CONF=${{ steps.confidence.outputs.confidence }}

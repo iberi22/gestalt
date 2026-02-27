@@ -1,15 +1,18 @@
 use anyhow::Result;
 use serde_json::Value;
 use std::collections::HashMap;
+use std::path::Path;
 use std::sync::Arc;
-use tokio::sync::Mutex;
-use tracing::info;
+use tokio::sync::{oneshot, Mutex};
+use tokio::time::{sleep, Duration};
+use tracing::{info, warn};
 
-use crate::models::{AgentRuntimeState, EventType, RuntimePhase, TimelineEvent};
+use crate::models::{AgentRuntimeState, RuntimePhase};
 use crate::services::{
-    AgentService, MemoryService, ProjectService, TaskService, WatchService,
+    spawn_reviewer_agent, AgentService, ContextCompactor, LockStatus, OverlayFs, ProjectService,
+    ReviewerMessage, TaskService, VirtualFs, WatchService,
 };
-use synapse_agentic::prelude::{DecisionContext, DecisionEngine, EmptyContext, ToolRegistry};
+use synapse_agentic::prelude::{DecisionContext, DecisionEngine, EmptyContext, Hive, ToolRegistry};
 
 /// Orchestration action executed by AgentRuntime.
 #[derive(Debug, Clone)]
@@ -42,6 +45,7 @@ pub enum OrchestrationAction {
         path: String,
         content: String,
     },
+    FlushVfs,
     ExecuteShell {
         command: String,
     },
@@ -64,6 +68,9 @@ pub enum OrchestrationAction {
     AwaitJob {
         job_id: String,
     },
+    ReviewAndMerge {
+        goal: String,
+    },
 }
 
 /// The Autonomous Agent Runtime.
@@ -77,9 +84,11 @@ pub struct AgentRuntime {
     task: TaskService,
     watch: WatchService,
     agent: AgentService,
-    memory: MemoryService,
-    max_steps: usize,
+    hard_step_cap: Option<usize>,
     jobs: Arc<Mutex<HashMap<String, tokio::process::Child>>>,
+    vfs: Arc<dyn VirtualFs>,
+    compactor: ContextCompactor,
+    hive: Arc<Mutex<Hive>>,
 }
 
 struct PersistStateInput<'a> {
@@ -103,8 +112,16 @@ impl AgentRuntime {
         task: TaskService,
         watch: WatchService,
         agent: AgentService,
-        memory: MemoryService,
     ) -> Self {
+        // Use the first available provider from the engine for context compaction
+        let compactor_provider = engine.providers().get(0).cloned().unwrap_or_else(|| {
+            // Fallback (though engine should have at least the StochasticRotator now)
+            Arc::new(synapse_agentic::prelude::GeminiProvider::new(
+                "".into(),
+                "gpt-4o".into(),
+            ))
+        });
+
         Self {
             agent_id,
             engine,
@@ -113,9 +130,13 @@ impl AgentRuntime {
             task,
             watch,
             agent,
-            memory,
-            max_steps: 20,
+            hard_step_cap: std::env::var("GESTALT_HARD_STEP_CAP")
+                .ok()
+                .and_then(|v| v.parse::<usize>().ok()),
             jobs: Arc::new(Mutex::new(HashMap::new())),
+            vfs: Arc::new(OverlayFs::new()),
+            compactor: ContextCompactor::new(compactor_provider, "gpt-4o"),
+            hive: Arc::new(Mutex::new(Hive::new())),
         }
     }
 
@@ -150,8 +171,38 @@ impl AgentRuntime {
         .await?;
 
         let loop_result: Result<()> = async {
-            for step in 0..self.max_steps {
-                info!("Step {}/{}", step + 1, self.max_steps);
+            let mut step = 0usize;
+
+            loop {
+                if let Some(limit) = self.hard_step_cap {
+                    if step >= limit {
+                        warn!("Hard safety cap reached at {} steps.", limit);
+                        self.persist_state(PersistStateInput {
+                            goal,
+                            step,
+                            phase: RuntimePhase::Completed,
+                            last_action: None,
+                            last_observation: Some("Elastic loop stopped by hard safety cap."),
+                            history: &conversation_history,
+                            started_at: started_at.clone(),
+                            finished_at: Some(crate::models::FlexibleTimestamp::now()),
+                            error: None,
+                        })
+                        .await?;
+                        break;
+                    }
+                }
+
+                let outcome = self.compactor.compact(&mut conversation_history).await;
+                if outcome.compacted {
+                    info!(
+                        "Context compacted: {} -> {} tokens",
+                        outcome.tokens_before, outcome.tokens_after
+                    );
+                }
+
+                step += 1;
+                info!("Elastic step {}", step);
                 let actions = self.next_actions(goal, &conversation_history).await?;
 
                 if actions.is_empty() {
@@ -168,7 +219,7 @@ impl AgentRuntime {
                         error: None,
                     })
                     .await?;
-                    return Ok(());
+                    break;
                 }
 
                 for action in actions {
@@ -180,7 +231,7 @@ impl AgentRuntime {
                     conversation_history.push(format!("Observation: {}", observation));
                     self.persist_state(PersistStateInput {
                         goal,
-                        step: step + 1,
+                        step,
                         phase: RuntimePhase::Running,
                         last_action: Some(&action),
                         last_observation: Some(&observation),
@@ -192,19 +243,6 @@ impl AgentRuntime {
                     .await?;
                 }
             }
-
-            self.persist_state(PersistStateInput {
-                goal,
-                step: self.max_steps,
-                phase: RuntimePhase::Completed,
-                last_action: None,
-                last_observation: Some("Loop finished."),
-                history: &conversation_history,
-                started_at: started_at.clone(),
-                finished_at: Some(crate::models::FlexibleTimestamp::now()),
-                error: None,
-            })
-            .await?;
             Ok(())
         }
         .await;
@@ -227,14 +265,18 @@ impl AgentRuntime {
                     error: Some(e.to_string()),
                 })
                 .await;
+            self.vfs.release_locks(&self.agent_id).await;
             return Err(e);
         }
+
+        self.vfs.release_locks(&self.agent_id).await;
 
         Ok(())
     }
 
     async fn persist_state(&self, input: PersistStateInput<'_>) -> Result<()> {
-        let mut state = AgentRuntimeState::new(&self.agent_id, input.goal, self.max_steps);
+        let mut state =
+            AgentRuntimeState::new(&self.agent_id, input.goal, self.hard_step_cap.unwrap_or(0));
         state.phase = input.phase;
         state.current_step = input.step;
         state.last_action = input.last_action.map(|a| format!("{:?}", a));
@@ -272,31 +314,10 @@ impl AgentRuntime {
             .collect::<Vec<_>>()
             .join("\n");
 
-        // RAG Retrieval Stage
-        let retrieved_context = self
-            .memory
-            .build_context_string(&self.agent_id, Some(goal), 2000)
-            .await;
+        let context = DecisionContext::new("orchestration")
+            .with_summary(format!("goal: {}\n\nhistory:\n{}", goal, history_summary));
 
-        if !retrieved_context.is_empty() {
-            let mut event = TimelineEvent::new(&self.agent_id, EventType::Retrieval)
-                .with_payload(serde_json::json!({
-                    "goal": goal,
-                    "context_length": retrieved_context.len()
-                }));
-            let _ = self.watch.db().create::<TimelineEvent>("timeline_events", &event).await;
-        }
-
-        let full_summary = if retrieved_context.is_empty() {
-            format!("goal: {}\n\nhistory:\n{}", goal, history_summary)
-        } else {
-            format!(
-                "CONTEXT:\n{}\n\ngoal: {}\n\nhistory:\n{}",
-                retrieved_context, goal, history_summary
-            )
-        };
-
-        let context = DecisionContext::new("orchestration").with_summary(full_summary);
+        // Use native engine resilience (configured with StochasticRotator in main)
         let decision = self.engine.decide(&context).await?;
         Ok(Self::map_decision_to_actions(
             &decision.action,
@@ -304,11 +325,16 @@ impl AgentRuntime {
         ))
     }
 
+
     fn map_decision_to_actions(action: &str, reasoning: &str) -> Vec<OrchestrationAction> {
         match action.trim().to_lowercase().as_str() {
             "stop" | "done" | "defer" => vec![],
             "list_projects" => vec![OrchestrationAction::ListProjects],
             "list_jobs" => vec![OrchestrationAction::ListJobs],
+            "flush_vfs" => vec![OrchestrationAction::FlushVfs],
+            "review_merge" => vec![OrchestrationAction::ReviewAndMerge {
+                goal: reasoning.to_string(),
+            }],
             "chat" => vec![OrchestrationAction::Chat {
                 response: reasoning.to_string(),
             }],
@@ -359,19 +385,45 @@ impl AgentRuntime {
                 info!("Agent says: {}", response);
                 Ok(format!("Agent said: {}", response))
             }
-            OrchestrationAction::ReadFile { path } => match tokio::fs::read_to_string(path).await {
-                Ok(content) => Ok(format!("File '{}' content:\n{}", path, content)),
-                Err(e) => Ok(format!("Error reading file '{}': {}", path, e)),
-            },
-            OrchestrationAction::WriteFile { path, content } => {
-                if let Some(parent) = std::path::Path::new(path).parent() {
-                    tokio::fs::create_dir_all(parent).await?;
+            OrchestrationAction::ReadFile { path } => {
+                match self.vfs.read_to_string(Path::new(path)).await {
+                    Ok(content) => Ok(format!("File '{}' content:\n{}", path, content)),
+                    Err(e) => Ok(format!("Error reading file '{}': {}", path, e)),
                 }
-                match tokio::fs::write(path, content).await {
+            }
+            OrchestrationAction::WriteFile { path, content } => {
+                if let Some(parent) = Path::new(path).parent() {
+                    self.vfs.create_dir_all(parent).await?;
+                }
+                let lock_status = self
+                    .vfs
+                    .acquire_lock(Path::new(path), &self.agent_id)
+                    .await?;
+                if let LockStatus::HeldByOther { owner } = lock_status {
+                    return Ok(format!(
+                        "Lock conflict for '{}': currently held by '{}'.",
+                        path, owner
+                    ));
+                }
+
+                match self
+                    .vfs
+                    .write_string(Path::new(path), content.clone(), &self.agent_id)
+                    .await
+                {
                     Ok(_) => Ok(format!("Successfully wrote to file '{}'", path)),
                     Err(e) => Ok(format!("Error writing file '{}': {}", path, e)),
                 }
             }
+            OrchestrationAction::FlushVfs => match self.vfs.flush().await {
+                Ok(report) => Ok(format!(
+                    "VFS flush complete. dirs={}, files={}, errors={}",
+                    report.created_dirs.len(),
+                    report.written_files.len(),
+                    report.errors.len()
+                )),
+                Err(e) => Ok(format!("VFS flush failed: {}", e)),
+            },
             OrchestrationAction::ExecuteShell { command } => {
                 #[cfg(target_os = "windows")]
                 let mut cmd = tokio::process::Command::new("powershell");
@@ -456,7 +508,6 @@ impl AgentRuntime {
                     self.task.clone(),
                     self.watch.clone(),
                     self.agent.clone(),
-                    self.memory.clone(),
                 );
 
                 let _ = self.agent.connect(&sub_agent_id, Some(agent)).await;
@@ -523,6 +574,30 @@ impl AgentRuntime {
                     }
                 } else {
                     Ok(format!("Job '{}' not found or already finished.", job_id))
+                }
+            }
+            OrchestrationAction::ReviewAndMerge { goal } => {
+                let (reply_tx, reply_rx) = oneshot::channel();
+                let handle = {
+                    let mut hive = self.hive.lock().await;
+                    spawn_reviewer_agent(&mut hive)
+                };
+                if let Err(e) = handle
+                    .send(ReviewerMessage::ReviewAndMerge {
+                        goal: goal.clone(),
+                        reply: reply_tx,
+                    })
+                    .await
+                {
+                    return Ok(format!("Reviewer agent dispatch failed: {}", e));
+                }
+
+                match reply_rx.await {
+                    Ok(result) => Ok(format!(
+                        "Reviewer decision: approved={} summary={}",
+                        result.approved, result.summary
+                    )),
+                    Err(e) => Ok(format!("Reviewer did not respond: {}", e)),
                 }
             }
         }

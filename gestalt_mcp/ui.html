@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🤖 Gestalt Control Center</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            color: #eee;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container { max-width: 1200px; margin: 0 auto; }
+        
+        header {
+            text-align: center;
+            padding: 30px;
+            background: rgba(255,255,255,0.05);
+            border-radius: 16px;
+            margin-bottom: 20px;
+        }
+        h1 { font-size: 2.5rem; margin-bottom: 10px; }
+        .status {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            border-radius: 20px;
+            background: #10b981;
+            font-weight: bold;
+        }
+        .status.offline { background: #ef4444; }
+        
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        @media (max-width: 768px) { .grid { grid-template-columns: 1fr; } }
+        
+        .panel {
+            background: rgba(255,255,255,0.05);
+            border-radius: 12px;
+            padding: 20px;
+        }
+        .panel h2 {
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+        
+        .tools-list {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .tool-item {
+            padding: 10px;
+            margin: 5px 0;
+            background: rgba(255,255,255,0.05);
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .tool-item:hover {
+            background: rgba(255,255,255,0.1);
+            transform: translateX(5px);
+        }
+        .tool-name { font-weight: bold; color: #60a5fa; }
+        .tool-desc { font-size: 0.85rem; color: #9ca3af; }
+        
+        .form-group { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 5px; color: #9ca3af; }
+        input, textarea, select {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 8px;
+            background: rgba(0,0,0,0.3);
+            color: #fff;
+            font-size: 1rem;
+        }
+        button {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1rem;
+            font-weight: bold;
+            transition: all 0.2s;
+        }
+        .btn-primary { background: #3b82f6; color: white; }
+        .btn-primary:hover { background: #2563eb; }
+        .btn-success { background: #10b981; color: white; }
+        
+        .output {
+            background: #0d1117;
+            border-radius: 8px;
+            padding: 15px;
+            min-height: 200px;
+            max-height: 400px;
+            overflow-y: auto;
+            font-family: 'Consolas', monospace;
+            font-size: 0.9rem;
+            white-space: pre-wrap;
+            color: #10b981;
+        }
+        .output.error { color: #ef4444; }
+        
+        .tabs { display: flex; gap: 10px; margin-bottom: 15px; }
+        .tab {
+            padding: 8px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            background: rgba(255,255,255,0.05);
+        }
+        .tab.active { background: #3b82f6; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🧠 Gestalt Control Center</h1>
+            <div class="status" id="status">
+                <span>●</span> Server Online
+            </div>
+        </header>
+        
+        <div class="grid">
+            <div class="panel">
+                <h2>📋 Tools</h2>
+                <div class="tools-list" id="tools"></div>
+            </div>
+            
+            <div class="panel">
+                <h2>⚡ Execute</h2>
+                <div class="tabs">
+                    <div class="tab active" data-tool="echo">Echo</div>
+                    <div class="tab" data-tool="analyze_project">Analyze</div>
+                    <div class="tab" data-tool="git_status">Git</div>
+                    <div class="tab" data-tool="search_code">Search</div>
+                </div>
+                
+                <div class="form-group">
+                    <label>Tool</label>
+                    <select id="toolSelect">
+                        <option value="echo">echo</option>
+                        <option value="analyze_project">analyze_project</option>
+                        <option value="get_context">get_context</option>
+                        <option value="git_status">git_status</option>
+                        <option value="git_log">git_log</option>
+                        <option value="search_code">search_code</option>
+                        <option value="file_tree">file_tree</option>
+                        <option value="read_file">read_file</option>
+                        <option value="exec_command">exec_command</option>
+                        <option value="system_info">system_info</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label>Arguments (JSON)</label>
+                    <textarea id="args" rows="4" placeholder='{"message": "Hello"}'></textarea>
+                </div>
+                
+                <button class="btn-primary" onclick="execute()">🚀 Execute</button>
+                
+                <div class="output" id="output">// Output will appear here...</div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        const MCP_URL = 'http://127.0.0.1:3000';
+        let tools = [];
+        
+        async function checkStatus() {
+            try {
+                const res = await fetch(`${MCP_URL}/tools`);
+                if (res.ok) {
+                    document.getElementById('status').classList.remove('offline');
+                    document.getElementById('status').innerHTML = '<span>●</span> Server Online';
+                    return true;
+                }
+            } catch(e) {}
+            document.getElementById('status').classList.add('offline');
+            document.getElementById('status').innerHTML = '<span>●</span> Server Offline';
+            return false;
+        }
+        
+        async function loadTools() {
+            try {
+                const res = await fetch(`${MCP_URL}/tools`);
+                tools = await res.json();
+                renderTools();
+            } catch(e) {
+                output('Error loading tools: ' + e.message, true);
+            }
+        }
+        
+        function renderTools() {
+            const container = document.getElementById('tools');
+            container.innerHTML = tools.map(t => `
+                <div class="tool-item" onclick="selectTool('${t.name}')">
+                    <div class="tool-name">${t.name}</div>
+                    <div class="tool-desc">${t.description}</div>
+                </div>
+            `).join('');
+        }
+        
+        function selectTool(name) {
+            document.getElementById('toolSelect').value = name;
+            updateArgsTemplate(name);
+        }
+        
+        function updateArgsTemplate(tool) {
+            const templates = {
+                'echo': '{"message": "Hello"}',
+                'analyze_project': '{"path": "E:\\\\scripts-python\\\\gestalt-rust"}',
+                'get_context': '{"path": "E:\\\\scripts-python\\\\gestalt-rust"}',
+                'git_status': '{"path": "E:\\\\scripts-python\\\\gestalt-rust"}',
+                'git_log': '{"path": ".", "count": 5}',
+                'search_code': '{"pattern": "fn main", "path": ".", "extensions": ".rs"}',
+                'file_tree': '{"path": ".", "depth": 2}',
+                'read_file': '{"path": "Cargo.toml", "lines": 50}',
+                'exec_command': '{"command": "dir", "cwd": "."}',
+                'system_info': '{}'
+            };
+            document.getElementById('args').value = templates[tool] || '{}';
+        }
+        
+        async function execute() {
+            const tool = document.getElementById('toolSelect').value;
+            let args = {};
+            try {
+                args = JSON.parse(document.getElementById('args').value);
+            } catch(e) {
+                output('Invalid JSON in arguments', true);
+                return;
+            }
+            
+            output('⏳ Executing ' + tool + '...');
+            
+            try {
+                const res = await fetch(`${MCP_URL}/mcp`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        jsonrpc: '2.0',
+                        method: 'tools/call',
+                        params: { name: tool, arguments: args },
+                        id: Date.now()
+                    })
+                });
+                
+                const data = await res.json();
+                if (data.error) {
+                    output('Error: ' + JSON.stringify(data.error, null, 2), true);
+                } else {
+                    output(JSON.stringify(data.result, null, 2));
+                }
+            } catch(e) {
+                output('Request failed: ' + e.message, true);
+            }
+        }
+        
+        function output(text, isError = false) {
+            const el = document.getElementById('output');
+            el.textContent = text;
+            el.classList.toggle('error', isError);
+        }
+        
+        // Tab switching
+        document.querySelectorAll('.tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                tab.classList.add('active');
+                selectTool(tab.dataset.tool);
+            });
+        });
+        
+        // Initialize
+        checkStatus();
+        loadTools();
+        setInterval(checkStatus, 5000);
+    </script>
+</body>
+</html>

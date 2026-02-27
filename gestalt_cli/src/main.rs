@@ -1,236 +1,495 @@
+//! OpenClaw ↔ Gestalt CLI
+//! 
+//! CLI tool for interacting with Gestalt MCP Server and managing tasks.
+
 use clap::{Parser, Subcommand};
-use dotenv::dotenv;
-use rustyline::error::ReadlineError;
-use rustyline::DefaultEditor;
-use std::io::Write;
-use std::sync::Arc;
-use tokio::time::{sleep, Duration};
-use tracing::{info, warn, Level};
-use tracing_subscriber::FmtSubscriber;
+use serde_json::json;
+use std::collections::HashMap;
+use std::fs;
+use std::io::{self, Write};
+use std::path::PathBuf;
+use std::process::Command;
+use std::time::{SystemTime, UNIX_EPOCH};
 
-use synapse_agentic::prelude::{DecisionContext, DecisionEngine, GeminiProvider, MinimaxProvider};
+/// Simple task storage
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct Task {
+    pub id: String,
+    pub name: String,
+    pub status: String,
+    pub created_at: String,
+    pub result: Option<String>,
+}
 
+/// CLI arguments
 #[derive(Parser, Debug)]
-#[command(author, version, about, long_about = None)]
-struct Cli {
+#[command(name = "gestalt")]
+#[command(about = "OpenClaw ↔ Gestalt Bridge CLI", long_about = None)]
+struct Args {
     #[command(subcommand)]
-    command: Option<Commands>,
-
-    /// Prompt single-shot. If omitted, starts REPL mode.
-    #[arg(short, long)]
-    prompt: Option<String>,
-
-    /// Add local context hints to the prompt.
-    #[arg(long, default_value_t = true)]
-    context: bool,
-
-    /// Provider: gemini | minimax.
-    #[arg(long, default_value = "gemini")]
-    provider: String,
-
-    /// Model ID for selected provider.
-    #[arg(long, default_value = "gemini-2.0-flash")]
-    model: String,
+    command: Commands,
 }
 
 #[derive(Subcommand, Debug)]
 enum Commands {
-    /// Show runtime/provider status.
-    Status,
+    /// Start the MCP server
+    Serve {
+        /// Host to bind to
+        #[arg(long, default_value = "127.0.0.1")]
+        host: String,
+        
+        /// Port to bind to
+        #[arg(long, default_value_t = 3000)]
+        port: u16,
+    },
+    
+    /// Check server status
+    Status {
+        /// MCP server URL
+        #[arg(long, default_value = "http://127.0.0.1:3000")]
+        url: String,
+    },
+    
+    /// List available tools
+    Tools {
+        /// MCP server URL
+        #[arg(long, default_value = "http://127.0.0.1:3000")]
+        url: String,
+    },
+    
+    /// Execute a tool
+    Exec {
+        /// Tool name
+        #[arg()]
+        tool: String,
+        
+        /// Arguments as JSON
+        #[arg(short, long, default_value = "{}")]
+        args: String,
+        
+        /// MCP server URL
+        #[arg(long, default_value = "http://127.0.0.1:3000")]
+        url: String,
+    },
+    
+    /// Create a task
+    TaskCreate {
+        /// Task ID
+        #[arg(short, long)]
+        id: String,
+        
+        /// Task name
+        #[arg(short, long)]
+        name: String,
+        
+        /// Task description
+        #[arg(short, long)]
+        description: Option<String>,
+        
+        /// Database file path
+        #[arg(long, default_value = "tasks.json")]
+        db: String,
+    },
+    
+    /// List tasks
+    TaskList {
+        /// Filter by status
+        #[arg(short, long)]
+        status: Option<String>,
+        
+        /// Database file path
+        #[arg(long, default_value = "tasks.json")]
+        db: String,
+    },
+    
+    /// Get task status
+    TaskStatus {
+        /// Task ID
+        #[arg()]
+        id: String,
+        
+        /// Database file path
+        #[arg(long, default_value = "tasks.json")]
+        db: String,
+    },
+    
+    /// Analyze a project
+    Analyze {
+        /// Project path
+        #[arg(default_value = ".")]
+        path: String,
+        
+        /// MCP server URL
+        #[arg(long, default_value = "http://127.0.0.1:3000")]
+        url: String,
+    },
+    
+    /// Search code
+    Search {
+        /// Search pattern
+        #[arg()]
+        pattern: String,
+        
+        /// Search path
+        #[arg(default_value = ".")]
+        path: String,
+        
+        /// File extensions
+        #[arg(long, default_value = ".rs,.ts,.js,.py")]
+        ext: String,
+        
+        /// MCP server URL
+        #[arg(long, default_value = "http://127.0.0.1:3000")]
+        url: String,
+    },
+    
+    /// Git operations
+    Git {
+        /// Git command (status, log, branch)
+        #[arg(default_value = "status")]
+        subcommand: String,
+        
+        /// Repository path
+        #[arg(default_value = ".")]
+        path: String,
+        
+        /// MCP server URL
+        #[arg(long, default_value = "http://127.0.0.1:3000")]
+        url: String,
+    },
+    
+    /// Read a file
+    Read {
+        /// File path
+        #[arg()]
+        path: String,
+        
+        /// Max lines
+        #[arg(short, long, default_value_t = 100)]
+        lines: usize,
+        
+        /// MCP server URL
+        #[arg(long, default_value = "http://127.0.0.1:3000")]
+        url: String,
+    },
+    
+    /// Get file tree
+    Tree {
+        /// Directory path
+        #[arg(default_value = ".")]
+        path: String,
+        
+        /// Max depth
+        #[arg(short, long, default_value_t = 3)]
+        depth: usize,
+        
+        /// MCP server URL
+        #[arg(long, default_value = "http://127.0.0.1:3000")]
+        url: String,
+    },
+    
+    /// System info
+    SysInfo {
+        /// MCP server URL
+        #[arg(long, default_value = "http://127.0.0.1:3000")]
+        url: String,
+    },
 }
 
-#[tokio::main]
-async fn main() {
-    let subscriber = FmtSubscriber::builder()
-        .with_max_level(Level::INFO)
-        .finish();
-    tracing::subscriber::set_global_default(subscriber).expect("setting default subscriber failed");
-
-    dotenv().ok();
-    let cli = Cli::parse();
-
-    if let Some(Commands::Status) = cli.command {
-        print_status(&cli);
-        return;
-    }
-
-    let engine = match init_decision_engine(&cli).await {
-        Ok(engine) => engine,
-        Err(err) => {
-            eprintln!("❌ {}", err);
-            return;
-        }
-    };
-
-    if let Some(prompt) = &cli.prompt {
-        if let Err(err) = handle_prompt(prompt, &cli, engine.as_ref()).await {
-            eprintln!("❌ {}", err);
-        }
-    } else if let Err(err) = run_repl(&cli, engine).await {
-        eprintln!("❌ {}", err);
-    }
+fn current_time() -> String {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    format!("{}", now)
 }
 
-fn print_status(cli: &Cli) {
-    println!("🔧 Gestalt CLI Status");
-    println!("provider: {}", cli.provider);
-    println!("model: {}", cli.model);
-    println!("context: {}", cli.context);
-    println!();
-    println!("env:");
-    println!(
-        "  GEMINI_API_KEY: {}",
-        if std::env::var("GEMINI_API_KEY").is_ok() || std::env::var("GOOGLE_API_KEY").is_ok() {
-            "set"
-        } else {
-            "missing"
-        }
-    );
-    println!(
-        "  MINIMAX_API_KEY: {}",
-        if std::env::var("MINIMAX_API_KEY").is_ok() {
-            "set"
-        } else {
-            "missing"
-        }
-    );
-}
-
-async fn init_decision_engine(cli: &Cli) -> Result<Arc<DecisionEngine>, String> {
-    let provider_name = cli.provider.trim().to_lowercase();
-    let mut builder = DecisionEngine::builder();
-
-    match provider_name.as_str() {
-        "gemini" => {
-            let api_key = std::env::var("GEMINI_API_KEY")
-                .or_else(|_| std::env::var("GOOGLE_API_KEY"))
-                .map_err(|_| {
-                    "GEMINI_API_KEY/GOOGLE_API_KEY not found. Set one to use --provider gemini."
-                        .to_string()
-                })?;
-            builder = builder.with_provider(GeminiProvider::new(api_key, cli.model.clone()));
-        }
-        "minimax" => {
-            let api_key = std::env::var("MINIMAX_API_KEY").map_err(|_| {
-                "MINIMAX_API_KEY not found. Set it to use --provider minimax.".to_string()
-            })?;
-            let group_id = std::env::var("MINIMAX_GROUP_ID").unwrap_or_default();
-            builder =
-                builder.with_provider(MinimaxProvider::new(api_key, group_id, cli.model.clone()));
-        }
-        other => {
-            return Err(format!(
-                "Unsupported provider '{}'. Use gemini or minimax.",
-                other
-            ));
-        }
-    }
-
-    Ok(Arc::new(builder.build()))
-}
-
-fn enrich_prompt(input: &str, use_context: bool, history: &[String]) -> String {
-    if !use_context && history.is_empty() {
-        return input.to_string();
-    }
-
-    let mut prompt = String::new();
-    if use_context {
-        prompt.push_str("MODE: interactive_cli\n");
-    }
-    if !history.is_empty() {
-        prompt.push_str("HISTORY:\n");
-        prompt.push_str(&history.join("\n"));
-        prompt.push('\n');
-    }
-    prompt.push_str("USER:\n");
-    prompt.push_str(input);
-    prompt
-}
-
-async fn stream_text(text: &str) {
-    print!("🤖 ");
-    let _ = std::io::stdout().flush();
-
-    for token in text.split_whitespace() {
-        print!("{} ", token);
-        let _ = std::io::stdout().flush();
-        sleep(Duration::from_millis(18)).await;
-    }
-    println!();
-}
-
-async fn handle_prompt(prompt: &str, cli: &Cli, engine: &DecisionEngine) -> Result<(), String> {
-    let full = enrich_prompt(prompt, cli.context, &[]);
-    info!("Processing single-shot prompt");
-    let decision = engine
-        .decide(&DecisionContext::new("cli").with_summary(&full))
-        .await
-        .map_err(|e| format!("Decision engine error: {}", e))?;
-    stream_text(&decision.reasoning).await;
-    Ok(())
-}
-
-async fn run_repl(cli: &Cli, engine: Arc<DecisionEngine>) -> Result<(), String> {
-    println!("🤖 Gestalt REPL");
-    println!("Commands: /exit, /clear, /config");
-
-    let mut rl = DefaultEditor::new().map_err(|e| format!("Readline init failed: {}", e))?;
-    let _ = rl.load_history("history.txt");
-    let mut history: Vec<String> = Vec::new();
-
-    loop {
-        match rl.readline(">> ") {
-            Ok(line) => {
-                let input = line.trim();
-                if input.is_empty() {
-                    continue;
-                }
-
-                let _ = rl.add_history_entry(input);
-
-                if input == "/exit" {
-                    break;
-                }
-                if input == "/clear" {
-                    history.clear();
-                    let _ = rl.clear_history();
-                    println!("History cleared.");
-                    continue;
-                }
-                if input == "/config" {
-                    println!(
-                        "provider={} model={} context={}",
-                        cli.provider, cli.model, cli.context
-                    );
-                    continue;
-                }
-
-                let full = enrich_prompt(input, cli.context, &history);
-                let decision = engine
-                    .decide(&DecisionContext::new("repl").with_summary(&full))
-                    .await
-                    .map_err(|e| format!("Decision engine error: {}", e))?;
-
-                stream_text(&decision.reasoning).await;
-                history.push(format!("user: {}", input));
-                history.push(format!("assistant: {}", decision.reasoning));
-            }
-            Err(ReadlineError::Interrupted) => {
-                println!();
-                break;
-            }
-            Err(ReadlineError::Eof) => {
-                println!();
-                break;
-            }
-            Err(err) => {
-                warn!("Readline error: {:?}", err);
-                return Err(format!("Readline error: {:?}", err));
+fn load_tasks(db_path: &str) -> HashMap<String, Task> {
+    let path = PathBuf::from(db_path);
+    if path.exists() {
+        if let Ok(content) = fs::read_to_string(&path) {
+            if let Ok(tasks) = serde_json::from_str(&content) {
+                return tasks;
             }
         }
     }
+    HashMap::new()
+}
 
-    let _ = rl.save_history("history.txt");
+fn save_tasks(db_path: &str, tasks: &HashMap<String, Task>) -> Result<(), String> {
+    let content = serde_json::to_string_pretty(tasks)
+        .map_err(|e| e.to_string())?;
+    fs::write(db_path, content).map_err(|e| e.to_string())
+}
+
+fn call_mcp(url: &str, tool: &str, args: serde_json::Value) -> Result<serde_json::Value, String> {
+    let client = reqwest::blocking::Client::new();
+    
+    let payload = json!({
+        "jsonrpc": "2.0",
+        "method": "tools/call",
+        "params": {
+            "name": tool,
+            "arguments": args
+        },
+        "id": 1
+    });
+    
+    let response = client
+        .post(&format!("{}/mcp", url))
+        .json(&payload)
+        .send()
+        .map_err(|e| e.to_string())?;
+    
+    response.json().map_err(|e| e.to_string())
+}
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let args = Args::parse();
+    
+    match args.command {
+        Commands::Serve { host, port } => {
+            println!("🚀 Starting Gestalt MCP Server on {}:{}", host, port);
+            println!("📍 URL: http://{}:{}", host, port);
+            println!();
+            
+            // Run cargo
+            let status = Command::new("cargo")
+                .args(["run", "-p", "gestalt_mcp", "--", "--http"])
+                .current_dir("E:/scripts-python/gestalt-rust")
+                .status()?;
+            
+            std::process::exit(status.code().unwrap_or(0));
+        }
+        
+        Commands::Status { url } => {
+            let tools_url = format!("{}/tools", url);
+            match reqwest::blocking::get(&tools_url) {
+                Ok(resp) if resp.status().is_success() => {
+                    println!("✅ Gestalt MCP Server: Online");
+                    println!("📍 {}", url);
+                }
+                _ => {
+                    println!("❌ Gestalt MCP Server: Offline");
+                    println!("📍 {}", url);
+                    std::process::exit(1);
+                }
+            }
+        }
+        
+        Commands::Tools { url } => {
+            let tools_url = format!("{}/tools", url);
+            let response = reqwest::blocking::get(&tools_url)
+                .map_err(|e| e.to_string())?;
+            let tools: Vec<serde_json::Value> = response.json()
+                .map_err(|e| e.to_string())?;
+            
+            println!("📋 Available Tools ({}):", tools.len());
+            for tool in tools {
+                let name = tool.get("name").and_then(|v| v.as_str()).unwrap_or("?");
+                let desc = tool.get("description").and_then(|v| v.as_str()).unwrap_or("");
+                println!("  • {}: {}", name, desc);
+            }
+        }
+        
+        Commands::Exec { tool, args, url } => {
+            let args_json: serde_json::Value = serde_json::from_str(&args)
+                .unwrap_or(json!({}));
+            
+            let result = call_mcp(&url, &tool, args_json)?;
+            
+            println!("{}", serde_json::to_string_pretty(&result).unwrap());
+        }
+        
+        Commands::TaskCreate { id, name, description, db } => {
+            let mut tasks = load_tasks(&db);
+            
+            let task = Task {
+                id: id.clone(),
+                name: name.clone(),
+                status: "pending".to_string(),
+                created_at: current_time(),
+                result: description,
+            };
+            
+            tasks.insert(id.clone(), task);
+            save_tasks(&db, &tasks)?;
+            
+            println!("✅ Task created: {} ({})", name, id);
+        }
+        
+        Commands::TaskList { status, db } => {
+            let tasks = load_tasks(&db);
+            
+            let mut task_list: Vec<&Task> = tasks.values().collect();
+            task_list.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+            
+            if let Some(ref s) = status {
+                task_list.retain(|t| t.status == *s);
+            }
+            
+            println!("📋 Tasks ({}):", task_list.len());
+            for task in task_list {
+                let status_icon = match task.status.as_str() {
+                    "completed" => "✅",
+                    "running" => "🔄",
+                    "failed" => "❌",
+                    _ => "⏳",
+                };
+                println!("  {} [{}] {} - {}", status_icon, task.status, task.id, task.name);
+            }
+        }
+        
+        Commands::TaskStatus { id, db } => {
+            let tasks = load_tasks(&db);
+            
+            match tasks.get(&id) {
+                Some(task) => {
+                    println!("📝 Task: {} ({})", task.name, task.id);
+                    println!("   Status: {}", task.status);
+                    println!("   Created: {}", task.created_at);
+                    if let Some(ref result) = task.result {
+                        println!("   Result: {}", result);
+                    }
+                }
+                None => {
+                    println!("❌ Task not found: {}", id);
+                    std::process::exit(1);
+                }
+            }
+        }
+        
+        Commands::Analyze { path, url } => {
+            let args = json!({ "path": path });
+            let result = call_mcp(&url, "analyze_project", args)?;
+            
+            if let Some(content) = result.get("result")
+                .and_then(|r| r.get("content"))
+                .and_then(|c| c.as_array())
+                .and_then(|arr| arr.first())
+                .and_then(|c| c.get("text"))
+            {
+                let text = content.as_str().unwrap_or("");
+                if let Ok(analysis) = serde_json::from_str::<serde_json::Value>(text) {
+                    if let Some(total) = analysis.get("total_files").and_then(|v| v.as_u64()) {
+                        println!("📊 Project: {} files", total);
+                    }
+                    if let Some(files) = analysis.get("main_files").and_then(|v| v.as_array()) {
+                        println!("   Main files: {}", files.len());
+                    }
+                }
+            }
+        }
+        
+        Commands::Search { pattern, path, ext, url } => {
+            let args = json!({
+                "pattern": pattern,
+                "path": path,
+                "extensions": ext
+            });
+            let result = call_mcp(&url, "search_code", args)?;
+            
+            if let Some(content) = result.get("result")
+                .and_then(|r| r.get("content"))
+                .and_then(|c| c.as_array())
+                .and_then(|arr| arr.first())
+                .and_then(|c| c.get("text"))
+            {
+                let text = content.as_str().unwrap_or("[]");
+                if let Ok(results) = serde_json::from_str::<Vec<serde_json::Value>>(text) {
+                    println!("🔍 Found {} results:", results.len());
+                    for r in results.iter().take(10) {
+                        let file = r.get("file").and_then(|v| v.as_str()).unwrap_or("");
+                        let line = r.get("line").and_then(|v| v.as_u64()).unwrap_or(0);
+                        let content = r.get("content").and_then(|v| v.as_str()).unwrap_or("");
+                        println!("  {}:{} - {}", file, line, &content[..content.len().min(60)]);
+                    }
+                }
+            }
+        }
+        
+        Commands::Git { subcommand, path, url } => {
+            let tool = match subcommand.as_str() {
+                "status" => "git_status",
+                "log" => "git_log",
+                "branch" => "git_status",
+                _ => "git_status",
+            };
+            
+            let args = json!({ "path": path });
+            let result = call_mcp(&url, tool, args)?;
+            
+            if let Some(content) = result.get("result")
+                .and_then(|r| r.get("content"))
+                .and_then(|c| c.as_array())
+                .and_then(|arr| arr.first())
+                .and_then(|c| c.get("text"))
+            {
+                println!("{}", content.as_str().unwrap_or(""));
+            }
+        }
+        
+        Commands::Read { path, lines, url } => {
+            let args = json!({ "path": path, "lines": lines });
+            let result = call_mcp(&url, "read_file", args)?;
+            
+            if let Some(content) = result.get("result")
+                .and_then(|r| r.get("content"))
+                .and_then(|c| c.as_array())
+                .and_then(|arr| arr.first())
+                .and_then(|c| c.get("text"))
+            {
+                println!("{}", content.as_str().unwrap_or(""));
+            }
+        }
+        
+        Commands::Tree { path, depth, url } => {
+            let args = json!({ "path": path, "depth": depth });
+            let result = call_mcp(&url, "file_tree", args)?;
+            
+            if let Some(content) = result.get("result")
+                .and_then(|r| r.get("content"))
+                .and_then(|c| c.as_array())
+                .and_then(|arr| arr.first())
+                .and_then(|c| c.get("text"))
+            {
+                let text = content.as_str().unwrap_or("[]");
+                if let Ok(tree) = serde_json::from_str::<Vec<serde_json::Value>>(text) {
+                    for t in tree.iter().take(30) {
+                        let depth = t.get("depth").and_then(|v| v.as_u64()).unwrap_or(0);
+                        let name = t.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                        println!("{}{}", "  ".repeat(depth as usize), name);
+                    }
+                }
+            }
+        }
+        
+        Commands::SysInfo { url } => {
+            let args = json!({});
+            let result = call_mcp(&url, "system_info", args)?;
+            
+            if let Some(content) = result.get("result")
+                .and_then(|r| r.get("content"))
+                .and_then(|c| c.as_array())
+                .and_then(|arr| arr.first())
+                .and_then(|c| c.get("text"))
+            {
+                let text = content.as_str().unwrap_or("{}");
+                if let Ok(info) = serde_json::from_str::<serde_json::Value>(text) {
+                    println!("💻 System Info:");
+                    if let Some(os) = info.get("os").and_then(|v| v.as_str()) {
+                        println!("   OS: {}", os);
+                    }
+                    if let Some(arch) = info.get("arch").and_then(|v| v.as_str()) {
+                        println!("   Arch: {}", arch);
+                    }
+                    if let Some(cwd) = info.get("cwd").and_then(|v| v.as_str()) {
+                        println!("   CWD: {}", cwd);
+                    }
+                }
+            }
+        }
+    }
+    
     Ok(())
 }

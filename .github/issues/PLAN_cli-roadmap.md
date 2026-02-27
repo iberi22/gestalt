@@ -1,4 +1,5 @@
 ---
+github_issue: 31
 title: "PLAN: Production-Ready CLI Roadmap"
 labels:
   - ai-plan
@@ -20,3 +21,4 @@ Transform `gestalt_cli` from a prototype into a production-grade product.
 - Zero manual config editing (use CLI or file).
 - < 200ms startup time.
 - 90% test coverage on core logic.
+

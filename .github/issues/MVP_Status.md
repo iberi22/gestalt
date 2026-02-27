@@ -141,3 +141,4 @@ MVP completo. Todas las fases implementadas: CLI base, tiempo real, multi-agente
 - Ver `PLANNING.md` para arquitectura y decisiones técnicas
 - Ver `README.md` para instrucciones de uso
 - Ver `CHANGELOG.md` para historial de cambios
+

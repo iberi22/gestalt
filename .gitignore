@@ -1,79 +1,12 @@
-# ============================================
-# Gestalt Timeline - .gitignore
-# ============================================
-
-# ------ Rust / Cargo ------
-/target/
+target/
 **/*.rs.bk
-Cargo.lock
-
-# ------ IDE / Editor ------
-.idea/
-.vscode/
-*.swp
-*.swo
-*~
-.project
-.classpath
-.settings/
-
-# ------ OS Specific ------
+gestalt_terminal/rust/target
+gestalt_app/gestalt_app/rust/target
 .DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Thumbs.db
-desktop.ini
-
-# ------ SurrealDB ------
-*.db
-surreal.db/
-data/
-
-# ------ Environment ------
-.env
-.env.local
-.env.*.local
-*.env
-
-# ------ Logs ------
-logs/
 *.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
 
-# ------ Temporales ------
-tmp/
-temp/
-*.tmp
-*.temp
-
-# ------ Build artifacts ------
-dist/
-build/
-*.exe
-*.dll
-*.so
-*.dylib
-
-# ------ Coverage & Testing ------
-coverage/
-*.profraw
-*.profdata
-tarpaulin-report.html
-
-# ------ Documentation builds ------
-/doc/
-target/doc/
-
-# ============================================
-# NO IGNORAR (explícitamente incluidos)
-# ============================================
-# !PLANNING.md
-# !TASK.md
-# !README.md
-# !CHANGELOG.md
-# !RULES.md
+# Python
+__pycache__/
+*.py[cod]
+*.class
+benchmarks/*_current.json

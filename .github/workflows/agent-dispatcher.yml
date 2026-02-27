@@ -17,7 +17,7 @@ jobs:
   dispatch:
     runs-on: ubuntu-latest
     permissions:
-      issues: read
+      issues: write
       contents: read
     
     steps:
@@ -25,13 +25,25 @@ jobs:
         id: analyze
         run: |
           echo "Analyzing issue for routing..."
-          
+
+          ISSUE_NUMBER="${{ github.event.issue.number }}"
+          if [ -z "$ISSUE_NUMBER" ]; then
+            ISSUE_NUMBER="${{ github.event.inputs.issue_number }}"
+          fi
+
+          if [ -z "$ISSUE_NUMBER" ]; then
+            echo "No issue number provided."
+            exit 1
+          fi
+
+          echo "issue_number=$ISSUE_NUMBER" >> $GITHUB_OUTPUT
+
           # Get issue labels
-          LABELS=$(gh issue view ${{ github.event.issue.number }} --json labels -q '.labels[].name')
+          LABELS=$(gh issue view "$ISSUE_NUMBER" --json labels -q '.labels[].name')
           echo "Labels: $LABELS"
-          
+
           # Route based on labels
-          if echo "$LABELS" | grep -q "ai-agent"; then
+          if echo "$LABELS" | grep -Eiq "^jules$|^ai-agent$"; then
             echo "route=jules" >> $GITHUB_OUTPUT
           elif echo "$LABELS" | grep -q "bug"; then
             echo "route=fixer" >> $GITHUB_OUTPUT
@@ -44,10 +56,10 @@ jobs:
       - name: Dispatch to Agent
         run: |
           ROUTE=${{ steps.analyze.outputs.route }}
-          ISSUE=${{ github.event.issue.number }}
-          
+          ISSUE=${{ steps.analyze.outputs.issue_number }}
+
           echo "Routing issue #$ISSUE to: $ROUTE"
-          
+
           case $ROUTE in
             jules)
               echo "Delegating to Jules CLI agent..."
@@ -66,8 +78,8 @@ jobs:
 
       - name: Comment on Issue
         run: |
-          ISSUE=${{ github.event.issue.number }}
+          ISSUE=${{ steps.analyze.outputs.issue_number }}
           ROUTE=${{ steps.analyze.outputs.route }}
-          
+
           gh issue comment $ISSUE \
-            --body "🤖 Issue routed to: $ROUTE agent. See [Agent Index](../.gitcore/AGENT_INDEX.md) for capabilities."
+            --body "Issue routed to: $ROUTE agent. Dispatch source: \`agent-dispatcher.yml\`."

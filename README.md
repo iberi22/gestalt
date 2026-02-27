@@ -52,5 +52,5 @@ gestalt config show
 ```
 
 ## 🏗️ Architecture
-See [.✨/ARCHITECTURE.md](.✨/ARCHITECTURE.md) for detailed system design.
+See [.gitcore/ARCHITECTURE.md](.gitcore/ARCHITECTURE.md) for detailed system design.
 

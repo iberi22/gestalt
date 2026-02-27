@@ -5,8 +5,10 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use tracing::info;
 
-use crate::models::{AgentRuntimeState, RuntimePhase};
-use crate::services::{AgentService, ProjectService, TaskService, WatchService};
+use crate::models::{AgentRuntimeState, EventType, RuntimePhase, TimelineEvent};
+use crate::services::{
+    AgentService, MemoryService, ProjectService, TaskService, WatchService,
+};
 use synapse_agentic::prelude::{DecisionContext, DecisionEngine, EmptyContext, ToolRegistry};
 
 /// Orchestration action executed by AgentRuntime.
@@ -75,6 +77,7 @@ pub struct AgentRuntime {
     task: TaskService,
     watch: WatchService,
     agent: AgentService,
+    memory: MemoryService,
     max_steps: usize,
     jobs: Arc<Mutex<HashMap<String, tokio::process::Child>>>,
 }
@@ -100,6 +103,7 @@ impl AgentRuntime {
         task: TaskService,
         watch: WatchService,
         agent: AgentService,
+        memory: MemoryService,
     ) -> Self {
         Self {
             agent_id,
@@ -109,6 +113,7 @@ impl AgentRuntime {
             task,
             watch,
             agent,
+            memory,
             max_steps: 20,
             jobs: Arc::new(Mutex::new(HashMap::new())),
         }
@@ -267,8 +272,31 @@ impl AgentRuntime {
             .collect::<Vec<_>>()
             .join("\n");
 
-        let context = DecisionContext::new("orchestration")
-            .with_summary(format!("goal: {}\n\nhistory:\n{}", goal, history_summary));
+        // RAG Retrieval Stage
+        let retrieved_context = self
+            .memory
+            .build_context_string(&self.agent_id, Some(goal), 2000)
+            .await;
+
+        if !retrieved_context.is_empty() {
+            let mut event = TimelineEvent::new(&self.agent_id, EventType::Retrieval)
+                .with_payload(serde_json::json!({
+                    "goal": goal,
+                    "context_length": retrieved_context.len()
+                }));
+            let _ = self.watch.db().create::<TimelineEvent>("timeline_events", &event).await;
+        }
+
+        let full_summary = if retrieved_context.is_empty() {
+            format!("goal: {}\n\nhistory:\n{}", goal, history_summary)
+        } else {
+            format!(
+                "CONTEXT:\n{}\n\ngoal: {}\n\nhistory:\n{}",
+                retrieved_context, goal, history_summary
+            )
+        };
+
+        let context = DecisionContext::new("orchestration").with_summary(full_summary);
         let decision = self.engine.decide(&context).await?;
         Ok(Self::map_decision_to_actions(
             &decision.action,
@@ -428,6 +456,7 @@ impl AgentRuntime {
                     self.task.clone(),
                     self.watch.clone(),
                     self.agent.clone(),
+                    self.memory.clone(),
                 );
 
                 let _ = self.agent.connect(&sub_agent_id, Some(agent)).await;

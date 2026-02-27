@@ -29,6 +29,12 @@ pub struct MemoryFragment {
     pub created_at: chrono::DateTime<Utc>,
     /// Importance score 0.0 - 1.0 (used for compaction priority)
     pub importance: f32,
+    /// Provenance: Repository URL
+    pub repo_url: Option<String>,
+    /// Provenance: File path
+    pub file_path: Option<String>,
+    /// Provenance: Chunk ID
+    pub chunk_id: Option<String>,
 }
 
 impl MemoryFragment {
@@ -46,7 +52,22 @@ impl MemoryFragment {
             tags,
             created_at: Utc::now(),
             importance: 0.5,
+            repo_url: None,
+            file_path: None,
+            chunk_id: None,
         }
+    }
+
+    pub fn with_provenance(
+        mut self,
+        repo: Option<String>,
+        path: Option<String>,
+        chunk: Option<String>,
+    ) -> Self {
+        self.repo_url = repo;
+        self.file_path = path;
+        self.chunk_id = chunk;
+        self
     }
 
     pub fn with_importance(mut self, importance: f32) -> Self {
@@ -84,8 +105,12 @@ impl MemoryService {
         content: impl Into<String>,
         context: impl Into<String>,
         tags: Vec<String>,
+        provenance: Option<(Option<String>, Option<String>, Option<String>)>,
     ) -> Result<MemoryFragment> {
-        let fragment = MemoryFragment::new(agent_id, content, context, tags);
+        let mut fragment = MemoryFragment::new(agent_id, content, context, tags);
+        if let Some((repo, path, chunk)) = provenance {
+            fragment = fragment.with_provenance(repo, path, chunk);
+        }
 
         // Persist to SurrealDB
         let saved = self
@@ -198,10 +223,17 @@ impl MemoryService {
 
         let mut ctx = String::from("## Relevant Memories\n");
         for f in &fragments {
+            let provenance_marker = match (&f.repo_url, &f.file_path, &f.chunk_id) {
+                (Some(r), Some(p), Some(c)) => format!(" [{}|{}#{}]", r, p, c),
+                (None, Some(p), Some(c)) => format!(" [{}#{}]", p, c),
+                (None, Some(p), None) => format!(" [{}]", p),
+                _ => String::new(),
+            };
             let line = format!(
-                "- [{}] ({}): {}\n",
+                "- [{}] ({}){}: {}\n",
                 f.context,
                 f.created_at.format("%Y-%m-%d %H:%M"),
+                provenance_marker,
                 &f.content[..f.content.len().min(300)]
             );
             if ctx.len() + line.len() > max_chars {

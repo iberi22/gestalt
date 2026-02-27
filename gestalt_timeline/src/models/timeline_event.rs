@@ -121,6 +121,8 @@ pub enum EventType {
     SubAgentCompleted(String),
     /// Sub-agent failed
     SubAgentFailed(String),
+    /// Context retrieval event
+    Retrieval,
     /// Custom event type
     Custom(String),
 }
@@ -153,6 +155,7 @@ impl<'de> Deserialize<'de> for EventType {
             "agent_connected" => Ok(EventType::AgentConnected),
             "agent_disconnected" => Ok(EventType::AgentDisconnected),
             "command_executed" => Ok(EventType::CommandExecuted),
+            "retrieval" => Ok(EventType::Retrieval),
             other => {
                 if let Some(agent) = other.strip_prefix("sub_agent_spawned:") {
                     return Ok(EventType::SubAgentSpawned(agent.to_string()));
@@ -191,6 +194,7 @@ impl fmt::Display for EventType {
             EventType::AgentConnected => write!(f, "agent_connected"),
             EventType::AgentDisconnected => write!(f, "agent_disconnected"),
             EventType::CommandExecuted => write!(f, "command_executed"),
+            EventType::Retrieval => write!(f, "retrieval"),
             EventType::SubAgentSpawned(s) => write!(f, "sub_agent_spawned:{}", s),
             EventType::SubAgentOutput(s) => write!(f, "sub_agent_output:{}", s),
             EventType::SubAgentCompleted(s) => write!(f, "sub_agent_completed:{}", s),

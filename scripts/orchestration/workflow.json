@@ -1,0 +1,17 @@
+{
+    "description": "Implement user login flow",
+    "steps": [
+        {
+            "name": "Database Schema",
+            "task": "Create a migration for the users table with email and password_hash"
+        },
+        {
+            "name": "Auth Logic",
+            "task": "Implement the login function in Rust using bcrypt"
+        },
+        {
+            "name": "API Endpoint",
+            "task": "Add a POST /login endpoint to the Axum router"
+        }
+    ]
+}

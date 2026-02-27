@@ -3,7 +3,8 @@ use gestalt_core::application::agent::tools::{ExecuteShellTool, ReadFileTool, Wr
 use gestalt_timeline::config::DatabaseSettings;
 use gestalt_timeline::db::SurrealClient;
 use gestalt_timeline::services::{
-    AgentRuntime, AgentService, ProjectService, TaskService, TimelineService, WatchService,
+    AgentRuntime, AgentService, MemoryService, ProjectService, TaskService, TimelineService,
+    WatchService,
 };
 use std::sync::Arc;
 use synapse_agentic::prelude::{DecisionEngine, EmptyContext, ToolRegistry};
@@ -16,7 +17,13 @@ async fn init_tool_registry() -> Arc<ToolRegistry> {
     registry
 }
 
-async fn init_services() -> Result<(ProjectService, TaskService, WatchService, AgentService)> {
+async fn init_services() -> Result<(
+    ProjectService,
+    TaskService,
+    WatchService,
+    AgentService,
+    MemoryService,
+)> {
     let db_settings = DatabaseSettings {
         url: "mem://".to_string(),
         user: "root".to_string(),
@@ -30,7 +37,14 @@ async fn init_services() -> Result<(ProjectService, TaskService, WatchService, A
     let task_service = TaskService::new(db.clone(), timeline.clone());
     let watch_service = WatchService::new(db.clone(), timeline.clone());
     let agent_service = AgentService::new(db.clone(), timeline);
-    Ok((project_service, task_service, watch_service, agent_service))
+    let memory_service = MemoryService::new(db.clone());
+    Ok((
+        project_service,
+        task_service,
+        watch_service,
+        agent_service,
+        memory_service,
+    ))
 }
 
 #[tokio::test]
@@ -78,7 +92,8 @@ async fn test_tools_execute_shell_and_read_file() -> Result<()> {
 
 #[tokio::test]
 async fn test_runtime_loop_starts_with_registry() -> Result<()> {
-    let (project_service, task_service, watch_service, agent_service) = init_services().await?;
+    let (project_service, task_service, watch_service, agent_service, memory_service) =
+        init_services().await?;
     let engine = Arc::new(DecisionEngine::new());
     let registry = init_tool_registry().await;
 
@@ -90,6 +105,7 @@ async fn test_runtime_loop_starts_with_registry() -> Result<()> {
         task_service,
         watch_service,
         agent_service,
+        memory_service,
     );
 
     runtime.run_loop("Validate runtime bootstrap").await?;

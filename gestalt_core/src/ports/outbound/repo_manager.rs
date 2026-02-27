@@ -15,6 +15,13 @@ pub trait RepoManager: Send + Sync {
     async fn list_repos(&self) -> anyhow::Result<Vec<Repository>>;
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScoredResult {
+    pub id: String,
+    pub score: f32,
+    pub metadata: serde_json::Value,
+}
+
 #[async_trait]
 pub trait VectorDb: Send + Sync {
     async fn store_embedding(
@@ -29,5 +36,5 @@ pub trait VectorDb: Send + Sync {
         collection: &str,
         vector: Vec<f32>,
         limit: usize,
-    ) -> anyhow::Result<Vec<serde_json::Value>>;
+    ) -> anyhow::Result<Vec<ScoredResult>>;
 }

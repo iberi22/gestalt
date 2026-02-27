@@ -7,10 +7,10 @@ use tokio::sync::{oneshot, Mutex};
 use tokio::time::{sleep, Duration};
 use tracing::{info, warn};
 
-use crate::models::{AgentRuntimeState, RuntimePhase};
+use crate::models::{AgentRuntimeState, EventType, RuntimePhase, TimelineEvent};
 use crate::services::{
-    spawn_reviewer_agent, AgentService, ContextCompactor, LockStatus, OverlayFs, ProjectService,
-    ReviewerMessage, TaskService, VirtualFs, WatchService,
+    spawn_reviewer_agent, AgentService, ContextCompactor, LockStatus, MemoryService, OverlayFs,
+    ProjectService, ReviewerMessage, TaskService, TimelineService, VirtualFs, WatchService,
 };
 use synapse_agentic::prelude::{DecisionContext, DecisionEngine, EmptyContext, Hive, ToolRegistry};
 
@@ -82,6 +82,8 @@ pub struct AgentRuntime {
     registry: Arc<ToolRegistry>,
     project: ProjectService,
     task: TaskService,
+    timeline: TimelineService,
+    memory: MemoryService,
     watch: WatchService,
     agent: AgentService,
     hard_step_cap: Option<usize>,
@@ -110,8 +112,10 @@ impl AgentRuntime {
         registry: Arc<ToolRegistry>,
         project: ProjectService,
         task: TaskService,
+        timeline: TimelineService,
         watch: WatchService,
         agent: AgentService,
+        memory: MemoryService,
     ) -> Self {
         // Use the first available provider from the engine for context compaction
         let compactor_provider = engine.providers().get(0).cloned().unwrap_or_else(|| {
@@ -128,6 +132,8 @@ impl AgentRuntime {
             registry,
             project,
             task,
+            timeline,
+            memory,
             watch,
             agent,
             hard_step_cap: std::env::var("GESTALT_HARD_STEP_CAP")
@@ -399,11 +405,35 @@ impl AgentRuntime {
                     .vfs
                     .acquire_lock(Path::new(path), &self.agent_id)
                     .await?;
-                if let LockStatus::HeldByOther { owner } = lock_status {
-                    return Ok(format!(
-                        "Lock conflict for '{}': currently held by '{}'.",
-                        path, owner
-                    ));
+                match lock_status {
+                    LockStatus::HeldByOther { owner } => {
+                        let _ = self
+                            .timeline
+                            .record_event(
+                                TimelineEvent::new(&self.agent_id, EventType::VfsLockConflict)
+                                    .with_payload(serde_json::json!({
+                                        "path": path,
+                                        "owner": owner,
+                                    })),
+                            )
+                            .await;
+                        return Ok(format!(
+                            "Lock conflict for '{}': currently held by '{}'.",
+                            path, owner
+                        ));
+                    }
+                    LockStatus::Acquired => {
+                        let _ = self
+                            .timeline
+                            .record_event(
+                                TimelineEvent::new(&self.agent_id, EventType::VfsLockAcquired)
+                                    .with_payload(serde_json::json!({
+                                        "path": path,
+                                    })),
+                            )
+                            .await;
+                    }
+                    _ => {}
                 }
 
                 match self
@@ -411,19 +441,53 @@ impl AgentRuntime {
                     .write_string(Path::new(path), content.clone(), &self.agent_id)
                     .await
                 {
-                    Ok(_) => Ok(format!("Successfully wrote to file '{}'", path)),
+                    Ok(_) => {
+                        let version = self.vfs.version().await;
+                        let _ = self
+                            .timeline
+                            .record_event(
+                                TimelineEvent::new(&self.agent_id, EventType::VfsPatchApplied)
+                                    .with_payload(serde_json::json!({
+                                        "path": path,
+                                        "version": version,
+                                    })),
+                            )
+                            .await;
+                        Ok(format!("Successfully wrote to file '{}'", path))
+                    }
                     Err(e) => Ok(format!("Error writing file '{}': {}", path, e)),
                 }
             }
-            OrchestrationAction::FlushVfs => match self.vfs.flush().await {
-                Ok(report) => Ok(format!(
-                    "VFS flush complete. dirs={}, files={}, errors={}",
-                    report.created_dirs.len(),
-                    report.written_files.len(),
-                    report.errors.len()
-                )),
-                Err(e) => Ok(format!("VFS flush failed: {}", e)),
-            },
+            OrchestrationAction::FlushVfs => {
+                let _ = self
+                    .timeline
+                    .emit(&self.agent_id, EventType::VfsFlushStarted)
+                    .await;
+                match self.vfs.flush().await {
+                    Ok(report) => {
+                        let version = self.vfs.version().await;
+                        let _ = self
+                            .timeline
+                            .record_event(
+                                TimelineEvent::new(&self.agent_id, EventType::VfsFlushCompleted)
+                                    .with_payload(serde_json::json!({
+                                        "version": version,
+                                        "files": report.written_files.len(),
+                                        "dirs": report.created_dirs.len(),
+                                        "errors": report.errors.len(),
+                                    })),
+                            )
+                            .await;
+                        Ok(format!(
+                            "VFS flush complete. dirs={}, files={}, errors={}",
+                            report.created_dirs.len(),
+                            report.written_files.len(),
+                            report.errors.len()
+                        ))
+                    }
+                    Err(e) => Ok(format!("VFS flush failed: {}", e)),
+                }
+            }
             OrchestrationAction::ExecuteShell { command } => {
                 #[cfg(target_os = "windows")]
                 let mut cmd = tokio::process::Command::new("powershell");
@@ -506,8 +570,10 @@ impl AgentRuntime {
                     self.registry.clone(),
                     self.project.clone(),
                     self.task.clone(),
+                    self.timeline.clone(),
                     self.watch.clone(),
                     self.agent.clone(),
+                    self.memory.clone(),
                 );
 
                 let _ = self.agent.connect(&sub_agent_id, Some(agent)).await;

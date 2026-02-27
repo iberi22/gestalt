@@ -123,6 +123,16 @@ pub enum EventType {
     SubAgentFailed(String),
     /// Context retrieval event
     Retrieval,
+    /// VFS Patch applied to overlay
+    VfsPatchApplied,
+    /// VFS Lock acquired by agent
+    VfsLockAcquired,
+    /// VFS Lock conflict detected
+    VfsLockConflict,
+    /// VFS Flush to disk started
+    VfsFlushStarted,
+    /// VFS Flush to disk completed
+    VfsFlushCompleted,
     /// Custom event type
     Custom(String),
 }
@@ -156,6 +166,11 @@ impl<'de> Deserialize<'de> for EventType {
             "agent_disconnected" => Ok(EventType::AgentDisconnected),
             "command_executed" => Ok(EventType::CommandExecuted),
             "retrieval" => Ok(EventType::Retrieval),
+            "vfs_patch_applied" => Ok(EventType::VfsPatchApplied),
+            "vfs_lock_acquired" => Ok(EventType::VfsLockAcquired),
+            "vfs_lock_conflict" => Ok(EventType::VfsLockConflict),
+            "vfs_flush_started" => Ok(EventType::VfsFlushStarted),
+            "vfs_flush_completed" => Ok(EventType::VfsFlushCompleted),
             other => {
                 if let Some(agent) = other.strip_prefix("sub_agent_spawned:") {
                     return Ok(EventType::SubAgentSpawned(agent.to_string()));
@@ -195,6 +210,11 @@ impl fmt::Display for EventType {
             EventType::AgentDisconnected => write!(f, "agent_disconnected"),
             EventType::CommandExecuted => write!(f, "command_executed"),
             EventType::Retrieval => write!(f, "retrieval"),
+            EventType::VfsPatchApplied => write!(f, "vfs_patch_applied"),
+            EventType::VfsLockAcquired => write!(f, "vfs_lock_acquired"),
+            EventType::VfsLockConflict => write!(f, "vfs_lock_conflict"),
+            EventType::VfsFlushStarted => write!(f, "vfs_flush_started"),
+            EventType::VfsFlushCompleted => write!(f, "vfs_flush_completed"),
             EventType::SubAgentSpawned(s) => write!(f, "sub_agent_spawned:{}", s),
             EventType::SubAgentOutput(s) => write!(f, "sub_agent_output:{}", s),
             EventType::SubAgentCompleted(s) => write!(f, "sub_agent_completed:{}", s),

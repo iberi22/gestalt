@@ -178,6 +178,121 @@ class McpUiRenderer extends StatelessWidget {
           },
         ),
       ),
+      vfsMonitor: (v) => _VfsMonitorWidget(
+        version: v.version,
+        shadowStates: v.shadowStates,
+        patchFeed: v.patchFeed,
+      ),
+    );
+  }
+}
+
+class _VfsMonitorWidget extends StatelessWidget {
+  final int version;
+  final List<String> shadowStates;
+  final List<String> patchFeed;
+
+  const _VfsMonitorWidget({
+    required this.version,
+    required this.shadowStates,
+    required this.patchFeed,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return _GlassContainer(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                "VFS MONITOR",
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 1.5,
+                  color: Colors.blueAccent.shade200,
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.blueAccent.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  "V=$version",
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.blueAccent,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          const Text(
+            "ACTIVE SHADOW STATES",
+            style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white38),
+          ),
+          const SizedBox(height: 8),
+          if (shadowStates.isEmpty)
+            const Text("No active agents", style: TextStyle(fontSize: 12, color: Colors.white24))
+          else
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: shadowStates.map((agent) => Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.05),
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.person, size: 12, color: Colors.greenAccent),
+                    const SizedBox(width: 4),
+                    Text(agent, style: const TextStyle(fontSize: 11, color: Colors.white70)),
+                  ],
+                ),
+              )).toList(),
+            ),
+          const SizedBox(height: 16),
+          const Text(
+            "PATCH FEED",
+            style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white38),
+          ),
+          const SizedBox(height: 8),
+          ...patchFeed.reversed.take(5).map((patch) => Padding(
+            padding: const EdgeInsets.only(bottom: 6.0),
+            child: Row(
+              children: [
+                Icon(
+                  patch.contains("conflict") ? Icons.error_outline : Icons.check_circle_outline,
+                  size: 14,
+                  color: patch.contains("conflict") ? Colors.redAccent : Colors.greenAccent,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    patch,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: patch.contains("conflict") ? Colors.redAccent.withValues(alpha: 0.8) : Colors.white60,
+                      fontFamily: 'monospace',
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          )),
+        ],
+      ),
     );
   }
 }

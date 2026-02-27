@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 use anyhow::Result;
@@ -49,6 +50,7 @@ pub trait VirtualFs: Send + Sync {
     async fn acquire_lock(&self, path: &Path, owner: &str) -> Result<LockStatus>;
     async fn release_locks(&self, owner: &str);
     async fn discard(&self);
+    async fn version(&self) -> u64;
 }
 
 #[derive(Debug, Default)]
@@ -56,6 +58,7 @@ struct OverlayState {
     files: HashMap<PathBuf, String>,
     dirs: HashSet<PathBuf>,
     locks: HashMap<PathBuf, String>,
+    version: u64,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -161,6 +164,11 @@ impl VirtualFs for OverlayFs {
             state.files.remove(written);
             state.locks.remove(written);
         }
+
+        if !report.written_files.is_empty() || !report.created_dirs.is_empty() {
+            state.version += 1;
+        }
+
         Ok(report)
     }
 
@@ -214,6 +222,11 @@ impl VirtualFs for OverlayFs {
         state.files.clear();
         state.dirs.clear();
         state.locks.clear();
+    }
+
+    async fn version(&self) -> u64 {
+        let state = self.state.lock().await;
+        state.version
     }
 }
 

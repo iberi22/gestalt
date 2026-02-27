@@ -554,6 +554,7 @@ async fn main() -> anyhow::Result<()> {
                 registry,
                 project_service.clone(),
                 task_service.clone(),
+                timeline_service.clone(),
                 watch_service.clone(),
                 agent_service.clone(),
                 memory_service,
@@ -580,6 +581,7 @@ async fn main() -> anyhow::Result<()> {
                 registry,
                 project_service.clone(),
                 task_service.clone(),
+                timeline_service.clone(),
                 watch_service.clone(),
                 agent_service.clone(),
                 memory_service,
@@ -775,6 +777,7 @@ async fn main() -> anyhow::Result<()> {
                     let watch = tq_watch.clone();
                     let agent = tq_agent.clone();
                     let memory = tq_memory.clone();
+                    let timeline = timeline_clone.clone();
                     async move {
                         Ok(AgentRuntime::new(
                             agent_id_str,
@@ -782,6 +785,7 @@ async fn main() -> anyhow::Result<()> {
                             registry,
                             project,
                             task,
+                            timeline,
                             watch,
                             agent,
                             memory,

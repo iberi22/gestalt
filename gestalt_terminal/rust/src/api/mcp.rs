@@ -13,6 +13,11 @@ pub enum McpComponent {
     Image { url: String, alt: String },
     ProgressBar { progress: f64, label: String },
     Input { label: String, field_id: String },
+    VfsMonitor {
+        version: u64,
+        shadow_states: Vec<String>, // List of agent IDs with pending changes
+        patch_feed: Vec<String>,     // Recent successful/failed patch descriptions
+    },
 }
 
 static MCP_SINK: LazyLock<Mutex<Option<StreamSink<McpComponent>>>> = LazyLock::new(|| Mutex::new(None));

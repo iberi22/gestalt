@@ -52,6 +52,11 @@ class _MainScreenState extends State<MainScreen> {
   String _agentStatus = "OFFLINE";
   final Set<String> _processedEventIds = {};
 
+  // VFS Monitor State
+  int _vfsVersion = 0;
+  final Set<String> _shadowStates = {};
+  final List<String> _patchFeed = [];
+
   @override
   void initState() {
     super.initState();
@@ -136,6 +141,9 @@ class _MainScreenState extends State<MainScreen> {
        );
     } else if (eventType == 'AgentConnected') {
        component = const McpComponent.card(title: "System", content: "Agent Connected to Timeline.");
+    } else if (eventType.startsWith('vfs_')) {
+       _handleVfsEvent(eventType, event['agent_id'] as String, payload);
+       return;
     } else {
        // Generic fallback
        component = McpComponent.markdown(content: "**Event:** $eventType\n\n```json\n$payload\n```");
@@ -146,6 +154,40 @@ class _MainScreenState extends State<MainScreen> {
         _mcpComponents.add(component);
       });
     }
+  }
+
+  void _handleVfsEvent(String eventType, String agentId, dynamic payload) {
+    setState(() {
+      final shortId = agentId.length > 8 ? agentId.substring(0, 8) : agentId;
+      if (eventType == 'vfs_patch_applied') {
+        _vfsVersion = payload['version'] as int? ?? _vfsVersion;
+        _shadowStates.add(agentId);
+        _patchFeed.add("$shortId: applied patch to ${payload['path']}");
+      } else if (eventType == 'vfs_lock_acquired') {
+        _shadowStates.add(agentId);
+        _patchFeed.add("$shortId: acquired lock on ${payload['path']}");
+      } else if (eventType == 'vfs_lock_conflict') {
+        _patchFeed.add("$shortId: lock conflict on ${payload['path']} (held by ${payload['owner']})");
+      } else if (eventType == 'vfs_flush_completed') {
+        _vfsVersion = payload['version'] as int? ?? _vfsVersion;
+        _shadowStates.clear(); // Flush is global in OverlayFs
+        _patchFeed.add("System: VFS flushed to disk (V=$_vfsVersion)");
+      }
+
+      // Cap patch feed to prevent memory leak
+      if (_patchFeed.length > 100) {
+        _patchFeed.removeAt(0);
+      }
+
+      // Keep only one VfsMonitor at the top or update it in place.
+      // For simplicity, let's replace/ensure it's present.
+      _mcpComponents.removeWhere((c) => c.whenOrNull(vfsMonitor: (v) => true) ?? false);
+      _mcpComponents.insert(0, McpComponent.vfsMonitor(
+        version: _vfsVersion,
+        shadowStates: _shadowStates.toList(),
+        patchFeed: _patchFeed.toList(),
+      ));
+    });
   }
 
   @override

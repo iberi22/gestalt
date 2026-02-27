@@ -90,6 +90,13 @@ where
                 }
             }
 
+            // Handle SurrealDB's in-memory format where it might be just a string in a wrapper
+            if let Some(s) = map.get("t").and_then(|v| v.as_str()) {
+                if let Ok(dt) = DateTime::parse_from_rfc3339(s) {
+                    return Ok(FlexibleTimestamp(dt.with_timezone(&Utc)));
+                }
+            }
+
             if let Some(s) = map.values().next().and_then(|v| v.as_str()) {
                 if let Ok(ts) = DateTime::parse_from_rfc3339(s) {
                     return Ok(FlexibleTimestamp(ts.with_timezone(&Utc)));

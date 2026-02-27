@@ -18,6 +18,7 @@ Stream<AgentEvent> streamAgentEvents() =>
 
 @freezed
 sealed class AgentEvent with _$AgentEvent {
+  // ignore: unused_element
   const AgentEvent._();
 
   const factory AgentEvent.thought(String field0) = AgentEvent_Thought;

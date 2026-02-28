@@ -23,6 +23,7 @@ async fn init_services() -> Result<(
     WatchService,
     AgentService,
     MemoryService,
+    TimelineService,
 )> {
     let db_settings = DatabaseSettings {
         url: "mem://".to_string(),
@@ -36,7 +37,7 @@ async fn init_services() -> Result<(
     let project_service = ProjectService::new(db.clone(), timeline.clone());
     let task_service = TaskService::new(db.clone(), timeline.clone());
     let watch_service = WatchService::new(db.clone(), timeline.clone());
-    let agent_service = AgentService::new(db.clone(), timeline);
+    let agent_service = AgentService::new(db.clone(), timeline.clone());
     let memory_service = MemoryService::new(db.clone());
     Ok((
         project_service,
@@ -44,6 +45,7 @@ async fn init_services() -> Result<(
         watch_service,
         agent_service,
         memory_service,
+        timeline,
     ))
 }
 
@@ -92,7 +94,7 @@ async fn test_tools_execute_shell_and_read_file() -> Result<()> {
 
 #[tokio::test]
 async fn test_runtime_loop_starts_with_registry() -> Result<()> {
-    let (project_service, task_service, watch_service, agent_service, memory_service) =
+    let (project_service, task_service, watch_service, agent_service, memory_service, timeline) =
         init_services().await?;
     let engine = Arc::new(DecisionEngine::new());
     let registry = init_tool_registry().await;
@@ -103,6 +105,7 @@ async fn test_runtime_loop_starts_with_registry() -> Result<()> {
         registry,
         project_service,
         task_service,
+        timeline,
         watch_service,
         agent_service,
         memory_service,

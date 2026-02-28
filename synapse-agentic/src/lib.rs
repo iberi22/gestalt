@@ -148,7 +148,17 @@ pub mod prelude {
     pub struct DecisionEngine {
         providers: Vec<Arc<dyn LLMProvider>>,
     }
+    impl Default for DecisionEngine {
+        fn default() -> Self {
+            Self::new()
+        }
+    }
     impl DecisionEngine {
+        pub fn new() -> Self {
+            Self {
+                providers: Vec::new(),
+            }
+        }
         pub fn builder() -> DecisionEngineBuilder {
             DecisionEngineBuilder {
                 providers: Vec::new(),

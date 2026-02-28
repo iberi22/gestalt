@@ -174,7 +174,7 @@ pub fn render_timeline(ui: &mut egui::Ui, app: &mut GestaltApp) {
         let mut open = app.show_command_node;
         egui::Window::new("COMMAND NODE")
             .open(&mut open)
-            .frame(egui::Frame::window(&ui.style()).fill(Color32::from_rgba_premultiplied(20, 20, 25, 230)).stroke(Stroke::new(1.0, Color32::from_rgb(0, 255, 255))))
+            .frame(egui::Frame::window(ui.style()).fill(Color32::from_rgba_premultiplied(20, 20, 25, 230)).stroke(Stroke::new(1.0, Color32::from_rgb(0, 255, 255))))
             .title_bar(true)
             .collapsible(true)
             .resizable(true)
@@ -213,7 +213,7 @@ pub fn render_timeline(ui: &mut egui::Ui, app: &mut GestaltApp) {
     // B. Event Inspection Node
     if let Some(idx) = app.selected_event {
         egui::Window::new(format!("INSPECT: EVT-{:03}", idx))
-            .frame(egui::Frame::window(&ui.style()).fill(Color32::from_rgba_premultiplied(30, 20, 30, 230)).stroke(Stroke::new(1.0, Color32::from_rgb(255, 0, 255))))
+            .frame(egui::Frame::window(ui.style()).fill(Color32::from_rgba_premultiplied(30, 20, 30, 230)).stroke(Stroke::new(1.0, Color32::from_rgb(255, 0, 255))))
             .title_bar(true)
             .collapsible(false)
             .resizable(true)

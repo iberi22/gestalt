@@ -48,7 +48,7 @@ async fn test_rag_context_injection() -> Result<()> {
         watch_service,
         agent_service,
         memory_service,
-        _timeline,
+        timeline,
     ) = init_services().await?;
 
     let agent_id = "rag-test-agent";
@@ -69,12 +69,13 @@ async fn test_rag_context_injection() -> Result<()> {
     let engine = Arc::new(DecisionEngine::new());
     let registry = Arc::new(ToolRegistry::new());
 
-    let runtime = AgentRuntime::new(
+    let _runtime = AgentRuntime::new(
         agent_id.to_string(),
         engine,
         registry,
         project_service,
         task_service,
+        timeline,
         watch_service,
         agent_service,
         memory_service.clone(),

@@ -15,8 +15,8 @@ pub enum GestaltInput {
 }
 
 pub struct GestaltAgent {
-    vector_db: Arc<dyn VectorDb>,
-    repo_manager: Arc<dyn RepoManager>,
+    _vector_db: Arc<dyn VectorDb>,
+    _repo_manager: Arc<dyn RepoManager>,
     _mode: AgentMode,
     registry: ToolRegistry,
 }
@@ -25,8 +25,8 @@ impl GestaltAgent {
     pub async fn new(vector_db: Arc<dyn VectorDb>, repo_manager: Arc<dyn RepoManager>) -> Self {
         let registry = create_gestalt_tools(repo_manager.clone(), vector_db.clone()).await;
         Self {
-            vector_db,
-            repo_manager,
+            _vector_db: vector_db,
+            _repo_manager: repo_manager,
             _mode: AgentMode::Build,
             registry,
         }

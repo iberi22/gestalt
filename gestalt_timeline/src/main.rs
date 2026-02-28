@@ -725,6 +725,7 @@ async fn main() -> anyhow::Result<()> {
             let watch_service_clone = watch_service.clone();
             let agent_service_clone = agent_service.clone();
             let timeline_clone = timeline_service.clone();
+            let timeline_for_api = timeline_clone.clone();
 
             // Start REST API server in background
             let memory_service = MemoryService::new(db.clone());
@@ -734,6 +735,7 @@ async fn main() -> anyhow::Result<()> {
                 registry.clone(),
                 project_service.clone(),
                 task_service.clone(),
+                timeline_service.clone(),
                 watch_service.clone(),
                 agent_service.clone(),
                 memory_service.clone(),
@@ -741,7 +743,7 @@ async fn main() -> anyhow::Result<()> {
             let api_handle = tokio::spawn(async move {
                 if let Err(e) = start_server(
                     api_runtime,
-                    timeline_clone,
+                    timeline_for_api,
                     agent_service_clone,
                     project_service_clone,
                     task_service_clone,

@@ -29,6 +29,12 @@ impl AppState {
     }
 }
 
+impl Default for AppState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 pub struct JsonRpcRequest {
     pub jsonrpc: String,
@@ -406,7 +412,7 @@ fn handle_get_context(args: &serde_json::Value) -> serde_json::Value {
     let configs = ["Cargo.toml", "package.json", "pyproject.toml", "gestalt.toml", "openclaw.json", "go.mod", "requirements.txt"];
     let found_configs: Vec<&str> = configs.iter()
         .filter(|c| path.join(c).exists())
-        .map(|c| *c)
+        .copied()
         .collect();
     context["configs"] = serde_json::json!(found_configs);
     
@@ -482,7 +488,7 @@ fn handle_exec_command(args: &serde_json::Value) -> serde_json::Value {
         None => return error_response("Missing command parameter"),
     };
     
-    let _timeout = args.get("timeout").and_then(|v| v.as_u64()).unwrap_or(30) as u64;
+    let _timeout = args.get("timeout").and_then(|v| v.as_u64()).unwrap_or(30);
     let cwd = args.get("cwd").and_then(|v| v.as_str()).map(PathBuf::from);
     
     let output = if cfg!(target_os = "windows") {
@@ -592,7 +598,6 @@ fn handle_file_tree(args: &serde_json::Value) -> serde_json::Value {
         }
         
         let depth = entry.depth();
-        let prefix = "  ".repeat(depth);
         let icon = if entry.file_type().is_dir() { "📁" } else { "📄" };
         
         tree.push(serde_json::json!({
@@ -713,7 +718,7 @@ fn handle_web_fetch(args: &serde_json::Value) -> serde_json::Value {
     }
 }
 
-fn handle_system_info(args: &serde_json::Value) -> serde_json::Value {
+fn handle_system_info(_args: &serde_json::Value) -> serde_json::Value {
     serde_json::json!({
         "content": [{
             "type": "text",
@@ -765,7 +770,7 @@ fn handle_task_status(args: &serde_json::Value) -> serde_json::Value {
     })
 }
 
-fn handle_task_list(args: &serde_json::Value) -> serde_json::Value {
+fn handle_task_list(_args: &serde_json::Value) -> serde_json::Value {
     serde_json::json!({
         "content": [{
             "type": "text",

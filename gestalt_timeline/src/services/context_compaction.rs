@@ -1,6 +1,6 @@
 use synapse_agentic::prelude::{
     CompactionConfig, ContextOverflowRisk, Message, MessageRole, SessionContext,
-    SimpleTokenEstimator, TokenCounter, LLMSummarizer, SummarizationStrategy, LLMProvider,
+    SimpleTokenEstimator, TokenCounter, LLMSummarizer, LLMProvider,
 };
 use std::sync::Arc;
 
@@ -61,7 +61,7 @@ impl ContextCompactor {
 
         let compactable_len = compactable_messages.len();
         let chunk = synapse_agentic::prelude::MessageChunk::new(
-            compactable_messages.into_iter().cloned().collect(),
+            compactable_messages.to_vec(),
             0,
         );
 

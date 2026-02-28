@@ -6,7 +6,6 @@ use clap::{Parser, Subcommand};
 use serde_json::json;
 use std::collections::HashMap;
 use std::fs;
-use std::io::{self, Write};
 use std::path::PathBuf;
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -236,7 +235,7 @@ fn call_mcp(url: &str, tool: &str, args: serde_json::Value) -> Result<serde_json
     });
     
     let response = client
-        .post(&format!("{}/mcp", url))
+        .post(format!("{}/mcp", url))
         .json(&payload)
         .send()
         .map_err(|e| e.to_string())?;

@@ -4,7 +4,6 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::{oneshot, Mutex};
-use tokio::time::{sleep, Duration};
 use tracing::{info, warn};
 
 use crate::models::{AgentRuntimeState, EventType, RuntimePhase, TimelineEvent};
@@ -106,6 +105,7 @@ struct PersistStateInput<'a> {
 }
 
 impl AgentRuntime {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         agent_id: String,
         engine: Arc<DecisionEngine>,
@@ -118,7 +118,7 @@ impl AgentRuntime {
         memory: MemoryService,
     ) -> Self {
         // Use the first available provider from the engine for context compaction
-        let compactor_provider = engine.providers().get(0).cloned().unwrap_or_else(|| {
+        let compactor_provider = engine.providers().first().cloned().unwrap_or_else(|| {
             // Fallback (though engine should have at least the StochasticRotator now)
             Arc::new(synapse_agentic::prelude::GeminiProvider::new(
                 "".into(),

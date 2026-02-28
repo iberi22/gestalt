@@ -36,7 +36,7 @@ octocrab = "0.38.0"
 dirs = "5.0.1"
 chrono = "0.4.43"
 url = "2.5.4"
-open = "5.5.0"
+open = "5.3.3"
 
 # PKCE helpers
 sha2 = "0.10.8"
@@ -49,6 +49,11 @@ ignore = "0.4.25"
 config = "0.15.19"
 directories = "6.0.0"
 async-stream = "0.3.6"
+tempfile = "3.24.0"
+candle-core = "0.8.4"
+candle-nn = "0.8.4"
+candle-transformers = "0.8.4"
+tokenizers = "0.20.4"
 
 # Database
 surrealdb = { version = "2.4.0", features = ["kv-mem"] }
@@ -57,3 +62,6 @@ synapse-agentic = { path = "../synapse-agentic" }
 
 [lib]
 crate-type = ["lib", "cdylib", "staticlib"]
+
+[dev-dependencies]
+criterion = "0.5.1"

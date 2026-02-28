@@ -82,8 +82,8 @@ impl EmbeddingModel for DummyEmbeddingModel {
         let hash = hasher.finish();
 
         let mut vec = vec![0.0; self.dim];
-        for i in 0..self.dim {
-            vec[i] = ((hash.wrapping_add(i as u64) % 1000) as f32) / 1000.0;
+        for (i, item) in vec.iter_mut().enumerate().take(self.dim) {
+            *item = ((hash.wrapping_add(i as u64) % 1000) as f32) / 1000.0;
         }
         Ok(vec)
     }

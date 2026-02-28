@@ -4,6 +4,7 @@ use eframe::egui;
 use gestalt_timeline::models::TimelineEvent;
 use chrono::{DateTime, Utc};
 
+#[allow(dead_code)]
 pub struct GestaltApp {
     pub rt: Arc<Runtime>,
     pub events: Vec<TimelineEvent>,

@@ -218,9 +218,9 @@ struct Hunk {
 impl UnifiedDiff {
     fn parse(patch: &str) -> Result<Self> {
         let mut hunks = Vec::new();
-        let mut lines = patch.lines();
+        let lines = patch.lines();
 
-        while let Some(line) = lines.next() {
+        for line in lines {
             if line.starts_with("@@") {
                 // Parse @@ -1,4 +1,5 @@
                 let parts: Vec<&str> = line.split_whitespace().collect();
@@ -246,7 +246,7 @@ impl UnifiedDiff {
                 let old_range = parse_range(old_part);
                 let new_range = parse_range(new_part);
 
-                let mut hunk_lines = Vec::new();
+                let hunk_lines = Vec::new();
                 // Collect lines until next @@ or end
                 // Note: Simplified parser for MVP.
                 hunks.push(Hunk {
@@ -275,10 +275,8 @@ impl UnifiedDiff {
 
             let mut new_hunk_lines = Vec::new();
             for line in &hunk.lines {
-                if line.starts_with('+') {
-                    new_hunk_lines.push(line[1..].to_string());
-                } else if line.starts_with(' ') {
-                    new_hunk_lines.push(line[1..].to_string());
+                if let Some(stripped) = line.strip_prefix('+').or_else(|| line.strip_prefix(' ')) {
+                    new_hunk_lines.push(stripped.to_string());
                 }
                 // '-' lines are skipped (deleted)
             }

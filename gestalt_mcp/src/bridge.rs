@@ -17,6 +17,7 @@ fn current_time() -> String {
 }
 
 /// Message types for the bridge
+#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum BridgeMessage {
     /// Execute a task

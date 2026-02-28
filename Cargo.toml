@@ -4,5 +4,6 @@ members = [
     "gestalt_cli",
     "gestalt_timeline", "gestalt_mcp", "gestalt_ui",
     "gestaltctl",
+    "synapse-agentic",
 ]
 resolver = "2"

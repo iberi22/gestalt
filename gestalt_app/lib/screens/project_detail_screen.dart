@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../models/project.dart';
-import '../models/task.dart'; // We need a Task model
+import '../models/task.dart';
 import '../services/api_service.dart';
 
 class ProjectDetailScreen extends StatefulWidget {
@@ -13,8 +14,7 @@ class ProjectDetailScreen extends StatefulWidget {
 }
 
 class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
-  final ApiService _api = ApiService();
-  List<Task> _tasks = []; // Placeholder until Task model is ready
+  List<Task> _tasks = [];
   bool _isLoading = true;
 
   @override
@@ -24,10 +24,8 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
   }
 
   Future<void> _fetchTasks() async {
-    // Ideally fetch tasks by project ID.
-    // ApiService currently gets ALL tasks, we can filter client-side for now or implement filter in backend.
-    // Let's assume client-side filtering for MVP.
-    final allTasks = await _api.getTasks();
+    final api = context.read<ApiService>();
+    final allTasks = await api.getTasks();
     if (mounted) {
       setState(() {
         _tasks = allTasks.where((t) => t.projectId == widget.project.id).toList();
@@ -51,7 +49,8 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
           ElevatedButton(
             onPressed: () async {
               if (controller.text.isNotEmpty) {
-                 final success = await _api.createTask(widget.project.name, controller.text);
+                 final api = context.read<ApiService>();
+                 final success = await api.createTask(widget.project.name, controller.text);
                  if (success) {
                     if (mounted) Navigator.pop(context);
                     _fetchTasks();
@@ -66,7 +65,8 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
   }
 
   Future<void> _deleteTask(String id) async {
-    final success = await _api.deleteTask(id);
+    final api = context.read<ApiService>();
+    final success = await api.deleteTask(id);
     if (success) {
       _fetchTasks();
     }
@@ -74,7 +74,8 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
 
   Future<void> _runTask(String id) async {
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Task started...")));
-    final success = await _api.runTask(id);
+    final api = context.read<ApiService>();
+    final success = await api.runTask(id);
     if (success) {
        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Task completed!")));
        _fetchTasks();

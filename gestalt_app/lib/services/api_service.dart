@@ -7,14 +7,21 @@ import '../models/task.dart';
 
 class ApiService {
   final String baseUrl;
-  final String wsUrl;
   final String token;
 
   ApiService({
-    this.baseUrl = 'http://127.0.0.1:3000',
-    this.wsUrl = 'ws://127.0.0.1:3000',
-    this.token = 'secreto123',
+    required this.baseUrl,
+    required this.token,
   });
+
+  String get wsUrl {
+    if (baseUrl.startsWith('https://')) {
+      return baseUrl.replaceFirst('https://', 'wss://');
+    } else if (baseUrl.startsWith('http://')) {
+      return baseUrl.replaceFirst('http://', 'ws://');
+    }
+    return baseUrl;
+  }
 
   Map<String, String> get _authHeaders => {
     'Authorization': 'Bearer $token',

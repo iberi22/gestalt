@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'services/api_service.dart';
 
@@ -11,7 +12,6 @@ class AgentView extends StatefulWidget {
 }
 
 class _AgentViewState extends State<AgentView> {
-  final ApiService _api = ApiService();
   final TextEditingController _controller = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   String _agentStatus = "Offline";
@@ -35,7 +35,8 @@ class _AgentViewState extends State<AgentView> {
   }
 
   Future<void> _fetchAgentsInit() async {
-    final agents = await _api.getAgents();
+    final api = context.read<ApiService>();
+    final agents = await api.getAgents();
     if (agents.isNotEmpty) {
       bool anyBusy = agents.any((a) => a.status == 'busy');
       bool anyOnline = agents.any((a) => a.status == 'online');
@@ -49,7 +50,8 @@ class _AgentViewState extends State<AgentView> {
 
   void _connectWebSocket() {
     try {
-      _channel = _api.timelineStream;
+      final api = context.read<ApiService>();
+      _channel = api.timelineStream;
       _channel?.stream.listen(
         (message) {
           if (!mounted) return;
@@ -93,7 +95,8 @@ class _AgentViewState extends State<AgentView> {
     setState(() => _isLoading = true);
 
     try {
-      await _api.sendGoal(goal);
+      final api = context.read<ApiService>();
+      await api.sendGoal(goal);
     } catch (e) {
       // ignore
     } finally {

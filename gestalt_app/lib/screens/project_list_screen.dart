@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../models/project.dart';
 import '../services/api_service.dart';
 import '../widgets/project_card.dart';
@@ -11,7 +12,6 @@ class ProjectListScreen extends StatefulWidget {
 }
 
 class _ProjectListScreenState extends State<ProjectListScreen> {
-  final ApiService _api = ApiService();
   List<Project> _projects = [];
   bool _isLoading = true;
 
@@ -22,7 +22,8 @@ class _ProjectListScreenState extends State<ProjectListScreen> {
   }
 
   Future<void> _fetchProjects() async {
-    final projects = await _api.getProjects();
+    final api = context.read<ApiService>();
+    final projects = await api.getProjects();
     if (mounted) {
       setState(() {
         _projects = projects;
@@ -46,7 +47,8 @@ class _ProjectListScreenState extends State<ProjectListScreen> {
           ElevatedButton(
             onPressed: () async {
               if (controller.text.isNotEmpty) {
-                 final success = await _api.createProject(controller.text);
+                 final api = context.read<ApiService>();
+                 final success = await api.createProject(controller.text);
                  if (success) {
                     if (mounted) Navigator.pop(context);
                     _fetchProjects();
@@ -78,7 +80,8 @@ class _ProjectListScreenState extends State<ProjectListScreen> {
     );
 
     if (confirm == true) {
-      final success = await _api.deleteProject(id);
+      final api = context.read<ApiService>();
+      final success = await api.deleteProject(id);
       if (success) {
         _fetchProjects();
       }

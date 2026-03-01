@@ -7,13 +7,24 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:gestalt_app/services/settings_service.dart';
 
 import 'package:gestalt_app/main.dart';
 
 void main() {
   testWidgets('App smoke test', (WidgetTester tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final prefs = await SharedPreferences.getInstance();
+    final settingsService = SettingsService(prefs);
+
     // Build our app and trigger a frame.
-    await tester.pumpWidget(const GestaltApp());
+    await tester.pumpWidget(
+      GestaltProviders(
+        settingsService: settingsService,
+        child: const GestaltApp(),
+      ),
+    );
 
     // Verify that the app title or main layout is present.
     // Since MainLayout might be complex, just ensuring it pumps without error is a good start.

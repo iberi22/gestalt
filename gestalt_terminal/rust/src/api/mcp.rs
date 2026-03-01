@@ -13,6 +13,7 @@ pub enum McpComponent {
     Image { url: String, alt: String },
     ProgressBar { progress: f64, label: String },
     Input { label: String, field_id: String },
+    ChatMessage { sender: String, text: String },
     VfsMonitor {
         version: u64,
         shadow_states: Vec<String>, // List of agent IDs with pending changes

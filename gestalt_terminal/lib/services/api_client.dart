@@ -45,4 +45,18 @@ class ApiClient {
       return false;
     }
   }
+
+  Future<bool> sendChat(String message) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/chat'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'message': message}),
+      );
+      return response.statusCode == 202;
+    } catch (e) {
+      debugPrint('Error sending chat: $e');
+      return false;
+    }
+  }
 }

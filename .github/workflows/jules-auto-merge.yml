@@ -12,7 +12,7 @@ jobs:
   wait-for-jules:
     name: Wait for entire Jules Team
     runs-on: ubuntu-latest
-    if: github.event.pull_request.user.login == 'jules' || contains(github.event.pull_request.labels.*.name, 'jules')
+    if: contains(github.event.pull_request.body, 'PR created automatically by Jules') || contains(github.event.pull_request.labels.*.name, 'jules')
 
     steps:
       - uses: actions/checkout@v4
@@ -36,7 +36,7 @@ jobs:
     name: Queue for Integration
     runs-on: ubuntu-latest
     needs: wait-for-jules
-    if: github.event.pull_request.user.login == 'jules' || contains(github.event.pull_request.labels.*.name, 'jules')
+    if: contains(github.event.pull_request.body, 'PR created automatically by Jules') || contains(github.event.pull_request.labels.*.name, 'jules')
 
     steps:
       - name: Enable GitHub Auto-Merge

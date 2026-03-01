@@ -7,8 +7,8 @@ use gestalt_timeline::config::Settings;
 use gestalt_timeline::db::SurrealClient;
 use gestalt_timeline::services::{
     start_server, AgentRuntime, AgentService, AuthService, DispatcherService, IndexService,
-    MemoryService, ProjectService, QueuedTask, TaskQueue, TaskService, TaskSource, TelegramService,
-    TimelineService, WatchService,
+    MemoryService, ProjectService, ProtocolSyncService, QueuedTask, TaskQueue, TaskService,
+    TaskSource, TelegramService, TimelineService, WatchService,
 };
 use std::path::Path;
 
@@ -565,6 +565,39 @@ async fn main() -> anyhow::Result<()> {
             match runtime.run_loop(&workflow).await {
                 Ok(_) => println!("\n✅ Autonomous Goal Completed."),
                 Err(e) => println!("\n❌ Agent Error: {:?}", e),
+            }
+        }
+
+        Some(Commands::ProtocolSync {
+            project,
+            path,
+            to_db,
+            to_markdown,
+        }) => {
+            let sync_service = ProtocolSyncService::new(db.clone(), timeline_service.clone());
+            let path_buf = std::path::PathBuf::from(path);
+
+            if to_db {
+                println!("📥 Syncing from markdown to database for project: {}", project);
+                match sync_service
+                    .sync_from_markdown(&path_buf, &project, &agent_id)
+                    .await
+                {
+                    Ok(_) => println!("✅ Sync from markdown completed successfully."),
+                    Err(e) => eprintln!("❌ Sync from markdown failed: {}", e),
+                }
+            }
+
+            if to_markdown {
+                println!("📤 Syncing from database to markdown for project: {}", project);
+                match sync_service.sync_to_markdown(&path_buf, &project).await {
+                    Ok(_) => println!("✅ Sync to markdown completed successfully."),
+                    Err(e) => eprintln!("❌ Sync to markdown failed: {}", e),
+                }
+            }
+
+            if !to_db && !to_markdown {
+                println!("💡 Please specify --to-db or --to-markdown (or both).");
             }
         }
 

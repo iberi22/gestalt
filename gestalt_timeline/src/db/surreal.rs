@@ -91,8 +91,10 @@ impl SurrealClient {
             DEFINE FIELD created_by ON tasks TYPE string;
             DEFINE FIELD executed_by ON tasks TYPE option<string>;
             DEFINE FIELD duration_ms ON tasks TYPE option<int>;
+            DEFINE FIELD external_id ON tasks TYPE option<string>;
             DEFINE INDEX idx_project_id ON tasks FIELDS project_id;
             DEFINE INDEX idx_status ON tasks FIELDS status;
+            DEFINE INDEX idx_external_id ON tasks FIELDS external_id;
 
             DEFINE TABLE agents SCHEMAFULL;
             DEFINE FIELD name ON agents TYPE string;
@@ -230,6 +232,18 @@ impl SurrealClient {
     /// Access the underlying Surreal client.
     pub fn client(&self) -> Arc<Surreal<Any>> {
         self.db.clone()
+    }
+
+    /// Connect to an in-memory database (convenience for tests).
+    pub async fn connect_mem() -> Result<Self> {
+        Self::connect(&crate::config::DatabaseSettings {
+            url: "mem://".to_string(),
+            user: "root".to_string(),
+            pass: "root".to_string(),
+            namespace: "test".to_string(),
+            database: "test".to_string(),
+        })
+        .await
     }
     /// Delete a record.
     pub async fn delete(&self, table: &str, id: &str) -> Result<()> {

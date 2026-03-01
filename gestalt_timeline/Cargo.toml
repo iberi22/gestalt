@@ -77,6 +77,6 @@ tokio-cron-scheduler = "0.13"
 tiktoken-rs = "0.6"
 
 [dev-dependencies]
-assert_cmd = "2.0"
-predicates = "3.0"
+# assert_cmd = "2.0"
+# predicates = "3.0"
 tempfile = "3.9"

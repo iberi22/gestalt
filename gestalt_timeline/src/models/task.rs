@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use super::FlexibleTimestamp;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use surrealdb::sql::Thing;
@@ -20,14 +20,16 @@ pub struct Task {
     pub status: TaskStatus,
 
     /// Creation timestamp
-    pub created_at: DateTime<Utc>,
+    #[serde(with = "super::timestamp")]
+    pub created_at: FlexibleTimestamp,
 
     /// Last update timestamp
-    pub updated_at: DateTime<Utc>,
+    #[serde(with = "super::timestamp")]
+    pub updated_at: FlexibleTimestamp,
 
     /// Completion timestamp (if completed)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub completed_at: Option<DateTime<Utc>>,
+    #[serde(default, with = "super::timestamp::option")]
+    pub completed_at: Option<FlexibleTimestamp>,
 
     /// Agent that created the task
     pub created_by: String,
@@ -39,23 +41,32 @@ pub struct Task {
     /// Duration of execution in milliseconds
     #[serde(skip_serializing_if = "Option::is_none")]
     pub duration_ms: Option<u64>,
+
+    /// External identifier for protocol synchronization (e.g. F1-01)
+    pub external_id: Option<String>,
 }
 
 impl Task {
     /// Create a new task.
-    pub fn new(project_id: &str, description: &str, created_by: &str) -> Self {
-        let now = Utc::now();
+    pub fn new(
+        project_id: &str,
+        description: &str,
+        created_by: &str,
+        external_id: Option<String>,
+    ) -> Self {
+        let now = FlexibleTimestamp::now();
         Self {
             id: None,
             project_id: project_id.to_string(),
             description: description.to_string(),
             status: TaskStatus::Pending,
-            created_at: now,
+            created_at: now.clone(),
             updated_at: now,
             completed_at: None,
             created_by: created_by.to_string(),
             executed_by: None,
             duration_ms: None,
+            external_id: external_id,
         }
     }
 }
@@ -95,5 +106,6 @@ pub struct TaskResult {
     pub status: TaskStatus,
     pub message: String,
     pub duration_ms: u64,
-    pub completed_at: DateTime<Utc>,
+    #[serde(with = "super::timestamp")]
+    pub completed_at: FlexibleTimestamp,
 }

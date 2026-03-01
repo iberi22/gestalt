@@ -117,7 +117,7 @@ mod task_tests {
 
     #[test]
     fn test_task_creation() {
-        let task = Task::new("project_1", "Fix bug in login", "agent_1");
+        let task = Task::new("project_1", "Fix bug in login", "agent_1", None);
 
         assert!(task.id.is_none());
         assert_eq!(task.project_id, "project_1");
@@ -171,7 +171,7 @@ mod serialization_tests {
 
     #[test]
     fn test_task_json_roundtrip() {
-        let task = Task::new("proj", "description", "agent");
+        let task = Task::new("proj", "description", "agent", None);
 
         let json = serde_json::to_string(&task).unwrap();
         let parsed: Task = serde_json::from_str(&json).unwrap();

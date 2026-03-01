@@ -11,6 +11,7 @@ mod runtime;
 mod index;
 pub mod file_manager;
 mod server;
+pub mod protocol_sync;
 mod task;
 pub mod task_queue;
 pub mod telegram;
@@ -27,6 +28,7 @@ pub use memory::{MemoryFragment, MemoryService};
 pub use index::IndexService;
 pub use file_manager::{FileManager, FileManagerActor, FileState};
 pub use project::ProjectService;
+pub use protocol_sync::ProtocolSyncService;
 pub use reviewer_merge_agent::{
     spawn_reviewer_agent, ReviewResult, ReviewerMergeAgent, ReviewerMessage,
 };

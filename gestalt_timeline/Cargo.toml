@@ -28,7 +28,7 @@ dirs = "5.0"
 open = "5.0"
 
 # SurrealDB client
-surrealdb = { version = "2.4.0", features = ["kv-mem"] }
+surrealdb = { version = "2.6.1", features = ["kv-mem"] }
 
 # Date/Time
 chrono = { version = "0.4", features = ["serde"] }
@@ -77,6 +77,6 @@ tokio-cron-scheduler = "0.13"
 tiktoken-rs = "0.6"
 
 [dev-dependencies]
-assert_cmd = "2.0"
-predicates = "3.0"
+# assert_cmd = "2.0"
+# predicates = "3.0"
 tempfile = "3.9"

@@ -12,7 +12,7 @@ use crate::services::{
     ProjectService, ReviewerMessage, TaskService, TimelineService, VirtualFs, WatchService,
 };
 use synapse_agentic::prelude::{
-    async_trait, Agent, DecisionContext, DecisionEngine, EmptyContext, Hive, ToolRegistry,
+    async_trait, Agent, Decision, DecisionContext, DecisionEngine, EmptyContext, Hive, ToolRegistry,
 };
 
 /// Orchestration action executed by AgentRuntime.
@@ -377,33 +377,133 @@ impl AgentRuntime {
         Ok(Self::map_decision_to_actions(&decision))
     }
 
-    fn map_decision_to_actions(
-        decision: &synapse_agentic::prelude::Decision,
-    ) -> Vec<OrchestrationAction> {
-        match decision.action.trim().to_lowercase().as_str() {
-            "stop" | "done" | "defer" => vec![],
+    fn map_decision_to_actions(decision: &Decision) -> Vec<OrchestrationAction> {
+        let action = decision.action.trim();
+        let reasoning = &decision.reasoning;
+        let params = decision.parameters.as_ref();
+
+        if let Some(tool_name) = action.strip_prefix("call:") {
+            return vec![OrchestrationAction::CallAgent {
+                tool: tool_name.to_string(),
+                args: decision.parameters.clone().unwrap_or(Value::Null),
+            }];
+        }
+
+        match action.to_lowercase().as_str() {
+            "stop" | "done" | "defer" | "final answer" => vec![],
+            "create_project" => {
+                let name = params
+                    .and_then(|p| p.get("name"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unnamed")
+                    .to_string();
+                let description = params
+                    .and_then(|p| p.get("description"))
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
+                vec![OrchestrationAction::CreateProject { name, description }]
+            }
+            "create_task" => {
+                let project = params
+                    .and_then(|p| p.get("project"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("default")
+                    .to_string();
+                let description = params
+                    .and_then(|p| p.get("description"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("no description")
+                    .to_string();
+                vec![OrchestrationAction::CreateTask {
+                    project,
+                    description,
+                }]
+            }
+            "run_task" => {
+                let task_id = params
+                    .and_then(|p| p.get("task_id"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string();
+                vec![OrchestrationAction::RunTask { task_id }]
+            }
+            "read_file" => {
+                let path = params
+                    .and_then(|p| p.get("path"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string();
+                vec![OrchestrationAction::ReadFile { path }]
+            }
+            "write_file" => {
+                let path = params
+                    .and_then(|p| p.get("path"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string();
+                let content = params
+                    .and_then(|p| p.get("content"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string();
+                vec![OrchestrationAction::WriteFile { path, content }]
+            }
+            "execute_shell" => {
+                let command = params
+                    .and_then(|p| p.get("command"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string();
+                vec![OrchestrationAction::ExecuteShell { command }]
+            }
+>>>>>>> origin/main
             "list_projects" => vec![OrchestrationAction::ListProjects],
             "list_jobs" => vec![OrchestrationAction::ListJobs],
             "flush_vfs" => vec![OrchestrationAction::FlushVfs],
             "review_merge" => vec![OrchestrationAction::ReviewAndMerge {
                 goal: decision.reasoning.to_string(),
             }],
-            "delegate" => {
-                let agent = decision
-                    .parameters
-                    .as_ref()
+            "delegate" | "delegate_task" => {
+                let agent = params
                     .and_then(|p| p.get("agent"))
                     .and_then(|v| v.as_str())
-                    .unwrap_or("worker")
+                    .unwrap_or("subagent")
                     .to_string();
-                let goal = decision
-                    .parameters
-                    .as_ref()
+                let goal = params
                     .and_then(|p| p.get("goal"))
                     .and_then(|v| v.as_str())
-                    .unwrap_or(&decision.reasoning)
+                    .unwrap_or_default()
                     .to_string();
                 vec![OrchestrationAction::DelegateTask { agent, goal }]
+            }
+            "start_job" => {
+                let name = params
+                    .and_then(|p| p.get("name"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string();
+                let command = params
+                    .and_then(|p| p.get("command"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string();
+                vec![OrchestrationAction::StartJob { name, command }]
+            }
+            "stop_job" => {
+                let name = params
+                    .and_then(|p| p.get("name"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string();
+                vec![OrchestrationAction::StopJob { name }]
+            }
+            "await_job" => {
+                let job_id = params
+                    .and_then(|p| p.get("job_id"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string();
+                vec![OrchestrationAction::AwaitJob { job_id }]
             }
             "chat" => vec![OrchestrationAction::Chat {
                 response: decision.reasoning.to_string(),

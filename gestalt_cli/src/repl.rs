@@ -5,11 +5,14 @@
 use async_trait::async_trait;
 use rustyline::{Editor, config::Config};
 use rustyline::error::ReadlineError;
+use rustyline::history::FileHistory;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use chrono::Utc;
+use chrono::{DateTime, Utc};
+use std::fs;
 
 /// REPL errors
 #[derive(Debug, thiserror::Error)]
@@ -22,18 +25,21 @@ pub enum ReplError {
     
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
+
+    #[error("JSON error: {0}")]
+    Json(#[from] serde_json::Error),
 }
 
 /// Message in conversation history
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Message {
     pub role: String,
     pub content: String,
-    pub timestamp: chrono::DateTime<Utc>,
+    pub timestamp: DateTime<Utc>,
 }
 
 /// REPL state
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ReplState {
     pub messages: Vec<Message>,
     pub variables: std::collections::HashMap<String, String>,
@@ -69,6 +75,22 @@ impl ReplState {
         self.messages.clear();
         self.variables.clear();
     }
+
+    pub fn save_to_file(&self, path: &PathBuf) -> Result<(), ReplError> {
+        let content = serde_json::to_string_pretty(self)?;
+        fs::write(path, content)?;
+        Ok(())
+    }
+
+    pub fn load_from_file(path: &PathBuf) -> Result<Self, ReplError> {
+        if path.exists() {
+            let content = fs::read_to_string(path)?;
+            let state = serde_json::from_str(&content)?;
+            Ok(state)
+        } else {
+            Ok(Self::new())
+        }
+    }
 }
 
 /// REPL command
@@ -101,17 +123,18 @@ impl<H: ReplHandler> ReplHandler for Arc<Mutex<H>> {
     }
     
     async fn handle_input(&mut self, input: &str) -> Result<String, ReplError> {
-        let handler = self.lock().await;
+        let mut handler = self.lock().await;
         handler.handle_input(input).await
     }
 }
 
 /// Interactive REPL
 pub struct InteractiveRepl<H: ReplHandler> {
-    editor: Editor<()>,
+    editor: Editor<(), FileHistory>,
     handler: Arc<Mutex<H>>,
     state: Arc<Mutex<ReplState>>,
     history_file: PathBuf,
+    state_file: PathBuf,
 }
 
 impl<H: ReplHandler + Default> InteractiveRepl<H> {
@@ -122,21 +145,24 @@ impl<H: ReplHandler + Default> InteractiveRepl<H> {
     
     /// Create with custom handler
     pub fn with_handler(handler: H) -> Result<Self, ReplError> {
-        let editor = Editor::new()
-            .with_config(Config::builder()
-                .history_ignore_space(true)
-                .completion_type(rustyline::CompletionType::List)
-                .build());
+        let config = Config::builder()
+            .history_ignore_space(true)
+            .completion_type(rustyline::CompletionType::List)
+            .build();
+        let editor = Editor::<(), FileHistory>::with_config(config)?;
         
-        let history_file = home::home_dir()
-            .unwrap_or(PathBuf::from("."))
-            .join(".gestalt_repl_history");
+        let home = home::home_dir().unwrap_or(PathBuf::from("."));
+        let history_file = home.join(".gestalt_repl_history");
+        let state_file = home.join(".gestalt_repl_state.json");
         
+        let state = ReplState::load_from_file(&state_file).unwrap_or_default();
+
         Ok(Self {
             editor,
             handler: Arc::new(Mutex::new(handler)),
-            state: Arc::new(Mutex::new(ReplState::new())),
+            state: Arc::new(Mutex::new(state)),
             history_file,
+            state_file,
         })
     }
     
@@ -145,12 +171,12 @@ impl<H: ReplHandler + Default> InteractiveRepl<H> {
         // Load history
         if let Err(e) = self.editor.load_history(&self.history_file) {
             // Ignore if file doesn't exist
-            if !self.history_file.exists() {
+            if self.history_file.exists() {
                 eprintln!("Warning: Could not load history: {}", e);
             }
         }
         
-        println!("Gestalt Rust REPL v0.1.0");
+        println!("Gestalt Rust REPL v0.2.0");
         println!("Type 'help' for available commands.");
         println!("Press Ctrl+C or type 'exit' to quit.\n");
         
@@ -159,15 +185,30 @@ impl<H: ReplHandler + Default> InteractiveRepl<H> {
             
             match readline {
                 Ok(line) => {
-                    self.editor.add_history_entry(&line);
+                    self.editor.add_history_entry(line.as_str())?;
                     
                     if line.trim().is_empty() {
                         continue;
                     }
                     
                     match self.process_line(&line).await {
-                        Ok(Some(output)) => println!("{}", output),
+                        Ok(Some(output)) => {
+                            // Basic streaming-like output (preserving whitespace)
+                            for char in output.chars() {
+                                print!("{}", char);
+                                std::io::Write::flush(&mut std::io::stdout())?;
+                                if char == ' ' || char == '\n' {
+                                    tokio::time::sleep(tokio::time::Duration::from_millis(5)).await;
+                                } else {
+                                    tokio::time::sleep(tokio::time::Duration::from_millis(2)).await;
+                                }
+                            }
+                            println!();
+                        }
                         Ok(None) => {}
+                        Err(ReplError::Command(cmd)) if cmd == "exit" => {
+                            break;
+                        }
                         Err(e) => eprintln!("Error: {}", e),
                     }
                 }
@@ -188,6 +229,12 @@ impl<H: ReplHandler + Default> InteractiveRepl<H> {
             eprintln!("Warning: Could not save history: {}", e);
         }
         
+        // Save state
+        let state = self.state.lock().await;
+        if let Err(e) = state.save_to_file(&self.state_file) {
+            eprintln!("Warning: Could not save state: {}", e);
+        }
+
         Ok(())
     }
     
@@ -277,14 +324,20 @@ impl<H: ReplHandler + Default> InteractiveRepl<H> {
                     return Err(ReplError::Command("Usage: run <expression>".to_string()));
                 }
                 let expr = args.join(" ");
-                let handler = self.handler.lock().await;
-                handler.handle_input(&expr).await
+                let mut handler = self.handler.lock().await;
+                Ok(Some(handler.handle_input(&expr).await?))
             }
             
             _ => {
                 // Pass to handler
-                let handler = self.handler.lock().await;
-                handler.handle_input(line).await
+                let mut handler = self.handler.lock().await;
+                let response = handler.handle_input(line).await?;
+
+                let mut state = self.state.lock().await;
+                state.add_message("user", line);
+                state.add_message("assistant", &response);
+
+                Ok(Some(response))
             }
         }
     }
@@ -349,7 +402,7 @@ mod tests {
     
     #[tokio::test]
     async fn test_echo_handler() {
-        let handler = EchoHandler::default();
+        let mut handler = EchoHandler::default();
         let result = handler.handle_input("test").await.unwrap();
         assert_eq!(result, "Echo: test");
     }

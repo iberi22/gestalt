@@ -23,10 +23,6 @@ jobs:
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
 
-      # Required for System Dependencies if any (e.g., OpenSSL)
-      # gestalt_core uses reqwest/native-tls which uses Schannel on Windows (built-in)
-      # gestalt_timeline uses surrealdb which might need some setup, but pure rust usually works or pre-built binaries
-
       - name: Build Backend
         run: cargo build --release -p gestalt_timeline
 
@@ -35,6 +31,36 @@ jobs:
         with:
           name: neural-link-backend-windows
           path: target/release/gestalt_timeline.exe
+
+  build-cli:
+    name: Build CLI
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+        include:
+          - os: windows-latest
+            artifact_name: gestalt-cli-windows
+            binary_path: target/release/gestalt_cli.exe
+          - os: ubuntu-latest
+            artifact_name: gestalt-cli-linux
+            binary_path: target/release/gestalt_cli
+          - os: macos-latest
+            artifact_name: gestalt-cli-macos
+            binary_path: target/release/gestalt_cli
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+      - name: Build CLI
+        run: cargo build --release -p gestalt_cli
+      - name: Upload CLI Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.binary_path }}
 
   build-mobile:
     name: Build Mobile (Android)
@@ -55,7 +81,7 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
-          flutter-version: '3.27.0' # Matching local version approx
+          flutter-version: '3.27.0'
 
       - name: Install Dependencies
         run: flutter pub get
@@ -71,13 +97,18 @@ jobs:
 
   create-release:
     name: Create Release
-    needs: [build-backend, build-mobile]
+    needs: [build-backend, build-cli, build-mobile]
     runs-on: ubuntu-latest
     steps:
       - name: Download Backend Artifact
         uses: actions/download-artifact@v4
         with:
           name: neural-link-backend-windows
+
+      - name: Download CLI Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: cli-artifacts
 
       - name: Download Mobile Artifact
         uses: actions/download-artifact@v4
@@ -87,6 +118,12 @@ jobs:
       - name: Generate Release Tag
         id: tag
         run: echo "release_tag=v2.0.$(date +'%Y%m%d%H%M')" >> $GITHUB_OUTPUT
+
+      - name: Prepare CLI Binaries
+        run: |
+          cp cli-artifacts/gestalt-cli-windows/gestalt_cli.exe gestalt-cli-windows.exe
+          cp cli-artifacts/gestalt-cli-linux/gestalt_cli gestalt-cli-linux
+          cp cli-artifacts/gestalt-cli-macos/gestalt_cli gestalt-cli-macos
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
@@ -98,5 +135,8 @@ jobs:
           files: |
             gestalt_timeline.exe
             app-release.apk
+            gestalt-cli-windows.exe
+            gestalt-cli-linux
+            gestalt-cli-macos
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

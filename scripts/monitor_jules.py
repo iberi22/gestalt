@@ -15,26 +15,37 @@ API_BASE_URL = "https://jules.googleapis.com/v1alpha"
 def get_active_sessions():
     """Fetches sessions and filters for non-terminal ones belonging to the target repo."""
     headers = {"X-Goog-Api-Key": API_KEY}
+    active_sessions = []
+    page_token = None
+
     try:
-        response = requests.get(f"{API_BASE_URL}/sessions", headers=headers)
-        response.raise_for_status()
-        data = response.json()
+        while True:
+            params = {}
+            if page_token:
+                params["pageToken"] = page_token
 
-        sessions = data.get("sessions", [])
-        active_sessions = []
+            response = requests.get(f"{API_BASE_URL}/sessions", headers=headers, params=params)
+            response.raise_for_status()
+            data = response.json()
 
-        for session in sessions:
-            # Check if session belongs to this repo
-            source_context = session.get("sourceContext", {})
-            github_context = source_context.get("gitHubRepoContext", {})
+            sessions = data.get("sessions", [])
 
-            if (github_context.get("owner") == REPO_OWNER and
-                github_context.get("repo") == REPO_NAME):
+            for session in sessions:
+                # Check if session belongs to this repo
+                source_context = session.get("sourceContext", {})
+                github_context = source_context.get("gitHubRepoContext", {})
 
-                state = session.get("state")
-                # Terminal states: COMPLETED, FAILED
-                if state not in ["COMPLETED", "FAILED"]:
-                    active_sessions.append(session)
+                if (github_context.get("owner") == REPO_OWNER and
+                    github_context.get("repo") == REPO_NAME):
+
+                    state = session.get("state")
+                    # Terminal states: COMPLETED, FAILED
+                    if state not in ["COMPLETED", "FAILED"]:
+                        active_sessions.append(session)
+
+            page_token = data.get("nextPageToken")
+            if not page_token:
+                break
 
         return active_sessions
     except Exception as e:

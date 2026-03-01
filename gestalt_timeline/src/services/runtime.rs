@@ -86,6 +86,7 @@ pub struct AgentRuntime {
     watch: WatchService,
     agent: AgentService,
     hard_step_cap: Option<usize>,
+    max_retries: usize,
     jobs: Arc<Mutex<HashMap<String, tokio::process::Child>>>,
     vfs: Arc<dyn VirtualFs>,
     compactor: ContextCompactor,
@@ -102,6 +103,12 @@ struct PersistStateInput<'a> {
     started_at: crate::models::FlexibleTimestamp,
     finished_at: Option<crate::models::FlexibleTimestamp>,
     error: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct ExecutionResult {
+    observation: String,
+    is_success: bool,
 }
 
 impl AgentRuntime {
@@ -139,6 +146,10 @@ impl AgentRuntime {
             hard_step_cap: std::env::var("GESTALT_HARD_STEP_CAP")
                 .ok()
                 .and_then(|v| v.parse::<usize>().ok()),
+            max_retries: std::env::var("GESTALT_MAX_RETRIES")
+                .ok()
+                .and_then(|v| v.parse::<usize>().ok())
+                .unwrap_or(3),
             jobs: Arc::new(Mutex::new(HashMap::new())),
             vfs: Arc::new(OverlayFs::new()),
             compactor: ContextCompactor::new(compactor_provider, "gpt-4o"),
@@ -209,7 +220,7 @@ impl AgentRuntime {
 
                 step += 1;
                 info!("Elastic step {}", step);
-                let actions = self.next_actions(goal, &conversation_history).await?;
+                let actions = self.next_actions(goal, &conversation_history, None).await?;
 
                 if actions.is_empty() {
                     info!("Agent decided to stop (no actions).");
@@ -229,24 +240,54 @@ impl AgentRuntime {
                 }
 
                 for action in actions {
-                    conversation_history.push(format!("Action: {:?}", action));
-                    let observation = match self.execute_action(&action).await {
-                        Ok(obs) => obs,
-                        Err(e) => format!("Error: {}", e),
-                    };
-                    conversation_history.push(format!("Observation: {}", observation));
-                    self.persist_state(PersistStateInput {
-                        goal,
-                        step,
-                        phase: RuntimePhase::Running,
-                        last_action: Some(&action),
-                        last_observation: Some(&observation),
-                        history: &conversation_history,
-                        started_at: started_at.clone(),
-                        finished_at: None,
-                        error: None,
-                    })
-                    .await?;
+                    let mut current_action = action;
+                    let mut retry_count = 0;
+
+                    loop {
+                        conversation_history.push(format!("Action: {:?}", current_action));
+                        let result = match self.execute_action(&current_action).await {
+                            Ok(res) => res,
+                            Err(e) => ExecutionResult {
+                                observation: format!("Error: {}", e),
+                                is_success: false,
+                            },
+                        };
+
+                        conversation_history.push(format!("Observation: {}", result.observation));
+                        self.persist_state(PersistStateInput {
+                            goal,
+                            step,
+                            phase: RuntimePhase::Running,
+                            last_action: Some(&current_action),
+                            last_observation: Some(&result.observation),
+                            history: &conversation_history,
+                            started_at: started_at.clone(),
+                            finished_at: None,
+                            error: if result.is_success { None } else { Some(result.observation.clone()) },
+                        })
+                        .await?;
+
+                        if result.is_success {
+                            break;
+                        }
+
+                        if retry_count >= self.max_retries {
+                            warn!("Max retries ({}) reached for action. Failing loop.", self.max_retries);
+                            return Err(anyhow::anyhow!("Action failed after {} retries: {}", retry_count, result.observation));
+                        }
+
+                        retry_count += 1;
+                        warn!("Action failed (Retry {}/{}). Requesting repair from engine...", retry_count, self.max_retries);
+
+                        let repair_actions = self.next_actions(goal, &conversation_history, Some(&result.observation)).await?;
+                        if repair_actions.is_empty() {
+                            warn!("Engine returned no repair actions. Failing loop.");
+                            return Err(anyhow::anyhow!("Action failed and engine gave no repair: {}", result.observation));
+                        }
+
+                        // Take the first repair action and continue the retry loop
+                        current_action = repair_actions[0].clone();
+                    }
                 }
             }
             Ok(())
@@ -311,6 +352,7 @@ impl AgentRuntime {
         &self,
         goal: &str,
         history: &[String],
+        error_feedback: Option<&str>,
     ) -> Result<Vec<OrchestrationAction>> {
         let history_summary = history
             .iter()
@@ -320,8 +362,16 @@ impl AgentRuntime {
             .collect::<Vec<_>>()
             .join("\n");
 
-        let context = DecisionContext::new("orchestration")
-            .with_summary(format!("goal: {}\n\nhistory:\n{}", goal, history_summary));
+        let summary = if let Some(err) = error_feedback {
+            format!(
+                "GOAL: {}\n\n⚠️ PREVIOUS ATTEMPT FAILED:\n{}\n\nPlease analyze the error and try a different approach to achieve the goal.\n\nhistory:\n{}",
+                goal, err, history_summary
+            )
+        } else {
+            format!("goal: {}\n\nhistory:\n{}", goal, history_summary)
+        };
+
+        let context = DecisionContext::new("orchestration").with_summary(summary);
 
         // Use native engine resilience (configured with StochasticRotator in main)
         let decision = self.engine.decide(&context).await?;
@@ -350,14 +400,17 @@ impl AgentRuntime {
         }
     }
 
-    async fn execute_action(&self, action: &OrchestrationAction) -> Result<String> {
+    async fn execute_action(&self, action: &OrchestrationAction) -> Result<ExecutionResult> {
         match action {
             OrchestrationAction::CreateProject {
                 name,
                 description: _description,
             } => {
                 self.project.create_project(name, &self.agent_id).await?;
-                Ok(format!("Created Project '{}'", name))
+                Ok(ExecutionResult {
+                    observation: format!("Created Project '{}'", name),
+                    is_success: true,
+                })
             }
             OrchestrationAction::CreateTask {
                 project,
@@ -366,37 +419,59 @@ impl AgentRuntime {
                 self.task
                     .create_task(project, description, &self.agent_id)
                     .await?;
-                Ok(format!("Created Task in '{}'", project))
+                Ok(ExecutionResult {
+                    observation: format!("Created Task in '{}'", project),
+                    is_success: true,
+                })
             }
             OrchestrationAction::RunTask { task_id } => {
                 self.task.run_task(task_id, &self.agent_id).await?;
-                Ok(format!("Ran Task '{}'", task_id))
+                Ok(ExecutionResult {
+                    observation: format!("Ran Task '{}'", task_id),
+                    is_success: true,
+                })
             }
             OrchestrationAction::ListProjects => {
                 let projects = self.project.list_projects().await?;
-                Ok(format!("Listed {} Projects", projects.len()))
+                Ok(ExecutionResult {
+                    observation: format!("Listed {} Projects", projects.len()),
+                    is_success: true,
+                })
             }
             OrchestrationAction::ListTasks { project } => {
                 let tasks = self.task.list_tasks(project.as_deref()).await?;
-                Ok(format!("Listed {} Tasks", tasks.len()))
+                Ok(ExecutionResult {
+                    observation: format!("Listed {} Tasks", tasks.len()),
+                    is_success: true,
+                })
             }
             OrchestrationAction::GetStatus { project } => {
                 let status = self.project.get_status(project).await?;
-                Ok(format!(
-                    "Project '{}' is {}% complete",
-                    project, status.progress_percent
-                ))
+                Ok(ExecutionResult {
+                    observation: format!(
+                        "Project '{}' is {}% complete",
+                        project, status.progress_percent
+                    ),
+                    is_success: true,
+                })
             }
             OrchestrationAction::Chat { response } => {
                 info!("Agent says: {}", response);
-                Ok(format!("Agent said: {}", response))
+                Ok(ExecutionResult {
+                    observation: format!("Agent said: {}", response),
+                    is_success: true,
+                })
             }
-            OrchestrationAction::ReadFile { path } => {
-                match self.vfs.read_to_string(Path::new(path)).await {
-                    Ok(content) => Ok(format!("File '{}' content:\n{}", path, content)),
-                    Err(e) => Ok(format!("Error reading file '{}': {}", path, e)),
-                }
-            }
+            OrchestrationAction::ReadFile { path } => match self.vfs.read_to_string(Path::new(path)).await {
+                Ok(content) => Ok(ExecutionResult {
+                    observation: format!("File '{}' content:\n{}", path, content),
+                    is_success: true,
+                }),
+                Err(e) => Ok(ExecutionResult {
+                    observation: format!("Error reading file '{}': {}", path, e),
+                    is_success: false,
+                }),
+            },
             OrchestrationAction::WriteFile { path, content } => {
                 if let Some(parent) = Path::new(path).parent() {
                     self.vfs.create_dir_all(parent).await?;
@@ -417,10 +492,13 @@ impl AgentRuntime {
                                     })),
                             )
                             .await;
-                        return Ok(format!(
-                            "Lock conflict for '{}': currently held by '{}'.",
-                            path, owner
-                        ));
+                        return Ok(ExecutionResult {
+                            observation: format!(
+                                "Lock conflict for '{}': currently held by '{}'.",
+                                path, owner
+                            ),
+                            is_success: false,
+                        });
                     }
                     LockStatus::Acquired => {
                         let _ = self
@@ -453,9 +531,15 @@ impl AgentRuntime {
                                     })),
                             )
                             .await;
-                        Ok(format!("Successfully wrote to file '{}'", path))
+                        Ok(ExecutionResult {
+                            observation: format!("Successfully wrote to file '{}'", path),
+                            is_success: true,
+                        })
                     }
-                    Err(e) => Ok(format!("Error writing file '{}': {}", path, e)),
+                    Err(e) => Ok(ExecutionResult {
+                        observation: format!("Error writing file '{}': {}", path, e),
+                        is_success: false,
+                    }),
                 }
             }
             OrchestrationAction::FlushVfs => {
@@ -478,14 +562,21 @@ impl AgentRuntime {
                                     })),
                             )
                             .await;
-                        Ok(format!(
-                            "VFS flush complete. dirs={}, files={}, errors={}",
-                            report.created_dirs.len(),
-                            report.written_files.len(),
-                            report.errors.len()
-                        ))
+                        let is_success = report.errors.is_empty();
+                        Ok(ExecutionResult {
+                            observation: format!(
+                                "VFS flush complete. dirs={}, files={}, errors={}",
+                                report.created_dirs.len(),
+                                report.written_files.len(),
+                                report.errors.len()
+                            ),
+                            is_success,
+                        })
                     }
-                    Err(e) => Ok(format!("VFS flush failed: {}", e)),
+                    Err(e) => Ok(ExecutionResult {
+                        observation: format!("VFS flush failed: {}", e),
+                        is_success: false,
+                    }),
                 }
             }
             OrchestrationAction::ExecuteShell { command } => {
@@ -504,12 +595,18 @@ impl AgentRuntime {
                         let stdout = String::from_utf8_lossy(&output.stdout);
                         let stderr = String::from_utf8_lossy(&output.stderr);
                         let exit_code = output.status.code().unwrap_or(-1);
-                        Ok(format!(
-                            "Command executed (Exit: {})\nSTDOUT:\n{}\nSTDERR:\n{}",
-                            exit_code, stdout, stderr
-                        ))
+                        Ok(ExecutionResult {
+                            observation: format!(
+                                "Command executed (Exit: {})\nSTDOUT:\n{}\nSTDERR:\n{}",
+                                exit_code, stdout, stderr
+                            ),
+                            is_success: exit_code == 0,
+                        })
                     }
-                    Err(e) => Ok(format!("Failed to execute command '{}': {}", command, e)),
+                    Err(e) => Ok(ExecutionResult {
+                        observation: format!("Failed to execute command '{}': {}", command, e),
+                        is_success: false,
+                    }),
                 }
             }
             OrchestrationAction::StartJob { name, command } => {
@@ -531,35 +628,53 @@ impl AgentRuntime {
                         let id = child.id().unwrap_or(0);
                         let mut jobs = self.jobs.lock().await;
                         jobs.insert(name.clone(), child);
-                        Ok(format!(
-                            "Job '{}' started successfully (PID: {}).",
-                            name, id
-                        ))
+                        Ok(ExecutionResult {
+                            observation: format!("Job '{}' started successfully (PID: {}).", name, id),
+                            is_success: true,
+                        })
                     }
-                    Err(e) => Ok(format!("Failed to start job '{}': {}", name, e)),
+                    Err(e) => Ok(ExecutionResult {
+                        observation: format!("Failed to start job '{}': {}", name, e),
+                        is_success: false,
+                    }),
                 }
             }
             OrchestrationAction::StopJob { name } => {
                 let mut jobs = self.jobs.lock().await;
                 if let Some(mut child) = jobs.remove(name) {
                     match child.kill().await {
-                        Ok(_) => Ok(format!("Job '{}' stopped.", name)),
-                        Err(e) => Ok(format!("Failed to stop job '{}': {}", name, e)),
+                        Ok(_) => Ok(ExecutionResult {
+                            observation: format!("Job '{}' stopped.", name),
+                            is_success: true,
+                        }),
+                        Err(e) => Ok(ExecutionResult {
+                            observation: format!("Failed to stop job '{}': {}", name, e),
+                            is_success: false,
+                        }),
                     }
                 } else {
-                    Ok(format!("Job '{}' not found.", name))
+                    Ok(ExecutionResult {
+                        observation: format!("Job '{}' not found.", name),
+                        is_success: false,
+                    })
                 }
             }
             OrchestrationAction::ListJobs => {
                 let jobs = self.jobs.lock().await;
                 if jobs.is_empty() {
-                    Ok("No background jobs running.".to_string())
+                    Ok(ExecutionResult {
+                        observation: "No background jobs running.".to_string(),
+                        is_success: true,
+                    })
                 } else {
                     let mut output = String::from("Running Jobs:\n");
                     for (name, child) in jobs.iter() {
                         output.push_str(&format!("- {} (PID: {:?})\n", name, child.id()));
                     }
-                    Ok(output)
+                    Ok(ExecutionResult {
+                        observation: output,
+                        is_success: true,
+                    })
                 }
             }
             OrchestrationAction::DelegateTask { agent, goal } => {
@@ -578,16 +693,22 @@ impl AgentRuntime {
 
                 let _ = self.agent.connect(&sub_agent_id, Some(agent)).await;
                 match Box::pin(async move { sub_runtime.run_loop(goal).await }).await {
-                    Ok(_) => Ok(format!(
-                        "Delegated task to '{}' completed successfully.",
-                        agent
-                    )),
-                    Err(e) => Ok(format!("Delegated task to '{}' failed: {}", agent, e)),
+                    Ok(_) => Ok(ExecutionResult {
+                        observation: format!("Delegated task to '{}' completed successfully.", agent),
+                        is_success: true,
+                    }),
+                    Err(e) => Ok(ExecutionResult {
+                        observation: format!("Delegated task to '{}' failed: {}", agent, e),
+                        is_success: false,
+                    }),
                 }
             }
             OrchestrationAction::CallAgent { tool, args } => {
                 if let Ok(result) = self.registry.call(tool, &EmptyContext, args.clone()).await {
-                    return Ok(format!("Tool '{}' executed with result:\n{}", tool, result));
+                    return Ok(ExecutionResult {
+                        observation: format!("Tool '{}' executed with result:\n{}", tool, result),
+                        is_success: true,
+                    });
                 }
 
                 let argv = args
@@ -601,7 +722,10 @@ impl AgentRuntime {
 
                 let allowed_tools = ["gh", "aws", "kubectl", "cargo", "git", "docker"];
                 if !allowed_tools.contains(&tool.as_str()) {
-                    return Ok(format!("Security Error: Tool '{}' is not allowed.", tool));
+                    return Ok(ExecutionResult {
+                        observation: format!("Security Error: Tool '{}' is not allowed.", tool),
+                        is_success: false,
+                    });
                 }
 
                 #[cfg(target_os = "windows")]
@@ -620,12 +744,18 @@ impl AgentRuntime {
                         let stdout = String::from_utf8_lossy(&output.stdout);
                         let stderr = String::from_utf8_lossy(&output.stderr);
                         let exit_code = output.status.code().unwrap_or(-1);
-                        Ok(format!(
-                            "Tool '{}' executed (Exit: {})\nSTDOUT:\n{}\nSTDERR:\n{}",
-                            tool, exit_code, stdout, stderr
-                        ))
+                        Ok(ExecutionResult {
+                            observation: format!(
+                                "Tool '{}' executed (Exit: {})\nSTDOUT:\n{}\nSTDERR:\n{}",
+                                tool, exit_code, stdout, stderr
+                            ),
+                            is_success: exit_code == 0,
+                        })
                     }
-                    Err(e) => Ok(format!("Failed to execute tool '{}': {}", tool, e)),
+                    Err(e) => Ok(ExecutionResult {
+                        observation: format!("Failed to execute tool '{}': {}", tool, e),
+                        is_success: false,
+                    }),
                 }
             }
             OrchestrationAction::AwaitJob { job_id } => {
@@ -633,13 +763,20 @@ impl AgentRuntime {
                 if let Some(mut child) = jobs.remove(job_id.as_str()) {
                     drop(jobs);
                     match child.wait().await {
-                        Ok(status) => {
-                            Ok(format!("Job '{}' finished with status: {}", job_id, status))
-                        }
-                        Err(e) => Ok(format!("Error waiting for job '{}': {}", job_id, e)),
+                        Ok(status) => Ok(ExecutionResult {
+                            observation: format!("Job '{}' finished with status: {}", job_id, status),
+                            is_success: status.success(),
+                        }),
+                        Err(e) => Ok(ExecutionResult {
+                            observation: format!("Error waiting for job '{}': {}", job_id, e),
+                            is_success: false,
+                        }),
                     }
                 } else {
-                    Ok(format!("Job '{}' not found or already finished.", job_id))
+                    Ok(ExecutionResult {
+                        observation: format!("Job '{}' not found or already finished.", job_id),
+                        is_success: false,
+                    })
                 }
             }
             OrchestrationAction::ReviewAndMerge { goal } => {
@@ -655,17 +792,65 @@ impl AgentRuntime {
                     })
                     .await
                 {
-                    return Ok(format!("Reviewer agent dispatch failed: {}", e));
+                    return Ok(ExecutionResult {
+                        observation: format!("Reviewer agent dispatch failed: {}", e),
+                        is_success: false,
+                    });
                 }
 
                 match reply_rx.await {
-                    Ok(result) => Ok(format!(
-                        "Reviewer decision: approved={} summary={}",
-                        result.approved, result.summary
-                    )),
-                    Err(e) => Ok(format!("Reviewer did not respond: {}", e)),
+                    Ok(result) => Ok(ExecutionResult {
+                        observation: format!(
+                            "Reviewer decision: approved={} summary={}",
+                            result.approved, result.summary
+                        ),
+                        is_success: result.approved,
+                    }),
+                    Err(e) => Ok(ExecutionResult {
+                        observation: format!("Reviewer did not respond: {}", e),
+                        is_success: false,
+                    }),
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::services::{
+        AgentService, MemoryService, ProjectService, TaskService, TimelineService, WatchService,
+    };
+    use crate::db::SurrealClient;
+    use synapse_agentic::prelude::*;
+    use std::sync::Arc;
+
+    #[tokio::test]
+    async fn test_retry_loop_initialization() {
+        let db = SurrealClient::connect_temp().await.unwrap();
+        let timeline = TimelineService::new(db.clone());
+        let project = ProjectService::new(db.clone(), timeline.clone());
+        let task = TaskService::new(db.clone(), timeline.clone());
+        let watch = WatchService::new(db.clone(), timeline.clone());
+        let agent = AgentService::new(db.clone(), timeline.clone());
+        let memory = MemoryService::new(db.clone());
+
+        let engine = Arc::new(DecisionEngine::new());
+        let registry = Arc::new(ToolRegistry::new());
+
+        let runtime = AgentRuntime::new(
+            "test_agent".to_string(),
+            engine,
+            registry,
+            project,
+            task,
+            timeline,
+            watch,
+            agent,
+            memory,
+        );
+
+        assert_eq!(runtime.max_retries, 3);
     }
 }

@@ -29,7 +29,7 @@ tracing = "0.1.44"
 tracing-subscriber = "0.3.19"
 
 # Git
-git2 = "0.18.3"
+git2 = "0.20.4"
 octocrab = "0.38.0"
 
 # OAuth2 helpers
@@ -55,7 +55,7 @@ candle-transformers = "0.8.4"
 tokenizers = "0.20.4"
 
 # Database
-surrealdb = { version = "2.4.0", features = ["kv-mem"] }
+surrealdb = { version = "3.0.1", features = ["kv-mem"] }
 
 synapse-agentic = { path = "../synapse-agentic" }
 

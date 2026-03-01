@@ -8,8 +8,9 @@ use tracing::{info, warn};
 
 use crate::models::{AgentRuntimeState, EventType, RuntimePhase, TimelineEvent};
 use crate::services::{
-    spawn_reviewer_agent, AgentService, ContextCompactor, LockStatus, MemoryService, OverlayFs,
-    ProjectService, ReviewerMessage, TaskService, TimelineService, VirtualFs, WatchService,
+    spawn_reviewer_agent, AgentService, ContextCompactor, FileManager, LockStatus, MemoryService,
+    OverlayFs, ProjectService, ReviewerMessage, TaskService, TimelineService, VirtualFs,
+    WatchService,
 };
 use synapse_agentic::prelude::{DecisionContext, DecisionEngine, EmptyContext, Hive, ToolRegistry};
 
@@ -126,6 +127,9 @@ impl AgentRuntime {
             ))
         });
 
+        let (vfs, actor) = FileManager::new();
+        tokio::spawn(actor.run());
+
         Self {
             agent_id,
             engine,
@@ -140,7 +144,7 @@ impl AgentRuntime {
                 .ok()
                 .and_then(|v| v.parse::<usize>().ok()),
             jobs: Arc::new(Mutex::new(HashMap::new())),
-            vfs: Arc::new(OverlayFs::new()),
+            vfs: Arc::new(vfs),
             compactor: ContextCompactor::new(compactor_provider, "gpt-4o"),
             hive: Arc::new(Mutex::new(Hive::new())),
         }

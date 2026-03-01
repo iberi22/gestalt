@@ -77,6 +77,7 @@ pub enum OrchestrationAction {
 #[derive(Clone)]
 pub struct AgentRuntime {
     agent_id: String,
+    task_id: Option<String>,
     engine: Arc<DecisionEngine>,
     registry: Arc<ToolRegistry>,
     project: ProjectService,
@@ -128,6 +129,7 @@ impl AgentRuntime {
 
         Self {
             agent_id,
+            task_id: None,
             engine,
             registry,
             project,
@@ -144,6 +146,12 @@ impl AgentRuntime {
             compactor: ContextCompactor::new(compactor_provider, "gpt-4o"),
             hive: Arc::new(Mutex::new(Hive::new())),
         }
+    }
+
+    /// Assign a task ID to this runtime.
+    pub fn with_task_id(mut self, task_id: String) -> Self {
+        self.task_id = Some(task_id);
+        self
     }
 
     /// Run the autonomous loop for a specific goal.
@@ -389,6 +397,16 @@ impl AgentRuntime {
             }
             OrchestrationAction::Chat { response } => {
                 info!("Agent says: {}", response);
+                let mut event = TimelineEvent::new(&self.agent_id, EventType::Chat).with_payload(
+                    serde_json::json!({
+                        "message": response,
+                    }),
+                );
+                if let Some(tid) = &self.task_id {
+                    event = event.with_task(tid);
+                }
+
+                let _ = self.timeline.record_event(event).await;
                 Ok(format!("Agent said: {}", response))
             }
             OrchestrationAction::ReadFile { path } => {

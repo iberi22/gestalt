@@ -223,6 +223,9 @@ pub enum Commands {
         /// Port for REST API (default: 3000)
         #[arg(long, default_value_t = 3000)]
         port: u16,
+        /// Run as a background daemon
+        #[arg(long)]
+        daemon: bool,
     },
 
     /// Queue a task from the CLI for autonomous background execution

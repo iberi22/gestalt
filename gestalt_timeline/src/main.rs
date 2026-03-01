@@ -676,7 +676,40 @@ async fn main() -> anyhow::Result<()> {
             bot_service.start().await?;
         }
 
-        Some(Commands::Nexus { workers, port }) => {
+        Some(Commands::Nexus {
+            workers,
+            port,
+            daemon,
+        }) => {
+            if daemon {
+                println!("🚀 Starting Gestalt Nexus in background...");
+                let mut cmd = std::process::Command::new(std::env::current_exe()?);
+
+                // Reconstruct arguments, removing --daemon to avoid infinite loop
+                let args: Vec<String> = std::env::args()
+                    .skip(1)
+                    .filter(|a| a != "--daemon" && !a.starts_with("--daemon="))
+                    .collect();
+
+                cmd.args(args);
+
+                // Redirect stdout and stderr to gestalt-nexus.log
+                let log_file = std::fs::File::create("gestalt-nexus.log")?;
+                cmd.stdout(std::process::Stdio::from(log_file.try_clone()?));
+                cmd.stderr(std::process::Stdio::from(log_file));
+
+                #[cfg(windows)]
+                {
+                    const CREATE_NO_WINDOW: u32 = 0x08000000;
+                    use std::os::windows::process::CommandExt;
+                    cmd.creation_flags(CREATE_NO_WINDOW);
+                }
+
+                cmd.spawn()?;
+                println!("✅ Nexus daemon spawned. Logs: gestalt-nexus.log");
+                return Ok(());
+            }
+
             info!("🚀 Starting Gestalt Nexus - Always-On Agentic Daemon");
             info!("   Workers: {}, API Port: {}", workers, port);
 

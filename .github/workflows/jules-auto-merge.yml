@@ -1,0 +1,43 @@
+name: Jules Auto-Integrator
+
+on:
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  validate-and-merge:
+    name: Validate and Auto-Merge Jules PRs
+    runs-on: windows-latest
+    # Solo ejecutar si el autor del PR es Jules o tiene la etiqueta jules
+    if: github.event.pull_request.user.login == 'jules' || contains(github.event.pull_request.labels.*.name, 'jules')
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+          targets: x86_64-pc-windows-msvc
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Check Formatting
+        run: cargo fmt --all -- --check
+
+      - name: Cargo Clippy
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+      - name: Run Unit Tests
+        run: cargo test --workspace --all-targets --all-features
+
+      # Aquí irían los comandos para Tests E2E en el futuro
+      # - name: Run E2E Tests
+      #   run: ./scripts/run-e2e.sh
+
+      - name: Enable Auto-Merge
+        run: gh pr merge --auto --merge "$env:PR_URL"
+        env:
+          PR_URL: ${{github.event.pull_request.html_url}}
+          GH_TOKEN: ${{secrets.GITHUB_TOKEN}}

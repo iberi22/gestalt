@@ -116,11 +116,20 @@ async fn init_decision_engine(
 }
 
 /// Initialize native tools for AgentRuntime.
-async fn init_tool_registry() -> Arc<ToolRegistry> {
+async fn init_tool_registry(
+    vector_db: Arc<dyn gestalt_core::ports::outbound::repo_manager::VectorDb>,
+    embedding_model: Arc<dyn gestalt_core::domain::rag::embeddings::EmbeddingModel>,
+) -> Arc<ToolRegistry> {
     let registry = Arc::new(ToolRegistry::new());
     registry.register_tool(ExecuteShellTool).await;
     registry.register_tool(ReadFileTool).await;
     registry.register_tool(WriteFileTool).await;
+    registry
+        .register_tool(gestalt_core::application::agent::tools::SearchCodeTool::new(
+            vector_db,
+            embedding_model,
+        ))
+        .await;
     registry
 }
 
@@ -178,6 +187,29 @@ async fn main() -> anyhow::Result<()> {
 
     // Initialize database connection
     let db = SurrealClient::connect(&settings.database).await?;
+    let vector_db: Arc<dyn gestalt_core::ports::outbound::repo_manager::VectorDb> = Arc::new(db.clone());
+
+    // Attempt to initialize BERT embedding model if files exist, fallback to dummy
+    let embedding_model: Arc<dyn gestalt_core::domain::rag::embeddings::EmbeddingModel> =
+        if std::path::Path::new("models/bert/config.json").exists() &&
+           std::path::Path::new("models/bert/tokenizer.json").exists() &&
+           std::path::Path::new("models/bert/model.safetensors").exists() {
+               info!("🚀 Initializing BertEmbeddingModel...");
+               match gestalt_core::domain::rag::embeddings::BertEmbeddingModel::new(
+                   "models/bert/config.json",
+                   "models/bert/tokenizer.json",
+                   "models/bert/model.safetensors"
+               ) {
+                   Ok(m) => Arc::new(m),
+                   Err(e) => {
+                       warn!("Failed to load BERT model: {}. Falling back to DummyEmbeddingModel.", e);
+                       Arc::new(gestalt_core::domain::rag::embeddings::DummyEmbeddingModel::new(384))
+                   }
+               }
+           } else {
+               info!("Using DummyEmbeddingModel for RAG.");
+               Arc::new(gestalt_core::domain::rag::embeddings::DummyEmbeddingModel::new(384))
+           };
 
     // Initialize services
     let timeline_service = TimelineService::new(db.clone());
@@ -544,7 +576,7 @@ async fn main() -> anyhow::Result<()> {
         }) => {
             // Initialize decision engine
             let engine = init_decision_engine(&settings.cognition).await?;
-            let registry = init_tool_registry().await;
+            let registry = init_tool_registry(vector_db.clone(), embedding_model.clone()).await;
             let memory_service = MemoryService::new(db.clone());
 
             // Initialize Agent Runtime
@@ -571,7 +603,7 @@ async fn main() -> anyhow::Result<()> {
         Some(Commands::Server { port }) => {
             // Initialize decision engine
             let engine = init_decision_engine(&settings.cognition).await?;
-            let registry = init_tool_registry().await;
+            let registry = init_tool_registry(vector_db.clone(), embedding_model.clone()).await;
             let memory_service = MemoryService::new(db.clone());
 
             // Initialize Agent Runtime
@@ -637,7 +669,7 @@ async fn main() -> anyhow::Result<()> {
             }
 
             println!("📥 Indexing repository: {}", url);
-            let index_service = IndexService::new(db.clone());
+            let index_service = IndexService::new(db.clone(), embedding_model.clone());
             match index_service.index_repo(&url).await {
                 Ok(_) => {
                     if cli.json {
@@ -682,7 +714,7 @@ async fn main() -> anyhow::Result<()> {
 
             // Initialize cognition
             let cognition = init_decision_engine(&settings.cognition).await?;
-            let registry = init_tool_registry().await;
+            let registry = init_tool_registry(vector_db.clone(), embedding_model.clone()).await;
 
             // Initialize memory service
             let _memory_service = Arc::new(MemoryService::new(db.clone()));

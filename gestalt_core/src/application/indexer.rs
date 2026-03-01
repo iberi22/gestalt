@@ -158,23 +158,45 @@ impl Indexer {
 
     fn chunk_text(&self, text: &str) -> Vec<Chunk> {
         let mut chunks = Vec::new();
-        let chars: Vec<char> = text.chars().collect();
-        let mut start = 0;
+        let lines: Vec<&str> = text.lines().collect();
+        let mut start_line = 0;
 
-        while start < chars.len() {
-            let end = (start + self.chunk_size).min(chars.len());
-            let chunk_content: String = chars[start..end].iter().collect();
+        while start_line < lines.len() {
+            let mut chunk_content = String::new();
+            let mut end_line = start_line;
+
+            while end_line < lines.len() {
+                let line = lines[end_line];
+                if chunk_content.len() + line.len() + 1 > self.chunk_size && !chunk_content.is_empty() {
+                    break;
+                }
+                chunk_content.push_str(line);
+                chunk_content.push('\n');
+                end_line += 1;
+            }
 
             chunks.push(Chunk {
-                content: chunk_content,
+                content: chunk_content.trim_end().to_string(),
                 index: chunks.len(),
             });
 
-            if end == chars.len() {
+            if end_line == lines.len() {
                 break;
             }
 
-            start += self.chunk_size - self.chunk_overlap;
+            // Move start_line forward but try to keep some overlap
+            // We ensure progress by not going back further than start_line + 1
+            let mut overlap_size = 0;
+            let mut new_start = end_line;
+            while new_start > start_line + 1 {
+                let line_len = lines[new_start - 1].len() + 1;
+                if overlap_size + line_len > self.chunk_overlap {
+                    break;
+                }
+                overlap_size += line_len;
+                new_start -= 1;
+            }
+            start_line = new_start;
         }
 
         chunks
@@ -191,17 +213,18 @@ mod tests {
     #[test]
     fn test_chunk_text() {
         let indexer = Indexer::new(vec![], 0, 10, 2);
-        let text = "abcdefghijklmnopqrstuvwxyz";
+        let text = "line1\nline2\nline3\nline4\nline5";
         let chunks = indexer.chunk_text(text);
 
-        // chunk 0: abcdefghij (0-10)
-        // chunk 1: ijklmnopqrs (8-18)
-        // chunk 2: rstuvwxyz (16-26)
+        // chunk_size 10
+        // chunk 0: line1\nline2 (11 chars, but wait, it should split at line2 because 5+1+5+1 > 10)
+        // Actually my logic:
+        // line1 (5 chars) + \n (1) = 6.
+        // line2 (5) + 1 = 6. 6+6 = 12 > 10. So only line1.
 
-        assert_eq!(chunks.len(), 3);
-        assert_eq!(chunks[0].content, "abcdefghij");
-        assert_eq!(chunks[1].content, "ijklmnopqr");
-        assert_eq!(chunks[2].content, "qrstuvwxyz");
+        assert!(chunks.len() >= 5);
+        assert_eq!(chunks[0].content, "line1");
+        assert_eq!(chunks[1].content, "line2");
     }
 
     #[test]

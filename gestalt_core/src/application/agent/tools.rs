@@ -61,6 +61,15 @@ pub struct SearchCodeTool {
     embedding_model: Arc<dyn EmbeddingModel>,
 }
 
+impl SearchCodeTool {
+    pub fn new(vector_db: Arc<dyn VectorDb>, embedding_model: Arc<dyn EmbeddingModel>) -> Self {
+        Self {
+            vector_db,
+            embedding_model,
+        }
+    }
+}
+
 #[async_trait]
 impl Tool for SearchCodeTool {
     fn name(&self) -> &str {
@@ -89,9 +98,10 @@ impl Tool for SearchCodeTool {
 
         let query_embedding = self.embedding_model.embed(query).await?;
 
+        // Search in "chunks" collection which is used by IndexService
         let similar = self
             .vector_db
-            .search_similar("code", query_embedding, limit)
+            .search_similar("chunks", query_embedding, limit)
             .await?;
 
         Ok(json!({ "results": similar }))

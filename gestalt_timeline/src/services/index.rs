@@ -1,9 +1,11 @@
 use anyhow::Result;
 use chrono::Utc;
 use gestalt_core::application::indexer::{Indexer, RepositoryMetadata, DocumentRecord};
+use gestalt_core::domain::rag::embeddings::EmbeddingModel;
 use crate::db::SurrealClient;
 use tracing::info;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use surrealdb::sql::Thing;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -31,18 +33,22 @@ struct ChunkRecord {
     content: String,
     chunk_index: usize,
     created_at: chrono::DateTime<Utc>,
+    embedding: Option<Vec<f32>>,
+    metadata: serde_json::Value,
 }
 
 pub struct IndexService {
     db: SurrealClient,
     indexer: Indexer,
+    embedding_model: Arc<dyn EmbeddingModel>,
 }
 
 impl IndexService {
-    pub fn new(db: SurrealClient) -> Self {
+    pub fn new(db: SurrealClient, embedding_model: Arc<dyn EmbeddingModel>) -> Self {
         Self {
             db,
             indexer: Indexer::default(),
+            embedding_model,
         }
     }
 
@@ -135,13 +141,21 @@ impl IndexService {
             serde_json::json!({ "doc_id": doc_id })
         ).await?;
 
-        // 3. Insert new chunks
+        // 3. Insert new chunks with embeddings and metadata for RAG
         for chunk in record.chunks {
+            let embedding = self.embedding_model.embed(&chunk.content).await.ok();
             let chunk_record = ChunkRecord {
                 doc_id: doc_id.to_string(),
-                content: chunk.content,
+                content: chunk.content.clone(),
                 chunk_index: chunk.index,
                 created_at: Utc::now(),
+                embedding,
+                metadata: serde_json::json!({
+                    "content": chunk.content,
+                    "doc_id": doc_id,
+                    "chunk_index": chunk.index,
+                    "path": record.metadata.path
+                }),
             };
             self.db.create("chunks", &chunk_record).await?;
         }

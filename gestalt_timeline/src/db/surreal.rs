@@ -1,6 +1,8 @@
 //! SurrealDB client implementation
 
 use anyhow::{Context, Result};
+use async_trait::async_trait;
+use gestalt_core::ports::outbound::repo_manager::{ScoredResult, VectorDb};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::sync::Arc;
@@ -8,6 +10,13 @@ use surrealdb::engine::any::Any;
 use surrealdb::opt::auth::Root;
 use surrealdb::Surreal;
 use tracing::{debug, info};
+
+#[derive(Debug, serde::Deserialize)]
+struct SearchResult {
+    id: surrealdb::sql::Thing,
+    score: f32,
+    metadata: serde_json::Value,
+}
 
 /// SurrealDB client wrapper for timeline operations.
 #[derive(Clone)]
@@ -138,8 +147,11 @@ impl SurrealClient {
             DEFINE FIELD doc_id ON chunks TYPE string;
             DEFINE FIELD content ON chunks TYPE string;
             DEFINE FIELD chunk_index ON chunks TYPE int;
-            DEFINE FIELD created_at ON chunks TYPE string;
+            DEFINE FIELD created_at ON chunks TYPE any;
+            DEFINE FIELD embedding ON chunks TYPE option<array<float, 384>>;
+            DEFINE FIELD metadata ON chunks TYPE option<object>;
             DEFINE INDEX idx_chunk_doc ON chunks FIELDS doc_id;
+            DEFINE INDEX idx_chunk_embedding ON chunks FIELDS embedding TYPE HNSW DIMENSION 384 DISTANCE COSINE;
             "#,
         )
         .await
@@ -235,5 +247,53 @@ impl SurrealClient {
     pub async fn delete(&self, table: &str, id: &str) -> Result<()> {
         let _: Option<serde_json::Value> = self.db.delete((table, id)).await?;
         Ok(())
+    }
+}
+
+#[async_trait]
+impl VectorDb for SurrealClient {
+    async fn store_embedding(
+        &self,
+        collection: &str,
+        id: &str,
+        vector: Vec<f32>,
+        metadata: serde_json::Value,
+    ) -> anyhow::Result<()> {
+        let _: Option<serde_json::Value> = self
+            .db
+            .upsert((collection, id))
+            .content(serde_json::json!({
+                "embedding": vector,
+                "metadata": metadata,
+                "created_at": chrono::Utc::now()
+            }))
+            .await?;
+        Ok(())
+    }
+
+    async fn search_similar(
+        &self,
+        collection: &str,
+        vector: Vec<f32>,
+        limit: usize,
+    ) -> anyhow::Result<Vec<ScoredResult>> {
+        let mut response = self
+            .db
+            .query("SELECT id, metadata, vector::distance::cosine(embedding, $vector) AS score FROM type::table($table) WHERE embedding IS NOT NONE ORDER BY score ASC LIMIT $limit")
+            .bind(("vector", vector))
+            .bind(("table", collection.to_string()))
+            .bind(("limit", limit))
+            .await?;
+
+        let results: Vec<SearchResult> = response.take(0)?;
+
+        Ok(results
+            .into_iter()
+            .map(|r| ScoredResult {
+                id: r.id.to_string(),
+                score: 1.0 - r.score, // Convert distance to similarity
+                metadata: r.metadata,
+            })
+            .collect())
     }
 }

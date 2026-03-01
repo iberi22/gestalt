@@ -2,6 +2,9 @@
 //! 
 //! CLI tool for interacting with Gestalt MCP Server and managing tasks.
 
+mod config;
+mod repl;
+
 use clap::{Parser, Subcommand};
 use serde_json::json;
 use std::collections::HashMap;
@@ -9,6 +12,10 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
+use crate::config::CliConfig;
+use crate::repl::{InteractiveRepl, EchoHandler};
+use tracing::{info, warn, error};
+use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 /// Simple task storage
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -27,6 +34,14 @@ pub struct Task {
 struct Args {
     #[command(subcommand)]
     command: Commands,
+
+    /// MCP server URL (overrides config)
+    #[arg(long, global = true)]
+    url: Option<String>,
+
+    /// Verbose output
+    #[arg(short, long, global = true)]
+    verbose: bool,
 }
 
 #[derive(Subcommand, Debug)]
@@ -43,18 +58,10 @@ enum Commands {
     },
     
     /// Check server status
-    Status {
-        /// MCP server URL
-        #[arg(long, default_value = "http://127.0.0.1:3000")]
-        url: String,
-    },
+    Status,
     
     /// List available tools
-    Tools {
-        /// MCP server URL
-        #[arg(long, default_value = "http://127.0.0.1:3000")]
-        url: String,
-    },
+    Tools,
     
     /// Execute a tool
     Exec {
@@ -65,10 +72,6 @@ enum Commands {
         /// Arguments as JSON
         #[arg(short, long, default_value = "{}")]
         args: String,
-        
-        /// MCP server URL
-        #[arg(long, default_value = "http://127.0.0.1:3000")]
-        url: String,
     },
     
     /// Create a task
@@ -86,8 +89,8 @@ enum Commands {
         description: Option<String>,
         
         /// Database file path
-        #[arg(long, default_value = "tasks.json")]
-        db: String,
+        #[arg(long)]
+        db: Option<String>,
     },
     
     /// List tasks
@@ -97,8 +100,8 @@ enum Commands {
         status: Option<String>,
         
         /// Database file path
-        #[arg(long, default_value = "tasks.json")]
-        db: String,
+        #[arg(long)]
+        db: Option<String>,
     },
     
     /// Get task status
@@ -108,8 +111,8 @@ enum Commands {
         id: String,
         
         /// Database file path
-        #[arg(long, default_value = "tasks.json")]
-        db: String,
+        #[arg(long)]
+        db: Option<String>,
     },
     
     /// Analyze a project
@@ -117,10 +120,6 @@ enum Commands {
         /// Project path
         #[arg(default_value = ".")]
         path: String,
-        
-        /// MCP server URL
-        #[arg(long, default_value = "http://127.0.0.1:3000")]
-        url: String,
     },
     
     /// Search code
@@ -136,10 +135,6 @@ enum Commands {
         /// File extensions
         #[arg(long, default_value = ".rs,.ts,.js,.py")]
         ext: String,
-        
-        /// MCP server URL
-        #[arg(long, default_value = "http://127.0.0.1:3000")]
-        url: String,
     },
     
     /// Git operations
@@ -151,10 +146,6 @@ enum Commands {
         /// Repository path
         #[arg(default_value = ".")]
         path: String,
-        
-        /// MCP server URL
-        #[arg(long, default_value = "http://127.0.0.1:3000")]
-        url: String,
     },
     
     /// Read a file
@@ -166,10 +157,6 @@ enum Commands {
         /// Max lines
         #[arg(short, long, default_value_t = 100)]
         lines: usize,
-        
-        /// MCP server URL
-        #[arg(long, default_value = "http://127.0.0.1:3000")]
-        url: String,
     },
     
     /// Get file tree
@@ -181,18 +168,13 @@ enum Commands {
         /// Max depth
         #[arg(short, long, default_value_t = 3)]
         depth: usize,
-        
-        /// MCP server URL
-        #[arg(long, default_value = "http://127.0.0.1:3000")]
-        url: String,
     },
     
     /// System info
-    SysInfo {
-        /// MCP server URL
-        #[arg(long, default_value = "http://127.0.0.1:3000")]
-        url: String,
-    },
+    SysInfo,
+
+    /// Start interactive REPL
+    Repl,
 }
 
 fn current_time() -> String {
@@ -243,11 +225,35 @@ fn call_mcp(url: &str, tool: &str, args: serde_json::Value) -> Result<serde_json
     response.json().map_err(|e| e.to_string())
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let config = CliConfig::load().unwrap_or_default();
     let args = Args::parse();
     
+    // Initialize logging
+    let level = if args.verbose { "debug" } else { &config.logging.level };
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(level));
+
+    if config.logging.format == "json" {
+        tracing_subscriber::registry()
+            .with(fmt::layer().json())
+            .with(filter)
+            .init();
+    } else {
+        tracing_subscriber::registry()
+            .with(fmt::layer())
+            .with(filter)
+            .init();
+    }
+
+    let url = args.url.unwrap_or_else(|| config.mcp.server_url.clone());
+    let default_db = "tasks.json";
+
+    info!("Gestalt CLI starting with URL: {}", url);
+
     match args.command {
         Commands::Serve { host, port } => {
+            info!("Starting MCP Server on {}:{}", host, port);
             println!("🚀 Starting Gestalt MCP Server on {}:{}", host, port);
             println!("📍 URL: http://{}:{}", host, port);
             println!();
@@ -255,20 +261,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             // Run cargo
             let status = Command::new("cargo")
                 .args(["run", "-p", "gestalt_mcp", "--", "--http"])
-                .current_dir("E:/scripts-python/gestalt-rust")
                 .status()?;
             
             std::process::exit(status.code().unwrap_or(0));
         }
         
-        Commands::Status { url } => {
+        Commands::Status => {
             let tools_url = format!("{}/tools", url);
-            match reqwest::blocking::get(&tools_url) {
-                Ok(resp) if resp.status().is_success() => {
+            let resp = tokio::task::spawn_blocking(move || {
+                reqwest::blocking::get(&tools_url)
+            }).await??;
+
+            match resp {
+                resp if resp.status().is_success() => {
+                    info!("MCP Server is online at {}", url);
                     println!("✅ Gestalt MCP Server: Online");
                     println!("📍 {}", url);
                 }
                 _ => {
+                    warn!("MCP Server is offline at {}", url);
                     println!("❌ Gestalt MCP Server: Offline");
                     println!("📍 {}", url);
                     std::process::exit(1);
@@ -276,10 +287,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
         
-        Commands::Tools { url } => {
+        Commands::Tools => {
             let tools_url = format!("{}/tools", url);
-            let response = reqwest::blocking::get(&tools_url)
-                .map_err(|e| e.to_string())?;
+            let response = tokio::task::spawn_blocking(move || {
+                reqwest::blocking::get(&tools_url)
+            }).await??;
+
             let tools: Vec<serde_json::Value> = response.json()
                 .map_err(|e| e.to_string())?;
             
@@ -291,17 +304,33 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
         
-        Commands::Exec { tool, args, url } => {
+        Commands::Exec { tool, args } => {
+            info!("Executing tool: {}", tool);
             let args_json: serde_json::Value = serde_json::from_str(&args)
                 .unwrap_or(json!({}));
             
-            let result = call_mcp(&url, &tool, args_json)?;
-            
-            println!("{}", serde_json::to_string_pretty(&result).unwrap());
+            let url_clone = url.clone();
+            let tool_clone = tool.clone();
+            let result = tokio::task::spawn_blocking(move || {
+                call_mcp(&url_clone, &tool_clone, args_json)
+            }).await?;
+
+            match result {
+                Ok(result) => {
+                    info!("Tool {} executed successfully", tool);
+                    println!("{}", serde_json::to_string_pretty(&result).unwrap());
+                }
+                Err(e) => {
+                    error!("Failed to execute tool {}: {}", tool, e);
+                    return Err(e.into());
+                }
+            }
         }
         
         Commands::TaskCreate { id, name, description, db } => {
-            let mut tasks = load_tasks(&db);
+            let db_path = db.unwrap_or_else(|| default_db.to_string());
+            info!("Creating task {} in database {}", id, db_path);
+            let mut tasks = load_tasks(&db_path);
             
             let task = Task {
                 id: id.clone(),
@@ -312,13 +341,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             };
             
             tasks.insert(id.clone(), task);
-            save_tasks(&db, &tasks)?;
+            save_tasks(&db_path, &tasks)?;
             
+            info!("Task {} created successfully", id);
             println!("✅ Task created: {} ({})", name, id);
         }
         
         Commands::TaskList { status, db } => {
-            let tasks = load_tasks(&db);
+            let db_path = db.unwrap_or_else(|| default_db.to_string());
+            let tasks = load_tasks(&db_path);
             
             let mut task_list: Vec<&Task> = tasks.values().collect();
             task_list.sort_by(|a, b| b.created_at.cmp(&a.created_at));
@@ -340,7 +371,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         
         Commands::TaskStatus { id, db } => {
-            let tasks = load_tasks(&db);
+            let db_path = db.unwrap_or_else(|| default_db.to_string());
+            let tasks = load_tasks(&db_path);
             
             match tasks.get(&id) {
                 Some(task) => {
@@ -358,9 +390,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
         
-        Commands::Analyze { path, url } => {
+        Commands::Analyze { path } => {
             let args = json!({ "path": path });
-            let result = call_mcp(&url, "analyze_project", args)?;
+            let url_clone = url.clone();
+            let result = tokio::task::spawn_blocking(move || {
+                call_mcp(&url_clone, "analyze_project", args)
+            }).await??;
             
             if let Some(content) = result.get("result")
                 .and_then(|r| r.get("content"))
@@ -380,13 +415,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
         
-        Commands::Search { pattern, path, ext, url } => {
+        Commands::Search { pattern, path, ext } => {
             let args = json!({
                 "pattern": pattern,
                 "path": path,
                 "extensions": ext
             });
-            let result = call_mcp(&url, "search_code", args)?;
+            let url_clone = url.clone();
+            let result = tokio::task::spawn_blocking(move || {
+                call_mcp(&url_clone, "search_code", args)
+            }).await??;
             
             if let Some(content) = result.get("result")
                 .and_then(|r| r.get("content"))
@@ -407,7 +445,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
         
-        Commands::Git { subcommand, path, url } => {
+        Commands::Git { subcommand, path } => {
             let tool = match subcommand.as_str() {
                 "status" => "git_status",
                 "log" => "git_log",
@@ -416,7 +454,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             };
             
             let args = json!({ "path": path });
-            let result = call_mcp(&url, tool, args)?;
+            let url_clone = url.clone();
+            let result = tokio::task::spawn_blocking(move || {
+                call_mcp(&url_clone, tool, args)
+            }).await??;
             
             if let Some(content) = result.get("result")
                 .and_then(|r| r.get("content"))
@@ -428,9 +469,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
         
-        Commands::Read { path, lines, url } => {
+        Commands::Read { path, lines } => {
             let args = json!({ "path": path, "lines": lines });
-            let result = call_mcp(&url, "read_file", args)?;
+            let url_clone = url.clone();
+            let result = tokio::task::spawn_blocking(move || {
+                call_mcp(&url_clone, "read_file", args)
+            }).await??;
             
             if let Some(content) = result.get("result")
                 .and_then(|r| r.get("content"))
@@ -442,9 +486,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
         
-        Commands::Tree { path, depth, url } => {
+        Commands::Tree { path, depth } => {
             let args = json!({ "path": path, "depth": depth });
-            let result = call_mcp(&url, "file_tree", args)?;
+            let url_clone = url.clone();
+            let result = tokio::task::spawn_blocking(move || {
+                call_mcp(&url_clone, "file_tree", args)
+            }).await??;
             
             if let Some(content) = result.get("result")
                 .and_then(|r| r.get("content"))
@@ -463,9 +510,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
         
-        Commands::SysInfo { url } => {
+        Commands::SysInfo => {
             let args = json!({});
-            let result = call_mcp(&url, "system_info", args)?;
+            let url_clone = url.clone();
+            let result = tokio::task::spawn_blocking(move || {
+                call_mcp(&url_clone, "system_info", args)
+            }).await??;
             
             if let Some(content) = result.get("result")
                 .and_then(|r| r.get("content"))
@@ -487,6 +537,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
             }
+        }
+
+        Commands::Repl => {
+            info!("Starting interactive REPL");
+            let mut repl = InteractiveRepl::with_handler(EchoHandler::default())?;
+            repl.run().await?;
         }
     }
     

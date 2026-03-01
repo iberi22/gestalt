@@ -203,3 +203,81 @@ mod ulid_tests {
         assert!(event1.timestamp <= event2.timestamp);
     }
 }
+
+#[cfg(test)]
+mod runtime_tests {
+    use super::*;
+    use crate::config::DatabaseSettings;
+    use crate::db::SurrealClient;
+    use crate::models::{AgentRuntimeState, RuntimePhase};
+    use crate::services::{
+        AgentRuntime, AgentService, MemoryService, ProjectService, TaskService, TimelineService,
+        WatchService,
+    };
+    use std::sync::Arc;
+    use synapse_agentic::prelude::*;
+
+    #[derive(Debug, Clone)]
+    struct MockLlm;
+
+    #[async_trait]
+    impl LLMProvider for MockLlm {
+        fn name(&self) -> &str {
+            "mock"
+        }
+        fn cost_per_1k_tokens(&self) -> f64 {
+            0.0
+        }
+        async fn generate(&self, _prompt: &str) -> anyhow::Result<String> {
+            Ok("mock response".to_string())
+        }
+    }
+
+    #[tokio::test]
+    async fn test_autonomous_loop_runs_and_stops() -> anyhow::Result<()> {
+        let db_config = DatabaseSettings {
+            url: "mem://".to_string(),
+            namespace: "test_ns".to_string(),
+            database: "test_db".to_string(),
+            user: "root".to_string(),
+            pass: "root".to_string(),
+        };
+        let db = SurrealClient::connect(&db_config).await?;
+
+        let timeline = TimelineService::new(db.clone());
+        let project = ProjectService::new(db.clone(), timeline.clone());
+        let task = TaskService::new(db.clone(), timeline.clone());
+        let watch = WatchService::new(db.clone(), timeline.clone());
+        let agent = AgentService::new(db.clone(), timeline.clone());
+        let memory = MemoryService::new(db.clone());
+
+        let engine = Arc::new(DecisionEngine::builder().with_provider(MockLlm).build());
+
+        let registry = Arc::new(ToolRegistry::new());
+
+        let runtime = AgentRuntime::new(
+            "test-agent".to_string(),
+            engine,
+            registry,
+            project,
+            task,
+            timeline,
+            watch,
+            agent,
+            memory,
+        );
+
+        // Run the loop.
+        runtime.run_loop("Test Goal").await?;
+
+        // Verify state was persisted in SurrealDB
+        let state: Option<AgentRuntimeState> =
+            db.select_by_id("agent_runtime_states", "test-agent").await?;
+        assert!(state.is_some());
+        let state = state.unwrap();
+        assert_eq!(state.phase, RuntimePhase::Completed);
+        assert_eq!(state.goal, "Test Goal");
+
+        Ok(())
+    }
+}

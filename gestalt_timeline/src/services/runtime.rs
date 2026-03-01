@@ -8,11 +8,12 @@ use tracing::{info, warn};
 
 use crate::models::{AgentRuntimeState, EventType, RuntimePhase, TimelineEvent};
 use crate::services::{
-    spawn_reviewer_agent, AgentService, ContextCompactor, LockStatus, MemoryService, OverlayFs,
-    ProjectService, ReviewerMessage, TaskService, TimelineService, VirtualFs, WatchService,
+    spawn_reviewer_agent, AgentService, CompactionConfig, ContextCompactor, LockStatus,
+    MemoryService, OverlayFs, ProjectService, ReviewerMessage, SessionContext, TaskService,
+    TimelineService, VirtualFs, WatchService,
 };
 use synapse_agentic::prelude::{
-    async_trait, Agent, Decision, DecisionContext, DecisionEngine, EmptyContext, Hive, ToolRegistry,
+    async_trait, Agent, Decision, DecisionContext, DecisionEngine, EmptyContext, Hive, Message, MessageRole, ToolRegistry,
 };
 
 /// Orchestration action executed by AgentRuntime.
@@ -93,6 +94,7 @@ pub struct AgentRuntime {
     vfs: Arc<dyn VirtualFs>,
     compactor: ContextCompactor,
     hive: Arc<Mutex<Hive>>,
+    session: Arc<Mutex<SessionContext>>,
 }
 
 struct PersistStateInput<'a> {
@@ -101,7 +103,7 @@ struct PersistStateInput<'a> {
     phase: RuntimePhase,
     last_action: Option<&'a OrchestrationAction>,
     last_observation: Option<&'a str>,
-    history: &'a [String],
+    history: Vec<String>,
     started_at: crate::models::FlexibleTimestamp,
     finished_at: Option<crate::models::FlexibleTimestamp>,
     error: Option<String>,
@@ -121,6 +123,7 @@ impl AgentRuntime {
         memory: MemoryService,
     ) -> Self {
         // Use the first available provider from the engine for context compaction
+        // When configured correctly in main.rs, this will be the StochasticRotator
         let compactor_provider = engine.providers().first().cloned().unwrap_or_else(|| {
             // Fallback (though engine should have at least the StochasticRotator now)
             Arc::new(synapse_agentic::prelude::GeminiProvider::new(
@@ -147,6 +150,9 @@ impl AgentRuntime {
             vfs: Arc::new(OverlayFs::new()),
             compactor: ContextCompactor::new(compactor_provider, "gpt-4o"),
             hive: Arc::new(Mutex::new(Hive::new())),
+            session: Arc::new(Mutex::new(SessionContext::new(
+                CompactionConfig::small_context(),
+            ))),
         }
     }
 
@@ -169,11 +175,14 @@ impl AgentRuntime {
             .set_status(&self.agent_id, AgentStatus::Busy)
             .await;
 
-        let mut conversation_history = Vec::new();
-        conversation_history.push(format!(
-            "GOAL: {}\n\nPlease start working on this goal.",
-            goal
-        ));
+        {
+            let mut session = self.session.lock().await;
+            session.add_message(Message::new(
+                MessageRole::User,
+                format!("GOAL: {}\n\nPlease start working on this goal.", goal),
+            ));
+        }
+
         let started_at = crate::models::FlexibleTimestamp::now();
         self.persist_state(PersistStateInput {
             goal,
@@ -181,7 +190,7 @@ impl AgentRuntime {
             phase: RuntimePhase::Running,
             last_action: None,
             last_observation: None,
-            history: &conversation_history,
+            history: self.get_history_strings().await,
             started_at: started_at.clone(),
             finished_at: None,
             error: None,
@@ -216,7 +225,7 @@ impl AgentRuntime {
                             phase: RuntimePhase::Completed,
                             last_action: None,
                             last_observation: Some("Elastic loop stopped by hard safety cap."),
-                            history: &conversation_history,
+                            history: self.get_history_strings().await,
                             started_at: started_at.clone(),
                             finished_at: Some(crate::models::FlexibleTimestamp::now()),
                             error: None,
@@ -226,17 +235,19 @@ impl AgentRuntime {
                     }
                 }
 
-                let outcome = self.compactor.compact(&mut conversation_history).await;
+                let mut session = self.session.lock().await;
+                let outcome = self.compactor.compact(&mut session).await;
                 if outcome.compacted {
                     info!(
                         "Context compacted: {} -> {} tokens",
                         outcome.tokens_before, outcome.tokens_after
                     );
                 }
+                drop(session);
 
                 step += 1;
                 info!("Elastic step {}", step);
-                let actions = self.next_actions(goal, &conversation_history).await?;
+                let actions = self.next_actions(goal).await?;
 
                 if actions.is_empty() {
                     info!("Agent decided to stop (no actions).");
@@ -246,7 +257,7 @@ impl AgentRuntime {
                         phase: RuntimePhase::Completed,
                         last_action: None,
                         last_observation: Some("Agent returned no actions; loop stopped."),
-                        history: &conversation_history,
+                        history: self.get_history_strings().await,
                         started_at: started_at.clone(),
                         finished_at: Some(crate::models::FlexibleTimestamp::now()),
                         error: None,
@@ -256,19 +267,34 @@ impl AgentRuntime {
                 }
 
                 for action in actions {
-                    conversation_history.push(format!("Action: {:?}", action));
+                    {
+                        let mut session = self.session.lock().await;
+                        session.add_message(Message::new(
+                            MessageRole::Assistant,
+                            format!("Action: {:?}", action),
+                        ));
+                    }
+
                     let observation = match self.execute_action(&action).await {
                         Ok(obs) => obs,
                         Err(e) => format!("Error: {}", e),
                     };
-                    conversation_history.push(format!("Observation: {}", observation));
+
+                    {
+                        let mut session = self.session.lock().await;
+                        session.add_message(Message::new(
+                            MessageRole::User,
+                            format!("Observation: {}", observation),
+                        ));
+                    }
+
                     self.persist_state(PersistStateInput {
                         goal,
                         step,
                         phase: RuntimePhase::Running,
                         last_action: Some(&action),
                         last_observation: Some(&observation),
-                        history: &conversation_history,
+                        history: self.get_history_strings().await,
                         started_at: started_at.clone(),
                         finished_at: None,
                         error: None,
@@ -314,7 +340,7 @@ impl AgentRuntime {
                     phase: RuntimePhase::Failed,
                     last_action: None,
                     last_observation: Some("Loop failed."),
-                    history: &conversation_history,
+                    history: self.get_history_strings().await,
                     started_at,
                     finished_at: Some(crate::models::FlexibleTimestamp::now()),
                     error: Some(e.to_string()),
@@ -356,18 +382,27 @@ impl AgentRuntime {
         Ok(())
     }
 
-    async fn next_actions(
-        &self,
-        goal: &str,
-        history: &[String],
-    ) -> Result<Vec<OrchestrationAction>> {
-        let history_summary = history
+    async fn get_history_strings(&self) -> Vec<String> {
+        let session = self.session.lock().await;
+        session
+            .recent_messages()
             .iter()
-            .rev()
-            .take(8)
-            .cloned()
-            .collect::<Vec<_>>()
-            .join("\n");
+            .map(|m| format!("{:?}: {}", m.role, m.content))
+            .collect()
+    }
+
+    async fn next_actions(&self, goal: &str) -> Result<Vec<OrchestrationAction>> {
+        let history_summary = {
+            let session = self.session.lock().await;
+            session
+                .recent_messages()
+                .iter()
+                .rev()
+                .take(8)
+                .map(|m| format!("{:?}: {}", m.role, m.content))
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
 
         let context = DecisionContext::new("orchestration")
             .with_summary(format!("goal: {}\n\nhistory:\n{}", goal, history_summary));

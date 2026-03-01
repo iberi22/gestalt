@@ -107,6 +107,7 @@ async fn init_decision_engine(
     } else {
         // The engine now uses the stochastic rotator as its single entry point
         // providing transparent failover between all added providers.
+        // It's crucial this is the FIRST provider added so AgentRuntime picks it up.
         Ok(Arc::new(
             DecisionEngine::builder()
                 .with_provider(rotator)

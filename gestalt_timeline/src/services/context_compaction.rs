@@ -27,15 +27,14 @@ impl ContextCompactor {
         }
     }
 
-    pub async fn compact(&self, history: &mut Vec<String>) -> CompactionOutcome {
-        let mut session = SessionContext::new(self.config.clone());
-
-        for item in history.iter() {
-            let mut message = Message::new(MessageRole::Assistant, item.clone());
-            if let Ok(tokens) = self.estimator.count_message(&message) {
-                message.token_count = Some(tokens);
+    pub async fn compact(&self, session: &mut SessionContext) -> CompactionOutcome {
+        // Update token counts for all messages using the estimator
+        for msg in session.recent_messages_mut() {
+            if msg.token_count.is_none() {
+                if let Ok(tokens) = self.estimator.count_message(msg) {
+                    msg.token_count = Some(tokens);
+                }
             }
-            session.add_message(message);
         }
 
         let tokens_before = session.total_tokens();
@@ -59,7 +58,6 @@ impl ContextCompactor {
             };
         }
 
-        let compactable_len = compactable_messages.len();
         let chunk = synapse_agentic::prelude::MessageChunk::new(
             compactable_messages.to_vec(),
             0,
@@ -67,17 +65,19 @@ impl ContextCompactor {
 
         match self.summarizer.summarize(&chunk).await {
             Ok(summary_msg) => {
-                let keep_recent = session.recent_messages().len();
-                let mut next = Vec::with_capacity(keep_recent + 1);
-                next.push(summary_msg.content);
-                next.extend_from_slice(&history[compactable_len..]);
-                *history = next;
+                // In a real framework integration, the SessionContext would handle the message rotation
+                // and replacement. For this implementation, we simulate it.
+                let mut new_messages = vec![summary_msg];
+                new_messages.extend_from_slice(session.recent_messages());
 
-                let tokens_after = history
-                    .iter()
-                    .filter_map(|line| self.estimator.count_tokens(line).ok())
-                    .sum::<u32>();
+                // Note: The SessionContext should ideally have a method to replace messages.
+                // Assuming it's simple enough to recreate for this demonstration.
+                *session = SessionContext::new(self.config.clone());
+                for msg in new_messages {
+                    session.add_message(msg);
+                }
 
+                let tokens_after = session.total_tokens();
                 CompactionOutcome {
                     compacted: true,
                     tokens_before,
@@ -121,18 +121,21 @@ mod tests {
     async fn compacts_when_history_is_large() {
         let provider = Arc::new(MockProvider);
         let compactor = ContextCompactor::new(provider, "gpt-4o");
-        let mut history = Vec::new();
+        let mut session = SessionContext::new(CompactionConfig::small_context());
 
         for i in 0..80 {
-            history.push(format!(
-                "Action {} Observation with verbose payload {}",
-                i,
-                "x".repeat(120)
+            session.add_message(Message::new(
+                MessageRole::User,
+                format!(
+                    "Action {} Observation with verbose payload {}",
+                    i,
+                    "x".repeat(120)
+                )
             ));
         }
 
-        let outcome = compactor.compact(&mut history).await;
+        let outcome = compactor.compact(&mut session).await;
         assert!(outcome.compacted);
-        assert_eq!(history.first().unwrap(), "Summary from mock provider");
+        assert_eq!(session.recent_messages().first().unwrap().content, "Summary from mock provider");
     }
 }

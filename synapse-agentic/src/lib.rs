@@ -350,6 +350,31 @@ pub mod prelude {
         Critical,
     }
 
+    #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+    pub enum TaskStatus {
+        Pending,
+        InProgress,
+        Completed,
+        Failed,
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct PlannedTask {
+        pub id: String,
+        pub description: String,
+        pub estimated_tool: Option<String>,
+        pub status: TaskStatus,
+    }
+
+    #[async_trait]
+    pub trait ExplicitPlanner: Send + Sync {
+        async fn plan(
+            &self,
+            goal: &str,
+            context: &DecisionContext,
+        ) -> anyhow::Result<Vec<PlannedTask>>;
+    }
+
     #[derive(Debug, Clone)]
     pub struct SessionContext {
         cfg: CompactionConfig,
@@ -366,7 +391,10 @@ pub mod prelude {
             self.messages.push(msg);
         }
         pub fn total_tokens(&self) -> u32 {
-            self.messages.iter().map(|m| m.token_count.unwrap_or(0)).sum()
+            self.messages
+                .iter()
+                .map(|m| m.token_count.unwrap_or(0))
+                .sum()
         }
         pub fn overflow_risk(&self) -> ContextOverflowRisk {
             let total = self.total_tokens();

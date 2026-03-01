@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/project.dart';
 import '../models/task.dart'; // We need a Task model
+import '../models/agent.dart';
 import '../services/api_service.dart';
 
 class ProjectDetailScreen extends StatefulWidget {
@@ -14,13 +15,24 @@ class ProjectDetailScreen extends StatefulWidget {
 
 class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
   final ApiService _api = ApiService();
-  List<Task> _tasks = []; // Placeholder until Task model is ready
+  List<Task> _tasks = [];
+  List<Agent> _agents = [];
   bool _isLoading = true;
 
   @override
   void initState() {
     super.initState();
     _fetchTasks();
+    _fetchAgents();
+  }
+
+  Future<void> _fetchAgents() async {
+    final agents = await _api.getAgents();
+    if (mounted) {
+      setState(() {
+        _agents = agents;
+      });
+    }
   }
 
   Future<void> _fetchTasks() async {
@@ -38,29 +50,72 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
 
   Future<void> _createTask() async {
     final TextEditingController controller = TextEditingController();
+    String? selectedAgentId;
+
     await showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('New Task'),
-        content: TextField(
-          controller: controller,
-          decoration: const InputDecoration(hintText: "Task Description"),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-          ElevatedButton(
-            onPressed: () async {
-              if (controller.text.isNotEmpty) {
-                 final success = await _api.createTask(widget.project.name, controller.text);
-                 if (success) {
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          backgroundColor: const Color(0xFF1E1E1E),
+          title: const Text('New Task', style: TextStyle(color: Colors.white)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: controller,
+                style: const TextStyle(color: Colors.white),
+                decoration: const InputDecoration(
+                  hintText: "Task Description",
+                  hintStyle: TextStyle(color: Colors.white24),
+                ),
+              ),
+              const SizedBox(height: 16),
+              DropdownButtonFormField<String>(
+                dropdownColor: const Color(0xFF2E2E2E),
+                value: selectedAgentId,
+                decoration: const InputDecoration(
+                  labelText: "Assign Agent",
+                  labelStyle: TextStyle(color: Colors.white70),
+                ),
+                style: const TextStyle(color: Colors.white),
+                items: _agents.map((agent) {
+                  return DropdownMenuItem(
+                    value: agent.id,
+                    child: Text(agent.name),
+                  );
+                }).toList(),
+                onChanged: (value) {
+                  setDialogState(() {
+                    selectedAgentId = value;
+                  });
+                },
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel', style: TextStyle(color: Colors.white54)),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                if (controller.text.isNotEmpty) {
+                  final success = await _api.createTask(
+                    widget.project.name,
+                    controller.text,
+                    agentId: selectedAgentId,
+                  );
+                  if (success) {
                     if (mounted) Navigator.pop(context);
                     _fetchTasks();
-                 }
-              }
-            },
-            child: const Text('Add'),
-          ),
-        ],
+                  }
+                }
+              },
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.blueAccent),
+              child: const Text('Add', style: TextStyle(color: Colors.white)),
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -1,7 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
-import 'package:flutter/material.dart';
 import 'package:glass_kit/glass_kit.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../services/api_service.dart';
@@ -109,11 +108,54 @@ class _DashboardScreenState extends State<DashboardScreen> {
     setState(() => _isLoading = false);
   }
 
+  Future<void> _showCreateProjectDialog() async {
+    final TextEditingController controller = TextEditingController();
+    await showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF1E1E1E),
+        title: const Text('Create New Project', style: TextStyle(color: Colors.white)),
+        content: TextField(
+          controller: controller,
+          style: const TextStyle(color: Colors.white),
+          decoration: const InputDecoration(
+            hintText: "Project Name",
+            hintStyle: TextStyle(color: Colors.white24),
+            enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.white24)),
+            focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.blueAccent)),
+          ),
+          autofocus: true,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel', style: TextStyle(color: Colors.white54)),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              if (controller.text.isNotEmpty) {
+                final success = await _api.createProject(controller.text);
+                if (success) {
+                  if (mounted) Navigator.pop(context);
+                  _fetchStaticData();
+                }
+              }
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.blueAccent),
+            child: const Text('Create', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(32.0),
-      child: Column(
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      body: Padding(
+        padding: const EdgeInsets.all(32.0),
+        child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Header
@@ -226,6 +268,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           Expanded(
             child: GlassContainer.clearGlass(
               width: double.infinity,
+              height: double.infinity,
               borderRadius: BorderRadius.circular(24),
               borderWidth: 1,
               borderColor: Colors.white.withOpacity(0.05),
@@ -255,12 +298,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ).animate().fadeIn(delay: 600.ms),
         ],
       ),
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: _showCreateProjectDialog,
+        backgroundColor: Colors.blueAccent,
+        child: const Icon(Icons.add_to_photos, color: Colors.white),
+      ).animate().fadeIn(delay: 800.ms).scale(),
     );
   }
 
   Widget _buildInfoCard(String title, String value, IconData icon, Color color) {
     return GlassContainer.clearGlass(
       height: 120,
+      width: double.infinity,
       borderRadius: BorderRadius.circular(20),
       borderWidth: 1,
       borderColor: color.withOpacity(0.2),

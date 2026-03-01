@@ -50,6 +50,7 @@ pub struct CreateProjectRequest {
 pub struct CreateTaskRequest {
     pub project: String,
     pub description: String,
+    pub agent_id: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -291,9 +292,10 @@ async fn create_task(
     State(state): State<AppState>,
     Json(payload): Json<CreateTaskRequest>,
 ) -> (StatusCode, Json<Option<crate::models::Task>>) {
+    let agent_id = payload.agent_id.as_deref().unwrap_or("system-api");
     match state
         .task
-        .create_task(&payload.project, &payload.description, "system-api")
+        .create_task(&payload.project, &payload.description, agent_id)
         .await
     {
         Ok(task) => (StatusCode::CREATED, Json(Some(task))),

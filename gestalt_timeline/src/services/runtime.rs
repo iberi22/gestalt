@@ -13,7 +13,7 @@ use crate::services::{
     TimelineService, VirtualFs, WatchService,
 };
 use synapse_agentic::prelude::{
-    Decision, DecisionContext, DecisionEngine, EmptyContext, Hive, Message, MessageRole, ToolRegistry,
+    async_trait, Agent, Decision, DecisionContext, DecisionEngine, EmptyContext, Hive, Message, MessageRole, ToolRegistry,
 };
 
 /// Orchestration action executed by AgentRuntime.
@@ -80,6 +80,7 @@ pub enum OrchestrationAction {
 #[derive(Clone)]
 pub struct AgentRuntime {
     agent_id: String,
+    parent_agent_id: Option<String>,
     engine: Arc<DecisionEngine>,
     registry: Arc<ToolRegistry>,
     project: ProjectService,
@@ -133,6 +134,7 @@ impl AgentRuntime {
 
         Self {
             agent_id,
+            parent_agent_id: None,
             engine,
             registry,
             project,
@@ -154,12 +156,20 @@ impl AgentRuntime {
         }
     }
 
+    /// Set the parent agent ID for this runtime.
+    pub fn with_parent(mut self, parent_id: String) -> Self {
+        self.parent_agent_id = Some(parent_id);
+        self
+    }
+
     /// Run the autonomous loop for a specific goal.
     pub async fn run_loop(&self, goal: &str) -> Result<()> {
         info!("Starting Autonomous Loop for Agent: {}", self.agent_id);
         info!("Goal: {}", goal);
 
         use crate::services::AgentStatus;
+        // Connect and register agent
+        let _ = self.agent.connect(&self.agent_id, None).await;
         let _ = self
             .agent
             .set_status(&self.agent_id, AgentStatus::Busy)
@@ -189,8 +199,23 @@ impl AgentRuntime {
 
         let loop_result: Result<()> = async {
             let mut step = 0usize;
+            let mut last_poll_time = started_at.0;
 
             loop {
+                // Fetch recent events from other agents to maintain context
+                if let Ok(events) = self.timeline.get_events_since(last_poll_time).await {
+                    for event in events {
+                        if event.agent_id != self.agent_id {
+                            conversation_history.push(format!(
+                                "Observation (from {}): {:?} | {:?}",
+                                event.agent_id, event.event_type, event.payload
+                            ));
+                            if event.timestamp.0 > last_poll_time {
+                                last_poll_time = event.timestamp.0;
+                            }
+                        }
+                    }
+                }
                 if let Some(limit) = self.hard_step_cap {
                     if step >= limit {
                         warn!("Hard safety cap reached at {} steps.", limit);
@@ -285,6 +310,28 @@ impl AgentRuntime {
             .agent
             .set_status(&self.agent_id, AgentStatus::Idle)
             .await;
+
+        if let Some(parent) = &self.parent_agent_id {
+            match &loop_result {
+                Ok(_) => {
+                    let _ = self
+                        .timeline
+                        .emit(&self.agent_id, EventType::SubAgentCompleted(parent.clone()))
+                        .await;
+                }
+                Err(e) => {
+                    let _ = self
+                        .timeline
+                        .emit(
+                            &self.agent_id,
+                            EventType::SubAgentFailed(format!("{}: {}", parent, e)),
+                        )
+                        .await;
+                }
+            }
+            let _ = self.agent.disconnect(&self.agent_id).await;
+        }
+
         if let Err(e) = loop_result {
             let _ = self
                 .persist_state(PersistStateInput {
@@ -444,13 +491,14 @@ impl AgentRuntime {
                     .to_string();
                 vec![OrchestrationAction::ExecuteShell { command }]
             }
+>>>>>>> origin/main
             "list_projects" => vec![OrchestrationAction::ListProjects],
             "list_jobs" => vec![OrchestrationAction::ListJobs],
             "flush_vfs" => vec![OrchestrationAction::FlushVfs],
             "review_merge" => vec![OrchestrationAction::ReviewAndMerge {
-                goal: reasoning.to_string(),
+                goal: decision.reasoning.to_string(),
             }],
-            "delegate_task" => {
+            "delegate" | "delegate_task" => {
                 let agent = params
                     .and_then(|p| p.get("agent"))
                     .and_then(|v| v.as_str())
@@ -493,14 +541,30 @@ impl AgentRuntime {
                 vec![OrchestrationAction::AwaitJob { job_id }]
             }
             "chat" => vec![OrchestrationAction::Chat {
-                response: reasoning.to_string(),
+                response: decision.reasoning.to_string(),
             }],
             _ => vec![OrchestrationAction::Chat {
-                response: format!("Decision: {} | {}", action, reasoning),
+                response: format!("Decision: {} | {}", decision.action, decision.reasoning),
             }],
         }
     }
 
+}
+
+#[async_trait]
+impl Agent for AgentRuntime {
+    type Input = String;
+
+    fn name(&self) -> &str {
+        &self.agent_id
+    }
+
+    async fn handle(&mut self, goal: Self::Input) -> Result<()> {
+        self.run_loop(&goal).await
+    }
+}
+
+impl AgentRuntime {
     async fn execute_action(&self, action: &OrchestrationAction) -> Result<String> {
         match action {
             OrchestrationAction::CreateProject {
@@ -725,16 +789,25 @@ impl AgentRuntime {
                     self.watch.clone(),
                     self.agent.clone(),
                     self.memory.clone(),
-                );
+                )
+                .with_parent(self.agent_id.clone());
 
-                let _ = self.agent.connect(&sub_agent_id, Some(agent)).await;
-                match Box::pin(async move { sub_runtime.run_loop(goal).await }).await {
-                    Ok(_) => Ok(format!(
-                        "Delegated task to '{}' completed successfully.",
-                        agent
-                    )),
-                    Err(e) => Ok(format!("Delegated task to '{}' failed: {}", agent, e)),
-                }
+                let mut hive = self.hive.lock().await;
+                let handle = hive.spawn(sub_runtime);
+                let _ = handle.send(goal.clone()).await;
+
+                let _ = self
+                    .timeline
+                    .emit(
+                        &self.agent_id,
+                        EventType::SubAgentSpawned(format!("{} for goal: {}", agent, goal)),
+                    )
+                    .await;
+
+                Ok(format!(
+                    "Delegated task to '{}' in background. Watch timeline for updates.",
+                    agent
+                ))
             }
             OrchestrationAction::CallAgent { tool, args } => {
                 if let Ok(result) = self.registry.call(tool, &EmptyContext, args.clone()).await {

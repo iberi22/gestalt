@@ -1,12 +1,12 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:glass_kit/glass_kit.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../services/api_service.dart';
 import '../models/agent.dart';
 import '../models/project.dart';
-import '../widgets/project_card.dart';
 import '../widgets/agent_status_pill.dart';
 import '../widgets/log_console.dart';
 
@@ -18,7 +18,6 @@ class DashboardScreen extends StatefulWidget {
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
-  final ApiService _api = ApiService();
   final ScrollController _logController = ScrollController();
   final TextEditingController _inputController = TextEditingController();
 
@@ -37,8 +36,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   void _fetchStaticData() async {
     try {
-      final projects = await _api.getProjects();
-      final agents = await _api.getAgents();
+      final api = context.read<ApiService>();
+      final projects = await api.getProjects();
+      final agents = await api.getAgents();
       if (mounted) {
         setState(() {
           _projects = projects;
@@ -52,7 +52,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   void _connectWebSocket() {
     try {
-      _channel = _api.timelineStream;
+      final api = context.read<ApiService>();
+      _channel = api.timelineStream;
       _channel?.stream.listen(
         (message) {
           if (!mounted) return;
@@ -103,7 +104,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Future<void> _sendCommand() async {
     if (_inputController.text.isEmpty) return;
     setState(() => _isLoading = true);
-    await _api.sendGoal(_inputController.text);
+    final api = context.read<ApiService>();
+    await api.sendGoal(_inputController.text);
     _inputController.clear();
     setState(() => _isLoading = false);
   }
@@ -332,7 +334,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Text(title, style: const TextStyle(color: Colors.white54, fontSize: 12, fontWeight: FontWeight.bold)),
+                Text(title,
+                    style: const TextStyle(color: Colors.white54, fontSize: 12, fontWeight: FontWeight.bold)),
                 Text(value, style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
               ],
             ),

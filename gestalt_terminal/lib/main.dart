@@ -42,6 +42,7 @@ class _MainScreenState extends State<MainScreen> {
   // xterm terminal
   final Terminal _terminal = Terminal(maxLines: 10000);
   late final TerminalController _terminalController;
+  final TextEditingController _chatController = TextEditingController();
 
   // Services
   final ApiClient _apiClient = ApiClient();
@@ -84,6 +85,7 @@ class _MainScreenState extends State<MainScreen> {
   @override
   void dispose() {
     _pollingTimer?.cancel();
+    _chatController.dispose();
     super.dispose();
   }
 
@@ -126,6 +128,21 @@ class _MainScreenState extends State<MainScreen> {
     });
   }
 
+  void _sendChatMessage() async {
+    final text = _chatController.text.trim();
+    if (text.isEmpty) return;
+
+    _chatController.clear();
+    final success = await _apiClient.sendChat(text);
+    if (!success) {
+      if (mounted) {
+         ScaffoldMessenger.of(context).showSnackBar(
+           const SnackBar(content: Text("Failed to send message"), backgroundColor: Colors.redAccent),
+         );
+      }
+    }
+  }
+
   void _addEventToUi(dynamic event) {
     // Convert backend event to MCP Component
     final eventType = event['event_type'] as String? ?? 'Unknown';
@@ -133,7 +150,13 @@ class _MainScreenState extends State<MainScreen> {
 
     McpComponent? component;
 
-    if (eventType == 'TaskCreated' || eventType == 'TaskStarted') {
+    if (eventType == 'ChatMessage' || eventType == 'chat_message') {
+       final sender = payload['sender'] as String? ?? 'unknown';
+       component = McpComponent.card(
+         title: "CHAT:$sender",
+         content: payload['text'] as String? ?? ''
+       );
+    } else if (eventType == 'TaskCreated' || eventType == 'TaskStarted') {
        final taskDesc = payload.toString();
        component = McpComponent.card(
          title: "New Task: $eventType",
@@ -240,6 +263,43 @@ class _MainScreenState extends State<MainScreen> {
                 ),
                 Expanded(
                   child: McpUiRenderer(components: _mcpComponents),
+                ),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: const BoxDecoration(
+                    color: Color(0xFF1A1A1A),
+                    border: Border(top: BorderSide(color: Colors.white10)),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _chatController,
+                          style: const TextStyle(color: Colors.white, fontSize: 13),
+                          decoration: InputDecoration(
+                            hintText: "Talk to agent...",
+                            hintStyle: const TextStyle(color: Colors.white24),
+                            filled: true,
+                            fillColor: Colors.black26,
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(24),
+                              borderSide: BorderSide.none,
+                            ),
+                          ),
+                          onSubmitted: (val) => _sendChatMessage(),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      IconButton(
+                        onPressed: _sendChatMessage,
+                        icon: const Icon(Icons.send, color: Colors.greenAccent, size: 20),
+                        style: IconButton.styleFrom(
+                          backgroundColor: Colors.greenAccent.withValues(alpha: 0.1),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ),

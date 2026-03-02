@@ -604,6 +604,13 @@ impl AgentRuntime {
             }
             OrchestrationAction::Chat { response } => {
                 info!("Agent says: {}", response);
+                let _ = self.timeline.record_event(
+                    TimelineEvent::new(&self.agent_id, EventType::ChatMessage)
+                        .with_payload(serde_json::json!({
+                            "text": response,
+                            "sender": self.agent_id
+                        }))
+                ).await;
                 Ok(format!("Agent said: {}", response))
             }
             OrchestrationAction::ReadFile { path } => {

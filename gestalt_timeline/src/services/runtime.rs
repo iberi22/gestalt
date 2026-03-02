@@ -8,12 +8,13 @@ use tracing::{info, warn};
 
 use crate::models::{AgentRuntimeState, EventType, RuntimePhase, TimelineEvent};
 use crate::services::{
-    spawn_reviewer_agent, AgentService, CompactionConfig, ContextCompactor, LockStatus,
-    MemoryService, OverlayFs, ProjectService, ReviewerMessage, SessionContext, TaskService,
-    TimelineService, VirtualFs, WatchService,
+    spawn_reviewer_agent, AgentService, CompactionConfig, ContextCompactor, FileManager,
+    LockStatus, MemoryService, OverlayFs, ProjectService, ReviewerMessage, SessionContext,
+    TaskService, TimelineService, VirtualFs, WatchService,
 };
 use synapse_agentic::prelude::{
-    async_trait, Agent, Decision, DecisionContext, DecisionEngine, EmptyContext, Hive, Message, MessageRole, ToolRegistry,
+    async_trait, Agent, Decision, DecisionContext, DecisionEngine, EmptyContext, Hive, Message,
+    MessageRole, ToolRegistry,
 };
 
 /// Orchestration action executed by AgentRuntime.
@@ -132,6 +133,9 @@ impl AgentRuntime {
             ))
         });
 
+        let (vfs, actor) = FileManager::new();
+        tokio::spawn(actor.run());
+
         Self {
             agent_id,
             parent_agent_id: None,
@@ -147,7 +151,7 @@ impl AgentRuntime {
                 .ok()
                 .and_then(|v| v.parse::<usize>().ok()),
             jobs: Arc::new(Mutex::new(HashMap::new())),
-            vfs: Arc::new(OverlayFs::new()),
+            vfs: Arc::new(vfs),
             compactor: ContextCompactor::new(compactor_provider, "gpt-4o"),
             hive: Arc::new(Mutex::new(Hive::new())),
             session: Arc::new(Mutex::new(SessionContext::new(
@@ -491,7 +495,6 @@ impl AgentRuntime {
                     .to_string();
                 vec![OrchestrationAction::ExecuteShell { command }]
             }
->>>>>>> origin/main
             "list_projects" => vec![OrchestrationAction::ListProjects],
             "list_jobs" => vec![OrchestrationAction::ListJobs],
             "flush_vfs" => vec![OrchestrationAction::FlushVfs],

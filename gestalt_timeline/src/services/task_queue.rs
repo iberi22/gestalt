@@ -181,6 +181,7 @@ impl TaskQueue {
                             agent_id,
                             &goal[..goal.len().min(60)]
                         );
+                        let runtime = runtime.with_task_id(task_id.clone());
                         match runtime.run_loop(&goal).await {
                             Ok(_) => {
                                 info!("✅ [TaskQueue] Agent '{}' completed goal.", agent_id);

@@ -81,6 +81,7 @@ pub enum OrchestrationAction {
 #[derive(Clone)]
 pub struct AgentRuntime {
     agent_id: String,
+    task_id: Option<String>,
     parent_agent_id: Option<String>,
     engine: Arc<DecisionEngine>,
     registry: Arc<ToolRegistry>,
@@ -138,6 +139,7 @@ impl AgentRuntime {
 
         Self {
             agent_id,
+            task_id: None,
             parent_agent_id: None,
             engine,
             registry,
@@ -158,6 +160,12 @@ impl AgentRuntime {
                 CompactionConfig::small_context(),
             ))),
         }
+    }
+
+    /// Assign a task ID to this runtime.
+    pub fn with_task_id(mut self, task_id: String) -> Self {
+        self.task_id = Some(task_id);
+        self
     }
 
     /// Set the parent agent ID for this runtime.
@@ -607,13 +615,17 @@ impl AgentRuntime {
             }
             OrchestrationAction::Chat { response } => {
                 info!("Agent says: {}", response);
-                let _ = self.timeline.record_event(
-                    TimelineEvent::new(&self.agent_id, EventType::ChatMessage)
-                        .with_payload(serde_json::json!({
-                            "text": response,
-                            "sender": self.agent_id
-                        }))
-                ).await;
+                let mut event = TimelineEvent::new(&self.agent_id, EventType::ChatMessage)
+                    .with_payload(serde_json::json!({
+                        "text": response,
+                        "sender": self.agent_id,
+                    }));
+
+                if let Some(tid) = &self.task_id {
+                    event = event.with_task(tid);
+                }
+
+                let _ = self.timeline.record_event(event).await;
                 Ok(format!("Agent said: {}", response))
             }
             OrchestrationAction::ReadFile { path } => {

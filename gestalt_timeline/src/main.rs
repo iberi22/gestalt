@@ -700,11 +700,14 @@ async fn main() -> anyhow::Result<()> {
 
             // Initialize decision engine
             let engine = init_decision_engine(&settings.cognition).await?;
+            let watch_service = Arc::new(WatchService::new(db.clone(), timeline_service.clone()));
 
             let bot_service = TelegramService::new(
                 telegram_settings.bot_token,
                 engine,
                 telegram_settings.allowed_users,
+                watch_service,
+                db,
             );
 
             bot_service.start().await?;
@@ -729,10 +732,13 @@ async fn main() -> anyhow::Result<()> {
             let tg_handle = if let Some(tg_settings) = settings.telegram {
                 let tg_queue = Arc::clone(&task_queue);
                 let tg_cognition = cognition.clone();
+                let tg_watch = Arc::new(WatchService::new(db.clone(), timeline_service.clone()));
                 let bot_service = TelegramService::new(
                     tg_settings.bot_token,
                     tg_cognition,
                     tg_settings.allowed_users,
+                    tg_watch,
+                    db.clone(),
                 )
                 .with_task_queue(tg_queue);
 

@@ -64,10 +64,11 @@ impl GraphNode for GestaltNode {
         let critic_feedback = state.get_string("critic_feedback").unwrap_or_default();
 
         // Extract current plan progress
-        let plan_val = state.get_value("plan").unwrap_or(json!([]));
+        let default_plan = json!([]);
+        let plan_val = state.get_value("plan").unwrap_or(&default_plan);
         let step_index = state
             .get_value("current_step_index")
-            .and_then(|v| v.as_u64())
+            .and_then(|v: &serde_json::Value| v.as_u64())
             .unwrap_or(0) as usize;
 
         let plan: Vec<PlannedTask> = serde_json::from_value(plan_val.clone())?;
@@ -204,7 +205,7 @@ impl ExplicitPlanner for GestaltAgent {
     async fn plan(
         &self,
         goal: &str,
-        context: &DecisionContext,
+        _context: &DecisionContext,
     ) -> anyhow::Result<Vec<PlannedTask>> {
         // In a real implementation, we would use an LLM to generate the plan.
         // For now, we simulate the structured planning as per the architectural proposal.

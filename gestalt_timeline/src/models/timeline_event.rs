@@ -135,6 +135,8 @@ pub enum EventType {
     VfsFlushStarted,
     /// VFS Flush to disk completed
     VfsFlushCompleted,
+    /// A chat message from user or agent
+    ChatMessage,
     /// Custom event type
     Custom(String),
 }
@@ -174,6 +176,7 @@ impl<'de> Deserialize<'de> for EventType {
             "vfs_lock_conflict" => Ok(EventType::VfsLockConflict),
             "vfs_flush_started" => Ok(EventType::VfsFlushStarted),
             "vfs_flush_completed" => Ok(EventType::VfsFlushCompleted),
+            "chat_message" => Ok(EventType::ChatMessage),
             other => {
                 if let Some(agent) = other.strip_prefix("sub_agent_spawned:") {
                     return Ok(EventType::SubAgentSpawned(agent.to_string()));
@@ -219,6 +222,7 @@ impl fmt::Display for EventType {
             EventType::VfsLockConflict => write!(f, "vfs_lock_conflict"),
             EventType::VfsFlushStarted => write!(f, "vfs_flush_started"),
             EventType::VfsFlushCompleted => write!(f, "vfs_flush_completed"),
+            EventType::ChatMessage => write!(f, "chat_message"),
             EventType::SubAgentSpawned(s) => write!(f, "sub_agent_spawned:{}", s),
             EventType::SubAgentOutput(s) => write!(f, "sub_agent_output:{}", s),
             EventType::SubAgentCompleted(s) => write!(f, "sub_agent_completed:{}", s),

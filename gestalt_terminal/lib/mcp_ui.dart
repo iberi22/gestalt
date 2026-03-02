@@ -23,31 +23,42 @@ class McpUiRenderer extends StatelessWidget {
 
   Widget _buildComponent(BuildContext context, McpComponent component) {
     return component.map(
-      card: (c) => _GlassContainer(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              c.title.toUpperCase(),
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w900,
-                letterSpacing: 1.5,
-                color: Colors.greenAccent.shade400,
+      card: (c) {
+        if (c.title.startsWith("CHAT:")) {
+          final sender = c.title.substring(5);
+          final isUser = sender == "user";
+          return _ChatBubble(
+            text: c.content,
+            isUser: isUser,
+            sender: sender,
+          );
+        }
+        return _GlassContainer(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                c.title.toUpperCase(),
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 1.5,
+                  color: Colors.greenAccent.shade400,
+                ),
               ),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              c.content,
-              style: const TextStyle(
-                color: Colors.white70,
-                height: 1.5,
-                fontSize: 14,
+              const SizedBox(height: 12),
+              Text(
+                c.content,
+                style: const TextStyle(
+                  color: Colors.white70,
+                  height: 1.5,
+                  fontSize: 14,
+                ),
               ),
-            ),
-          ],
-        ),
-      ),
+            ],
+          ),
+        );
+      },
       button: (b) => Padding(
         padding: const EdgeInsets.symmetric(vertical: 4.0, horizontal: 2.0),
         child: ElevatedButton(
@@ -291,6 +302,59 @@ class _VfsMonitorWidget extends StatelessWidget {
               ],
             ),
           )),
+        ],
+      ),
+    );
+  }
+}
+
+class _ChatBubble extends StatelessWidget {
+  final String text;
+  final bool isUser;
+  final String sender;
+
+  const _ChatBubble({
+    required this.text,
+    required this.isUser,
+    required this.sender,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16.0),
+      child: Column(
+        crossAxisAlignment: isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+        children: [
+          Text(
+            sender.toUpperCase(),
+            style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white38),
+          ),
+          const SizedBox(height: 4),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.7),
+            decoration: BoxDecoration(
+              color: isUser
+                  ? Colors.blueAccent.withValues(alpha: 0.2)
+                  : Colors.greenAccent.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.only(
+                topLeft: const Radius.circular(16),
+                topRight: const Radius.circular(16),
+                bottomLeft: Radius.circular(isUser ? 16 : 0),
+                bottomRight: Radius.circular(isUser ? 0 : 16),
+              ),
+              border: Border.all(
+                color: isUser
+                    ? Colors.blueAccent.withValues(alpha: 0.3)
+                    : Colors.greenAccent.withValues(alpha: 0.2),
+              ),
+            ),
+            child: Text(
+              text,
+              style: const TextStyle(color: Colors.white, fontSize: 14, height: 1.4),
+            ),
+          ),
         ],
       ),
     );

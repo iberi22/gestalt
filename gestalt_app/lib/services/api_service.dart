@@ -121,12 +121,16 @@ class ApiService {
 
   // --- Task Management ---
 
-  Future<bool> createTask(String project, String description) async {
+  Future<bool> createTask(String project, String description, {String? agentId}) async {
     try {
       final response = await http.post(
         Uri.parse('$baseUrl/tasks'),
         headers: _postHeaders,
-        body: json.encode({'project': project, 'description': description}),
+        body: json.encode({
+          'project': project,
+          'description': description,
+          if (agentId != null) 'agent_id': agentId,
+        }),
       );
       return response.statusCode == 201;
     } catch (e) {

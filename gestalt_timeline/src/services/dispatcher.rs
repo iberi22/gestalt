@@ -8,7 +8,8 @@ use crate::services::TimelineService;
 use anyhow::Result;
 use std::process::Stdio;
 use std::sync::Arc;
-use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::fs::File;
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::Command;
 use tracing::{error, info};
 
@@ -43,6 +44,7 @@ impl DispatcherService {
             .await?;
 
         let tl_clone = self.timeline.clone();
+        let log_filename = format!("{}.log", task_name);
 
         tokio::spawn(async move {
             let mut cmd = Command::new(&agent_type_str);
@@ -52,21 +54,66 @@ impl DispatcherService {
             #[cfg(windows)]
             {
                 const CREATE_NO_WINDOW: u32 = 0x08000000;
+                use std::os::windows::process::CommandExt;
                 cmd.creation_flags(CREATE_NO_WINDOW);
             }
 
             match cmd.spawn() {
                 Ok(mut child) => {
                     let stdout = child.stdout.take().expect("Failed to open stdout");
-                    let mut reader = BufReader::new(stdout).lines();
+                    let stderr = child.stderr.take().expect("Failed to open stderr");
+
+                    let mut stdout_reader = BufReader::new(stdout).lines();
+                    let mut stderr_reader = BufReader::new(stderr).lines();
 
                     let tl_inner = tl_clone.clone();
                     let a_type_inner = agent_type_str.clone();
+
+                    let mut log_file = match File::create(&log_filename).await {
+                        Ok(f) => Some(f),
+                        Err(e) => {
+                            error!("Failed to create log file {}: {}", log_filename, e);
+                            None
+                        }
+                    };
+
                     tokio::spawn(async move {
-                        while let Ok(Some(line)) = reader.next_line().await {
-                            let _ = tl_inner
-                                .emit(&a_type_inner, EventType::SubAgentOutput(line))
-                                .await;
+                        let mut stdout_done = false;
+                        let mut stderr_done = false;
+
+                        loop {
+                            tokio::select! {
+                                result = stdout_reader.next_line(), if !stdout_done => {
+                                    match result {
+                                        Ok(Some(line)) => {
+                                            if let Some(ref mut f) = log_file {
+                                                let _ = f.write_all(format!("[STDOUT] {}\n", line).as_bytes()).await;
+                                            }
+                                            let _ = tl_inner
+                                                .emit(&a_type_inner, EventType::SubAgentOutput(line))
+                                                .await;
+                                        }
+                                        _ => stdout_done = true,
+                                    }
+                                }
+                                result = stderr_reader.next_line(), if !stderr_done => {
+                                    match result {
+                                        Ok(Some(line)) => {
+                                            if let Some(ref mut f) = log_file {
+                                                let _ = f.write_all(format!("[STDERR] {}\n", line).as_bytes()).await;
+                                            }
+                                            let _ = tl_inner
+                                                .emit(&a_type_inner, EventType::SubAgentOutput(format!("[STDERR] {}", line)))
+                                                .await;
+                                        }
+                                        _ => stderr_done = true,
+                                    }
+                                }
+                            }
+
+                            if stdout_done && stderr_done {
+                                break;
+                            }
                         }
                     });
 

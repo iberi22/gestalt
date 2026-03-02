@@ -538,6 +538,10 @@ pub mod framework {
                     .and_then(|v| v.as_str().map(ToOwned::to_owned))
             }
 
+            pub fn get_value(&self, key: &str) -> Option<&Value> {
+                self.data.get(key)
+            }
+
             pub fn set_value(&mut self, key: &str, value: Value) {
                 self.data.insert(key.to_string(), value);
             }

@@ -48,7 +48,7 @@ impl TaskService {
         let project = projects.into_iter().next().context("Project not found")?;
 
         let project_id_str = thing_to_string(&project.id);
-        let task = Task::new(&project_id_str, description, agent_id);
+        let task = Task::new(&project_id_str, description, agent_id, None);
 
         // Store in database
         let created: Task = self.db.create("tasks", &task).await?;
@@ -108,7 +108,7 @@ impl TaskService {
 
         // Update status to running
         task.status = TaskStatus::Running;
-        task.updated_at = Utc::now();
+        task.updated_at = crate::models::FlexibleTimestamp::now();
         task.executed_by = Some(agent_id.to_string());
         self.db.update("tasks", task_id, &task).await?;
 
@@ -123,10 +123,10 @@ impl TaskService {
         let duration_ms = start.elapsed().as_millis() as u64;
 
         // Mark as completed
-        let now = Utc::now();
+        let now = crate::models::FlexibleTimestamp::now();
         task.status = TaskStatus::Completed;
-        task.completed_at = Some(now);
-        task.updated_at = now;
+        task.completed_at = Some(now.clone());
+        task.updated_at = now.clone();
         task.duration_ms = Some(duration_ms);
         self.db.update("tasks", task_id, &task).await?;
 
@@ -156,7 +156,7 @@ impl TaskService {
         let mut task = self.get_by_id(task_id).await?.context("Task not found")?;
 
         task.status = TaskStatus::Cancelled;
-        task.updated_at = Utc::now();
+        task.updated_at = crate::models::FlexibleTimestamp::now();
         let updated = self.db.update("tasks", task_id, &task).await?;
 
         self.timeline
@@ -181,11 +181,11 @@ impl TaskService {
         }
         if let Some(s) = status {
             if s == TaskStatus::Completed {
-                task.completed_at = Some(Utc::now());
+                task.completed_at = Some(crate::models::FlexibleTimestamp::now());
             }
             task.status = s;
         }
-        task.updated_at = Utc::now();
+        task.updated_at = crate::models::FlexibleTimestamp::now();
 
         let updated = self.db.update("tasks", task_id, &task).await?;
 
@@ -224,7 +224,7 @@ impl TaskService {
         // For this iteration, we'll just log it and update status.
 
         info!("Scheduling task {} for {}", task_id, execute_at);
-        task.updated_at = Utc::now();
+        task.updated_at = crate::models::FlexibleTimestamp::now();
 
         let updated = self.db.update("tasks", task_id, &task).await?;
 

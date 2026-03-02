@@ -8,11 +8,14 @@ use tracing::{info, warn};
 
 use crate::models::{AgentRuntimeState, EventType, RuntimePhase, TimelineEvent};
 use crate::services::{
-    spawn_reviewer_agent, AgentService, ContextCompactor, FileManager, LockStatus, MemoryService,
-    OverlayFs, ProjectService, ReviewerMessage, TaskService, TimelineService, VirtualFs,
-    WatchService,
+    spawn_reviewer_agent, AgentService, CompactionConfig, ContextCompactor, FileManager,
+    LockStatus, MemoryService, OverlayFs, ProjectService, ReviewerMessage, SessionContext,
+    TaskService, TimelineService, VirtualFs, WatchService,
 };
-use synapse_agentic::prelude::{DecisionContext, DecisionEngine, EmptyContext, Hive, ToolRegistry};
+use synapse_agentic::prelude::{
+    async_trait, Agent, Decision, DecisionContext, DecisionEngine, EmptyContext, Hive, Message,
+    MessageRole, ToolRegistry,
+};
 
 /// Orchestration action executed by AgentRuntime.
 #[derive(Debug, Clone)]
@@ -78,6 +81,7 @@ pub enum OrchestrationAction {
 #[derive(Clone)]
 pub struct AgentRuntime {
     agent_id: String,
+    parent_agent_id: Option<String>,
     engine: Arc<DecisionEngine>,
     registry: Arc<ToolRegistry>,
     project: ProjectService,
@@ -91,6 +95,7 @@ pub struct AgentRuntime {
     vfs: Arc<dyn VirtualFs>,
     compactor: ContextCompactor,
     hive: Arc<Mutex<Hive>>,
+    session: Arc<Mutex<SessionContext>>,
 }
 
 struct PersistStateInput<'a> {
@@ -99,7 +104,7 @@ struct PersistStateInput<'a> {
     phase: RuntimePhase,
     last_action: Option<&'a OrchestrationAction>,
     last_observation: Option<&'a str>,
-    history: &'a [String],
+    history: Vec<String>,
     started_at: crate::models::FlexibleTimestamp,
     finished_at: Option<crate::models::FlexibleTimestamp>,
     error: Option<String>,
@@ -119,6 +124,7 @@ impl AgentRuntime {
         memory: MemoryService,
     ) -> Self {
         // Use the first available provider from the engine for context compaction
+        // When configured correctly in main.rs, this will be the StochasticRotator
         let compactor_provider = engine.providers().first().cloned().unwrap_or_else(|| {
             // Fallback (though engine should have at least the StochasticRotator now)
             Arc::new(synapse_agentic::prelude::GeminiProvider::new(
@@ -132,6 +138,7 @@ impl AgentRuntime {
 
         Self {
             agent_id,
+            parent_agent_id: None,
             engine,
             registry,
             project,
@@ -147,7 +154,16 @@ impl AgentRuntime {
             vfs: Arc::new(vfs),
             compactor: ContextCompactor::new(compactor_provider, "gpt-4o"),
             hive: Arc::new(Mutex::new(Hive::new())),
+            session: Arc::new(Mutex::new(SessionContext::new(
+                CompactionConfig::small_context(),
+            ))),
         }
+    }
+
+    /// Set the parent agent ID for this runtime.
+    pub fn with_parent(mut self, parent_id: String) -> Self {
+        self.parent_agent_id = Some(parent_id);
+        self
     }
 
     /// Run the autonomous loop for a specific goal.
@@ -156,16 +172,21 @@ impl AgentRuntime {
         info!("Goal: {}", goal);
 
         use crate::services::AgentStatus;
+        // Connect and register agent
+        let _ = self.agent.connect(&self.agent_id, None).await;
         let _ = self
             .agent
             .set_status(&self.agent_id, AgentStatus::Busy)
             .await;
 
-        let mut conversation_history = Vec::new();
-        conversation_history.push(format!(
-            "GOAL: {}\n\nPlease start working on this goal.",
-            goal
-        ));
+        {
+            let mut session = self.session.lock().await;
+            session.add_message(Message::new(
+                MessageRole::User,
+                format!("GOAL: {}\n\nPlease start working on this goal.", goal),
+            ));
+        }
+
         let started_at = crate::models::FlexibleTimestamp::now();
         self.persist_state(PersistStateInput {
             goal,
@@ -173,7 +194,7 @@ impl AgentRuntime {
             phase: RuntimePhase::Running,
             last_action: None,
             last_observation: None,
-            history: &conversation_history,
+            history: self.get_history_strings().await,
             started_at: started_at.clone(),
             finished_at: None,
             error: None,
@@ -182,8 +203,23 @@ impl AgentRuntime {
 
         let loop_result: Result<()> = async {
             let mut step = 0usize;
+            let mut last_poll_time = started_at.0;
 
             loop {
+                // Fetch recent events from other agents to maintain context
+                if let Ok(events) = self.timeline.get_events_since(last_poll_time).await {
+                    for event in events {
+                        if event.agent_id != self.agent_id {
+                            conversation_history.push(format!(
+                                "Observation (from {}): {:?} | {:?}",
+                                event.agent_id, event.event_type, event.payload
+                            ));
+                            if event.timestamp.0 > last_poll_time {
+                                last_poll_time = event.timestamp.0;
+                            }
+                        }
+                    }
+                }
                 if let Some(limit) = self.hard_step_cap {
                     if step >= limit {
                         warn!("Hard safety cap reached at {} steps.", limit);
@@ -193,7 +229,7 @@ impl AgentRuntime {
                             phase: RuntimePhase::Completed,
                             last_action: None,
                             last_observation: Some("Elastic loop stopped by hard safety cap."),
-                            history: &conversation_history,
+                            history: self.get_history_strings().await,
                             started_at: started_at.clone(),
                             finished_at: Some(crate::models::FlexibleTimestamp::now()),
                             error: None,
@@ -203,17 +239,19 @@ impl AgentRuntime {
                     }
                 }
 
-                let outcome = self.compactor.compact(&mut conversation_history).await;
+                let mut session = self.session.lock().await;
+                let outcome = self.compactor.compact(&mut session).await;
                 if outcome.compacted {
                     info!(
                         "Context compacted: {} -> {} tokens",
                         outcome.tokens_before, outcome.tokens_after
                     );
                 }
+                drop(session);
 
                 step += 1;
                 info!("Elastic step {}", step);
-                let actions = self.next_actions(goal, &conversation_history).await?;
+                let actions = self.next_actions(goal).await?;
 
                 if actions.is_empty() {
                     info!("Agent decided to stop (no actions).");
@@ -223,7 +261,7 @@ impl AgentRuntime {
                         phase: RuntimePhase::Completed,
                         last_action: None,
                         last_observation: Some("Agent returned no actions; loop stopped."),
-                        history: &conversation_history,
+                        history: self.get_history_strings().await,
                         started_at: started_at.clone(),
                         finished_at: Some(crate::models::FlexibleTimestamp::now()),
                         error: None,
@@ -233,19 +271,34 @@ impl AgentRuntime {
                 }
 
                 for action in actions {
-                    conversation_history.push(format!("Action: {:?}", action));
+                    {
+                        let mut session = self.session.lock().await;
+                        session.add_message(Message::new(
+                            MessageRole::Assistant,
+                            format!("Action: {:?}", action),
+                        ));
+                    }
+
                     let observation = match self.execute_action(&action).await {
                         Ok(obs) => obs,
                         Err(e) => format!("Error: {}", e),
                     };
-                    conversation_history.push(format!("Observation: {}", observation));
+
+                    {
+                        let mut session = self.session.lock().await;
+                        session.add_message(Message::new(
+                            MessageRole::User,
+                            format!("Observation: {}", observation),
+                        ));
+                    }
+
                     self.persist_state(PersistStateInput {
                         goal,
                         step,
                         phase: RuntimePhase::Running,
                         last_action: Some(&action),
                         last_observation: Some(&observation),
-                        history: &conversation_history,
+                        history: self.get_history_strings().await,
                         started_at: started_at.clone(),
                         finished_at: None,
                         error: None,
@@ -261,6 +314,28 @@ impl AgentRuntime {
             .agent
             .set_status(&self.agent_id, AgentStatus::Idle)
             .await;
+
+        if let Some(parent) = &self.parent_agent_id {
+            match &loop_result {
+                Ok(_) => {
+                    let _ = self
+                        .timeline
+                        .emit(&self.agent_id, EventType::SubAgentCompleted(parent.clone()))
+                        .await;
+                }
+                Err(e) => {
+                    let _ = self
+                        .timeline
+                        .emit(
+                            &self.agent_id,
+                            EventType::SubAgentFailed(format!("{}: {}", parent, e)),
+                        )
+                        .await;
+                }
+            }
+            let _ = self.agent.disconnect(&self.agent_id).await;
+        }
+
         if let Err(e) = loop_result {
             let _ = self
                 .persist_state(PersistStateInput {
@@ -269,7 +344,7 @@ impl AgentRuntime {
                     phase: RuntimePhase::Failed,
                     last_action: None,
                     last_observation: Some("Loop failed."),
-                    history: &conversation_history,
+                    history: self.get_history_strings().await,
                     started_at,
                     finished_at: Some(crate::models::FlexibleTimestamp::now()),
                     error: Some(e.to_string()),
@@ -311,49 +386,188 @@ impl AgentRuntime {
         Ok(())
     }
 
-    async fn next_actions(
-        &self,
-        goal: &str,
-        history: &[String],
-    ) -> Result<Vec<OrchestrationAction>> {
-        let history_summary = history
+    async fn get_history_strings(&self) -> Vec<String> {
+        let session = self.session.lock().await;
+        session
+            .recent_messages()
             .iter()
-            .rev()
-            .take(8)
-            .cloned()
-            .collect::<Vec<_>>()
-            .join("\n");
+            .map(|m| format!("{:?}: {}", m.role, m.content))
+            .collect()
+    }
+
+    async fn next_actions(&self, goal: &str) -> Result<Vec<OrchestrationAction>> {
+        let history_summary = {
+            let session = self.session.lock().await;
+            session
+                .recent_messages()
+                .iter()
+                .rev()
+                .take(8)
+                .map(|m| format!("{:?}: {}", m.role, m.content))
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
 
         let context = DecisionContext::new("orchestration")
             .with_summary(format!("goal: {}\n\nhistory:\n{}", goal, history_summary));
 
         // Use native engine resilience (configured with StochasticRotator in main)
         let decision = self.engine.decide(&context).await?;
-        Ok(Self::map_decision_to_actions(
-            &decision.action,
-            &decision.reasoning,
-        ))
+        Ok(Self::map_decision_to_actions(&decision))
     }
 
+    fn map_decision_to_actions(decision: &Decision) -> Vec<OrchestrationAction> {
+        let action = decision.action.trim();
+        let reasoning = &decision.reasoning;
+        let params = decision.parameters.as_ref();
 
-    fn map_decision_to_actions(action: &str, reasoning: &str) -> Vec<OrchestrationAction> {
-        match action.trim().to_lowercase().as_str() {
-            "stop" | "done" | "defer" => vec![],
+        if let Some(tool_name) = action.strip_prefix("call:") {
+            return vec![OrchestrationAction::CallAgent {
+                tool: tool_name.to_string(),
+                args: decision.parameters.clone().unwrap_or(Value::Null),
+            }];
+        }
+
+        match action.to_lowercase().as_str() {
+            "stop" | "done" | "defer" | "final answer" => vec![],
+            "create_project" => {
+                let name = params
+                    .and_then(|p| p.get("name"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unnamed")
+                    .to_string();
+                let description = params
+                    .and_then(|p| p.get("description"))
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
+                vec![OrchestrationAction::CreateProject { name, description }]
+            }
+            "create_task" => {
+                let project = params
+                    .and_then(|p| p.get("project"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("default")
+                    .to_string();
+                let description = params
+                    .and_then(|p| p.get("description"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("no description")
+                    .to_string();
+                vec![OrchestrationAction::CreateTask {
+                    project,
+                    description,
+                }]
+            }
+            "run_task" => {
+                let task_id = params
+                    .and_then(|p| p.get("task_id"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string();
+                vec![OrchestrationAction::RunTask { task_id }]
+            }
+            "read_file" => {
+                let path = params
+                    .and_then(|p| p.get("path"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string();
+                vec![OrchestrationAction::ReadFile { path }]
+            }
+            "write_file" => {
+                let path = params
+                    .and_then(|p| p.get("path"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string();
+                let content = params
+                    .and_then(|p| p.get("content"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string();
+                vec![OrchestrationAction::WriteFile { path, content }]
+            }
+            "execute_shell" => {
+                let command = params
+                    .and_then(|p| p.get("command"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string();
+                vec![OrchestrationAction::ExecuteShell { command }]
+            }
             "list_projects" => vec![OrchestrationAction::ListProjects],
             "list_jobs" => vec![OrchestrationAction::ListJobs],
             "flush_vfs" => vec![OrchestrationAction::FlushVfs],
             "review_merge" => vec![OrchestrationAction::ReviewAndMerge {
-                goal: reasoning.to_string(),
+                goal: decision.reasoning.to_string(),
             }],
+            "delegate" | "delegate_task" => {
+                let agent = params
+                    .and_then(|p| p.get("agent"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("subagent")
+                    .to_string();
+                let goal = params
+                    .and_then(|p| p.get("goal"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string();
+                vec![OrchestrationAction::DelegateTask { agent, goal }]
+            }
+            "start_job" => {
+                let name = params
+                    .and_then(|p| p.get("name"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string();
+                let command = params
+                    .and_then(|p| p.get("command"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string();
+                vec![OrchestrationAction::StartJob { name, command }]
+            }
+            "stop_job" => {
+                let name = params
+                    .and_then(|p| p.get("name"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string();
+                vec![OrchestrationAction::StopJob { name }]
+            }
+            "await_job" => {
+                let job_id = params
+                    .and_then(|p| p.get("job_id"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string();
+                vec![OrchestrationAction::AwaitJob { job_id }]
+            }
             "chat" => vec![OrchestrationAction::Chat {
-                response: reasoning.to_string(),
+                response: decision.reasoning.to_string(),
             }],
             _ => vec![OrchestrationAction::Chat {
-                response: format!("Decision: {} | {}", action, reasoning),
+                response: format!("Decision: {} | {}", decision.action, decision.reasoning),
             }],
         }
     }
 
+}
+
+#[async_trait]
+impl Agent for AgentRuntime {
+    type Input = String;
+
+    fn name(&self) -> &str {
+        &self.agent_id
+    }
+
+    async fn handle(&mut self, goal: Self::Input) -> Result<()> {
+        self.run_loop(&goal).await
+    }
+}
+
+impl AgentRuntime {
     async fn execute_action(&self, action: &OrchestrationAction) -> Result<String> {
         match action {
             OrchestrationAction::CreateProject {
@@ -578,16 +792,25 @@ impl AgentRuntime {
                     self.watch.clone(),
                     self.agent.clone(),
                     self.memory.clone(),
-                );
+                )
+                .with_parent(self.agent_id.clone());
 
-                let _ = self.agent.connect(&sub_agent_id, Some(agent)).await;
-                match Box::pin(async move { sub_runtime.run_loop(goal).await }).await {
-                    Ok(_) => Ok(format!(
-                        "Delegated task to '{}' completed successfully.",
-                        agent
-                    )),
-                    Err(e) => Ok(format!("Delegated task to '{}' failed: {}", agent, e)),
-                }
+                let mut hive = self.hive.lock().await;
+                let handle = hive.spawn(sub_runtime);
+                let _ = handle.send(goal.clone()).await;
+
+                let _ = self
+                    .timeline
+                    .emit(
+                        &self.agent_id,
+                        EventType::SubAgentSpawned(format!("{} for goal: {}", agent, goal)),
+                    )
+                    .await;
+
+                Ok(format!(
+                    "Delegated task to '{}' in background. Watch timeline for updates.",
+                    agent
+                ))
             }
             OrchestrationAction::CallAgent { tool, args } => {
                 if let Ok(result) = self.registry.call(tool, &EmptyContext, args.clone()).await {

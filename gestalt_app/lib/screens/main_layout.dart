@@ -4,6 +4,7 @@ import 'package:glass_kit/glass_kit.dart';
 import 'dashboard_screen.dart';
 import 'project_list_screen.dart';
 import 'settings_screen.dart';
+import 'terminal_screen.dart';
 
 class MainLayout extends StatefulWidget {
   const MainLayout({super.key});
@@ -20,6 +21,7 @@ class _MainLayoutState extends State<MainLayout> {
     const ProjectListScreen(),
     const Center(child: Text("Agent Forge", style: TextStyle(color: Colors.white, fontSize: 24))),
     const SettingsScreen(),
+    const TerminalScreen(),
   ];
 
   @override
@@ -67,6 +69,7 @@ class _MainLayoutState extends State<MainLayout> {
                     _navItem(Icons.code_rounded, "Repositories", 1),
                     _navItem(Icons.psychology_rounded, "Agent Forge", 2),
                     _navItem(Icons.tune_rounded, "Settings", 3),
+                    _navItem(Icons.terminal_rounded, "Terminal", 4),
                   ],
                 ),
               ),

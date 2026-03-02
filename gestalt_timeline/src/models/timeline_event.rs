@@ -123,6 +123,8 @@ pub enum EventType {
     SubAgentFailed(String),
     /// Context retrieval event
     Retrieval,
+    /// Chat message from agent
+    Chat,
     /// VFS Patch applied to overlay
     VfsPatchApplied,
     /// VFS Lock acquired by agent
@@ -168,6 +170,7 @@ impl<'de> Deserialize<'de> for EventType {
             "agent_disconnected" => Ok(EventType::AgentDisconnected),
             "command_executed" => Ok(EventType::CommandExecuted),
             "retrieval" => Ok(EventType::Retrieval),
+            "chat" => Ok(EventType::Chat),
             "vfs_patch_applied" => Ok(EventType::VfsPatchApplied),
             "vfs_lock_acquired" => Ok(EventType::VfsLockAcquired),
             "vfs_lock_conflict" => Ok(EventType::VfsLockConflict),
@@ -213,6 +216,7 @@ impl fmt::Display for EventType {
             EventType::AgentDisconnected => write!(f, "agent_disconnected"),
             EventType::CommandExecuted => write!(f, "command_executed"),
             EventType::Retrieval => write!(f, "retrieval"),
+            EventType::Chat => write!(f, "chat"),
             EventType::VfsPatchApplied => write!(f, "vfs_patch_applied"),
             EventType::VfsLockAcquired => write!(f, "vfs_lock_acquired"),
             EventType::VfsLockConflict => write!(f, "vfs_lock_conflict"),

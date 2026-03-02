@@ -181,6 +181,82 @@ impl Indexer {
     }
 }
 
+use crate::application::agent::tools::SearchCodeTool;
+use surrealdb::sql::Thing as RecordId;
+
+#[async_trait::async_trait]
+pub trait VectorAdapter: Send + Sync {
+    async fn index_document(&self, repo_id: &str, doc: DocumentRecord) -> Result<()>;
+    async fn search(&self, repo_id: &str, query: &str, limit: usize) -> Result<Vec<VectorRecord>>;
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VectorRecord {
+    pub path: String,
+    pub content: String,
+    pub score: f32,
+}
+
+pub struct SurrealAdapter {
+    client: crate::db::surreal::SurrealClient,
+}
+
+impl SurrealAdapter {
+    pub fn new(client: crate::db::surreal::SurrealClient) -> Self {
+        Self { client }
+    }
+}
+
+#[async_trait::async_trait]
+impl VectorAdapter for SurrealAdapter {
+    async fn index_document(&self, repo_id: &str, doc: DocumentRecord) -> Result<()> {
+        let created_at = chrono::Utc::now().to_rfc3339();
+
+        // 1. Create document record
+        let doc_id = format!("{}:{}", repo_id, doc.metadata.path);
+        let _doc: serde_json::Value = self.client.upsert(
+            "documents",
+            &doc_id,
+            &serde_json::json!({
+                "repo_id": repo_id,
+                "path": doc.metadata.path,
+                "checksum": doc.metadata.checksum,
+                "created_at": created_at,
+                "updated_at": created_at,
+            })
+        ).await?;
+
+        // 2. Create chunk records
+        for chunk in doc.chunks {
+            let chunk_id = format!("{}:{}", doc_id, chunk.index);
+            let _chunk: serde_json::Value = self.client.upsert(
+                "chunks",
+                &chunk_id,
+                &serde_json::json!({
+                    "doc_id": doc_id,
+                    "content": chunk.content,
+                    "chunk_index": chunk.index,
+                    "created_at": created_at,
+                })
+            ).await?;
+        }
+
+        Ok(())
+    }
+
+    async fn search(&self, repo_id: &str, query: &str, limit: usize) -> Result<Vec<VectorRecord>> {
+        // Simple keyword-based search in SurrealDB as a fallback for pure vector search
+        let sql = "SELECT path, content FROM chunks WHERE doc_id CONTAINS $repo_id AND content CONTAINS $query LIMIT $limit";
+        let results: Vec<VectorRecord> = self.client.query_with(sql, serde_json::json!({
+            "repo_id": repo_id,
+            "query": query,
+            "limit": limit,
+        })).await?;
+
+        Ok(results)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

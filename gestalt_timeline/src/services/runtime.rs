@@ -8,13 +8,13 @@ use tracing::{info, warn};
 
 use crate::models::{AgentRuntimeState, EventType, RuntimePhase, TimelineEvent};
 use crate::services::{
-    spawn_reviewer_agent, AgentService, CompactionConfig, ContextCompactor, FileManager,
-    LockStatus, MemoryService, OverlayFs, ProjectService, ReviewerMessage, SessionContext,
+    spawn_reviewer_agent, AgentService, ContextCompactor, FileManager,
+    LockStatus, MemoryService, ProjectService, ReviewerMessage,
     TaskService, TimelineService, VirtualFs, WatchService,
 };
 use synapse_agentic::prelude::{
-    async_trait, Agent, Decision, DecisionContext, DecisionEngine, EmptyContext, Hive, Message,
-    MessageRole, ToolRegistry,
+    async_trait, Decision, DecisionContext, DecisionEngine, EmptyContext, Hive,
+    ToolRegistry, CompactionConfig, SessionContext, Message, MessageRole
 };
 
 /// Orchestration action executed by AgentRuntime.
@@ -81,6 +81,7 @@ pub enum OrchestrationAction {
 #[derive(Clone)]
 pub struct AgentRuntime {
     agent_id: String,
+    task_id: Option<String>,
     parent_agent_id: Option<String>,
     engine: Arc<DecisionEngine>,
     registry: Arc<ToolRegistry>,
@@ -117,6 +118,14 @@ struct ExecutionResult {
     is_success: bool,
 }
 
+fn spawn_sub_agent(mut sub_runtime: AgentRuntime, goal: String) {
+    tokio::spawn(async move {
+        if let Err(e) = sub_runtime.run_loop(&goal).await {
+            tracing::error!("Sub-agent failed: {}", e);
+        }
+    });
+}
+
 impl AgentRuntime {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -145,6 +154,7 @@ impl AgentRuntime {
 
         Self {
             agent_id,
+            task_id: None,
             parent_agent_id: None,
             engine,
             registry,
@@ -169,6 +179,12 @@ impl AgentRuntime {
                 CompactionConfig::small_context(),
             ))),
         }
+    }
+
+    /// Assign a task ID to this runtime.
+    pub fn with_task_id(mut self, task_id: String) -> Self {
+        self.task_id = Some(task_id);
+        self
     }
 
     /// Set the parent agent ID for this runtime.
@@ -221,9 +237,13 @@ impl AgentRuntime {
                 if let Ok(events) = self.timeline.get_events_since(last_poll_time).await {
                     for event in events {
                         if event.agent_id != self.agent_id {
-                            conversation_history.push(format!(
-                                "Observation (from {}): {:?} | {:?}",
-                                event.agent_id, event.event_type, event.payload
+                            let mut session = self.session.lock().await;
+                            session.add_message(Message::new(
+                                MessageRole::User,
+                                format!(
+                                    "Observation (from {}): {:?} | {:?}",
+                                    event.agent_id, event.event_type, event.payload
+                                ),
                             ));
                             if event.timestamp.0 > last_poll_time {
                                 last_poll_time = event.timestamp.0;
@@ -363,7 +383,6 @@ impl AgentRuntime {
                         // Take the first repair action and continue the retry loop
                         current_action = repair_actions[0].clone();
                     }
-                }
                 }
             }
             Ok(())
@@ -928,9 +947,8 @@ impl AgentRuntime {
                 )
                 .with_parent(self.agent_id.clone());
 
-                let mut hive = self.hive.lock().await;
-                let handle = hive.spawn(sub_runtime);
-                let _ = handle.send(goal.clone()).await;
+                let goal_clone = goal.clone();
+                spawn_sub_agent(sub_runtime, goal_clone);
 
                 let _ = self
                     .timeline

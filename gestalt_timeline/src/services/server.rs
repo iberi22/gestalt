@@ -35,6 +35,12 @@ pub struct OrchestrateRequest {
     pub goal: String,
 }
 
+#[derive(Deserialize)]
+pub struct ChatRequest {
+    pub message: String,
+    pub agent_id: Option<String>,
+}
+
 #[derive(Serialize)]
 pub struct OrchestrateResponse {
     pub message: String,
@@ -95,6 +101,7 @@ pub async fn start_server(
 
     let app = Router::new()
         .route("/orchestrate", post(run_orchestration))
+        .route("/chat", post(chat_endpoint))
         .route("/timeline", get(get_timeline))
         .route("/agents", get(get_agents))
         .route("/projects", get(get_projects).post(create_project))
@@ -224,6 +231,44 @@ async fn run_orchestration(
         Json(OrchestrateResponse {
             message: "Orchestration started".to_string(),
             task_id: "background-task".to_string(), // TODO: meaningful ID
+        }),
+    )
+}
+
+/// Handler: Chat and trigger orchestration
+async fn chat_endpoint(
+    State(state): State<AppState>,
+    Json(payload): Json<ChatRequest>,
+) -> (StatusCode, Json<OrchestrateResponse>) {
+    info!("💬 Received chat message: {}", payload.message);
+
+    let agent_id = payload.agent_id.unwrap_or_else(|| "user".to_string());
+
+    // Record the user's message in the timeline
+    let event = crate::models::TimelineEvent::new(&agent_id, crate::models::EventType::ChatMessage)
+        .with_payload(serde_json::json!({
+            "text": payload.message,
+            "sender": agent_id
+        }));
+
+    let _ = state.timeline.record_event(event).await;
+
+    // Trigger the agent's autonomous loop with the user's message as a goal
+    let runtime = state.runtime.clone();
+    let goal = payload.message.clone();
+
+    tokio::spawn(async move {
+        match runtime.run_loop(&goal).await {
+            Ok(_) => info!("✅ Chat-triggered orchestration completed for: {}", goal),
+            Err(e) => info!("❌ Chat-triggered orchestration failed: {}", e),
+        }
+    });
+
+    (
+        StatusCode::ACCEPTED,
+        Json(OrchestrateResponse {
+            message: "Chat received, agent responding...".to_string(),
+            task_id: "chat-task".to_string(),
         }),
     )
 }

@@ -7,18 +7,31 @@ pub mod prelude {
     use tokio::sync::mpsc;
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub struct DecisionContext;
+    pub struct DecisionContext {
+        pub query: String,
+        pub summary: Option<String>,
+        pub metadata: std::collections::HashMap<String, String>,
+        pub data: Option<Value>,
+    }
     impl DecisionContext {
-        pub fn new(_q: &str) -> Self {
-            Self
+        pub fn new(q: &str) -> Self {
+            Self {
+                query: q.to_string(),
+                summary: None,
+                metadata: std::collections::HashMap::new(),
+                data: None,
+            }
         }
-        pub fn with_metadata(self, _k: &str, _v: String) -> Self {
+        pub fn with_metadata(mut self, k: &str, v: String) -> Self {
+            self.metadata.insert(k.to_string(), v);
             self
         }
-        pub fn with_summary(self, _s: impl Into<String>) -> Self {
+        pub fn with_summary(mut self, s: impl Into<String>) -> Self {
+            self.summary = Some(s.into());
             self
         }
-        pub fn with_data(self, _d: Value) -> Self {
+        pub fn with_data(mut self, d: Value) -> Self {
+            self.data = Some(d);
             self
         }
     }
@@ -107,11 +120,18 @@ pub mod prelude {
     #[derive(Debug, Clone)]
     pub struct StochasticRotator {
         providers: Vec<Arc<dyn LLMProvider>>,
+        counter: Arc<std::sync::atomic::AtomicUsize>,
     }
     impl StochasticRotator {
         pub fn new(_store: Arc<InMemoryCooldownStore>) -> Self {
+            // Use time as a simple seed for the initial counter
+            let initial = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs() as usize)
+                .unwrap_or(0);
             Self {
                 providers: Vec::new(),
+                counter: Arc::new(std::sync::atomic::AtomicUsize::new(initial)),
             }
         }
         pub fn add_provider(&mut self, _id: ProviderId, provider: Arc<dyn LLMProvider>) {
@@ -127,11 +147,28 @@ pub mod prelude {
             0.0
         }
         async fn generate(&self, prompt: &str) -> anyhow::Result<String> {
-            if let Some(p) = self.providers.first() {
-                p.generate(prompt).await
-            } else {
-                Ok("mock".to_string())
+            if self.providers.is_empty() {
+                return Err(anyhow::anyhow!("No providers available"));
             }
+
+            let start_idx = self
+                .counter
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+                % self.providers.len();
+
+            let mut last_err = None;
+            for i in 0..self.providers.len() {
+                let idx = (start_idx + i) % self.providers.len();
+                let provider = &self.providers[idx];
+                match provider.generate(prompt).await {
+                    Ok(res) => return Ok(res),
+                    Err(e) => {
+                        last_err = Some(e);
+                        continue;
+                    }
+                }
+            }
+            Err(last_err.unwrap_or_else(|| anyhow::anyhow!("All providers failed")))
         }
     }
 
@@ -167,18 +204,33 @@ pub mod prelude {
         pub fn providers(&self) -> &[Arc<dyn LLMProvider>] {
             &self.providers
         }
-        pub async fn decide(&self, _ctx: &DecisionContext) -> anyhow::Result<Decision> {
-            Ok(Decision {
-                reasoning: "mock".to_string(),
-                action: "final answer".to_string(),
-                parameters: None,
-                confidence: 1.0,
-                providers_used: self
-                    .providers
-                    .iter()
-                    .map(|p| p.name().to_string())
-                    .collect(),
-            })
+        pub async fn decide(&self, ctx: &DecisionContext) -> anyhow::Result<Decision> {
+            // Native resilience: try the first provider (StochasticRotator if configured)
+            // or fallback if needed.
+            if let Some(provider) = self.providers.first() {
+                let prompt = format!(
+                    "QUERY: {}\nSUMMARY: {}\n\nBased on the above, decide the next action.",
+                    ctx.query,
+                    ctx.summary.as_deref().unwrap_or("None")
+                );
+                let _resp = provider.generate(&prompt).await?;
+
+                Ok(Decision {
+                    reasoning: "Resilient decision via synapse-agentic".to_string(),
+                    action: "chat".to_string(),
+                    parameters: None,
+                    confidence: 1.0,
+                    providers_used: vec![provider.name().to_string()],
+                })
+            } else {
+                Ok(Decision {
+                    reasoning: "mock".to_string(),
+                    action: "final answer".to_string(),
+                    parameters: None,
+                    confidence: 1.0,
+                    providers_used: vec!["mock".to_string()],
+                })
+            }
         }
     }
 
@@ -389,6 +441,11 @@ pub mod prelude {
             let keep = self.cfg.keep_recent.min(self.messages.len());
             &self.messages[self.messages.len().saturating_sub(keep)..]
         }
+        pub fn recent_messages_mut(&mut self) -> &mut [Message] {
+            let keep = self.cfg.keep_recent.min(self.messages.len());
+            let start = self.messages.len().saturating_sub(keep);
+            &mut self.messages[start..]
+        }
     }
 
     #[derive(Debug, Clone, Copy)]
@@ -409,12 +466,16 @@ pub mod prelude {
             }
         }
         pub async fn summarize(&self, chunk: &MessageChunk) -> anyhow::Result<Message> {
-            let prompt = chunk
+            let history = chunk
                 .messages
                 .iter()
-                .map(|m| m.content.as_str())
+                .map(|m| format!("{:?}: {}", m.role, m.content))
                 .collect::<Vec<_>>()
                 .join("\n");
+            let prompt = format!(
+                "Summarize the following technical conversation history concisely, focusing on actions taken and their outcomes:\n\n{}",
+                history
+            );
             let summary = self.provider.generate(&prompt).await?;
             Ok(Message::new(MessageRole::Assistant, summary))
         }

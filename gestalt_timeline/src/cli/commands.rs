@@ -186,6 +186,27 @@ pub enum Commands {
         #[arg(long)]
         dry_run: bool,
     },
+
+    /// Synchronize protocol states between SurrealDB and markdown files
+    #[command(name = "protocol-sync")]
+    ProtocolSync {
+        /// Project name
+        #[arg(short, long)]
+        project: String,
+
+        /// Path to the markdown file (default: .gitcore/planning/TASK.md)
+        #[arg(short, long, default_value = ".gitcore/planning/TASK.md")]
+        path: String,
+
+        /// Synchronize from markdown to database
+        #[arg(long)]
+        to_db: bool,
+
+        /// Synchronize from database to markdown
+        #[arg(long)]
+        to_markdown: bool,
+    },
+
     /// Start the Agent REST API server
     #[command(name = "server")]
     Server {

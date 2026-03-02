@@ -22,8 +22,13 @@ pub struct GestaltAgent {
 }
 
 impl GestaltAgent {
-    pub async fn new(vector_db: Arc<dyn VectorDb>, repo_manager: Arc<dyn RepoManager>) -> Self {
-        let registry = create_gestalt_tools(repo_manager.clone(), vector_db.clone()).await;
+    pub async fn new(
+        vector_db: Arc<dyn VectorDb>,
+        repo_manager: Arc<dyn RepoManager>,
+        llm_provider: Arc<dyn LLMProvider>,
+    ) -> Self {
+        let registry =
+            create_gestalt_tools(repo_manager.clone(), vector_db.clone(), llm_provider).await;
         Self {
             _vector_db: vector_db,
             _repo_manager: repo_manager,

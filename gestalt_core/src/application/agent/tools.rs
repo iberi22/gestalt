@@ -7,8 +7,9 @@ use std::sync::Arc;
 use synapse_agentic::prelude::*;
 
 pub async fn create_gestalt_tools(
-    _repo_manager: Arc<dyn RepoManager>,
+    repo_manager: Arc<dyn RepoManager>,
     vector_db: Arc<dyn VectorDb>,
+    llm_provider: Arc<dyn LLMProvider>,
 ) -> ToolRegistry {
     let registry = ToolRegistry::new();
     registry.register_tool(ScanWorkspaceTool).await;
@@ -26,6 +27,19 @@ pub async fn create_gestalt_tools(
     registry.register_tool(ExecuteShellTool).await;
     registry.register_tool(ReadFileTool).await;
     registry.register_tool(WriteFileTool).await;
+
+    registry
+        .register_tool(CloneRepoTool {
+            repo_manager: repo_manager.clone(),
+        })
+        .await;
+    registry
+        .register_tool(ListReposTool {
+            repo_manager: repo_manager.clone(),
+        })
+        .await;
+    registry.register_tool(AskAiTool { llm_provider }).await;
+
     registry
 }
 
@@ -148,6 +162,97 @@ impl Tool for ExecuteShellTool {
             }
             Err(e) => Err(anyhow::anyhow!("Failed to execute '{}': {}", command, e)),
         }
+    }
+}
+
+pub struct CloneRepoTool {
+    pub repo_manager: Arc<dyn RepoManager>,
+}
+
+#[async_trait]
+impl Tool for CloneRepoTool {
+    fn name(&self) -> &str {
+        "clone_repo"
+    }
+    fn description(&self) -> &str {
+        "Clone a git repository to the local filesystem."
+    }
+    fn parameters(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "url": { "type": "string", "description": "The URL of the git repository to clone" }
+            },
+            "required": ["url"]
+        })
+    }
+
+    async fn call(&self, _ctx: &dyn ToolContext, args: Value) -> anyhow::Result<Value> {
+        let url = args
+            .get("url")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("Missing 'url' parameter"))?;
+
+        let repo = self.repo_manager.clone_repo(url).await?;
+        Ok(json!(repo))
+    }
+}
+
+pub struct ListReposTool {
+    pub repo_manager: Arc<dyn RepoManager>,
+}
+
+#[async_trait]
+impl Tool for ListReposTool {
+    fn name(&self) -> &str {
+        "list_repos"
+    }
+    fn description(&self) -> &str {
+        "List repositories accessible to the current user."
+    }
+    fn parameters(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {}
+        })
+    }
+
+    async fn call(&self, _ctx: &dyn ToolContext, _args: Value) -> anyhow::Result<Value> {
+        let repos = self.repo_manager.list_repos().await?;
+        Ok(json!(repos))
+    }
+}
+
+pub struct AskAiTool {
+    pub llm_provider: Arc<dyn LLMProvider>,
+}
+
+#[async_trait]
+impl Tool for AskAiTool {
+    fn name(&self) -> &str {
+        "ask_ai"
+    }
+    fn description(&self) -> &str {
+        "Ask a question to the AI model."
+    }
+    fn parameters(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "prompt": { "type": "string", "description": "The prompt to send to the AI" }
+            },
+            "required": ["prompt"]
+        })
+    }
+
+    async fn call(&self, _ctx: &dyn ToolContext, args: Value) -> anyhow::Result<Value> {
+        let prompt = args
+            .get("prompt")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("Missing 'prompt' parameter"))?;
+
+        let response = self.llm_provider.generate(prompt).await?;
+        Ok(json!({ "response": response }))
     }
 }
 

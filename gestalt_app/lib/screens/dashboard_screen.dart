@@ -225,6 +225,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           // Log Terminal
           Expanded(
             child: GlassContainer.clearGlass(
+              height: double.infinity,
               width: double.infinity,
               borderRadius: BorderRadius.circular(24),
               borderWidth: 1,
@@ -261,6 +262,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Widget _buildInfoCard(String title, String value, IconData icon, Color color) {
     return GlassContainer.clearGlass(
       height: 120,
+      width: double.infinity,
       borderRadius: BorderRadius.circular(20),
       borderWidth: 1,
       borderColor: color.withOpacity(0.2),

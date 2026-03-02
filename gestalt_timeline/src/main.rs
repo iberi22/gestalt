@@ -707,7 +707,7 @@ async fn main() -> anyhow::Result<()> {
                 engine,
                 telegram_settings.allowed_users,
                 watch_service,
-                db,
+                db.clone(),
             );
 
             bot_service.start().await?;

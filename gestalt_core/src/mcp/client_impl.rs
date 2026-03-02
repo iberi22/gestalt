@@ -4,7 +4,9 @@
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{json, Value};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 use thiserror::Error;
 
@@ -13,16 +15,16 @@ use thiserror::Error;
 pub enum McpError {
     #[error("Connection failed: {0}")]
     Connection(String),
-    
+
     #[error("Tool not found: {0}")]
     ToolNotFound(String),
-    
+
     #[error("Tool execution failed: {0}")]
     Execution(String),
-    
+
     #[error("Timeout exceeded")]
     Timeout,
-    
+
     #[error("Invalid response: {0}")]
     InvalidResponse(String),
 }
@@ -55,13 +57,13 @@ pub struct ToolResult {
 pub trait McpClient: Send + Sync {
     /// Connect to MCP server
     async fn connect(&self, server_url: &str) -> Result<(), McpError>;
-    
+
     /// Disconnect from server
     async fn disconnect(&self) -> Result<(), McpError>;
-    
+
     /// List available tools
     async fn list_tools(&self) -> Result<Vec<ToolInfo>, McpError>;
-    
+
     /// Call a tool
     async fn call_tool(
         &self,
@@ -79,7 +81,7 @@ pub struct GestaltMcpClient {
     // Available tools cache
     tools: Vec<ToolInfo>,
     // Connection status
-    connected: bool,
+    connected: Arc<AtomicBool>,
 }
 
 impl GestaltMcpClient {
@@ -88,24 +90,24 @@ impl GestaltMcpClient {
         Self {
             server_url: None,
             tools: Vec::new(),
-            connected: false,
+            connected: Arc::new(AtomicBool::new(false)),
         }
     }
-    
+
     /// Create with server URL
     pub fn with_server(server_url: &str) -> Self {
         Self {
             server_url: Some(server_url.to_string()),
             tools: Vec::new(),
-            connected: false,
+            connected: Arc::new(AtomicBool::new(false)),
         }
     }
-    
+
     /// Check if connected
     pub fn is_connected(&self) -> bool {
-        self.connected
+        self.connected.load(Ordering::SeqCst)
     }
-    
+
     /// Get cached tools
     pub fn cached_tools(&self) -> &[ToolInfo] {
         &self.tools
@@ -125,12 +127,12 @@ impl McpClient for GestaltMcpClient {
         // For now, simulate connection
         Ok(())
     }
-    
+
     async fn disconnect(&self) -> Result<(), McpError> {
-        self.connected = false;
+        self.connected.store(false, Ordering::SeqCst);
         Ok(())
     }
-    
+
     async fn list_tools(&self) -> Result<Vec<ToolInfo>, McpError> {
         // In production, would fetch from MCP server
         // Return sample tools
@@ -169,7 +171,7 @@ impl McpClient for GestaltMcpClient {
             },
         ])
     }
-    
+
     async fn call_tool(
         &self,
         _name: &str,
@@ -195,13 +197,13 @@ mod tests {
         assert!(!client.is_connected());
         assert!(client.cached_tools().is_empty());
     }
-    
+
     #[tokio::test]
     async fn test_client_with_server() {
         let client = GestaltMcpClient::with_server("http://localhost:3000");
         assert!(!client.is_connected());
     }
-    
+
     #[tokio::test]
     async fn test_list_tools() {
         let client = GestaltMcpClient::new();
@@ -209,7 +211,7 @@ mod tests {
         assert!(!tools.is_empty());
         assert_eq!(tools.len(), 3);
     }
-    
+
     #[tokio::test]
     async fn test_call_tool() {
         let client = GestaltMcpClient::new();

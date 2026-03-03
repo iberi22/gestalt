@@ -24,9 +24,9 @@ Validate production gates and finalize release readiness for `v1.0.0`.
 - [x] Runtime file-read observation sanitized.
 - [x] CLI HTTP timeout support for MCP calls.
 - [x] MCP blocking handlers converted to async-safe execution.
-- [ ] Full workspace tests passing in clean CI run (`cargo test --workspace --all-targets`).
-- [ ] Final warning budget validated for release branch (`cargo clippy --workspace --all-targets -D warnings`).
-- [ ] Tag and release artifacts published as `v1.0.0`.
+- [x] Full workspace tests passing in clean CI run (`cargo test --workspace --all-targets`).
+- [x] Final warning budget validated for release branch (`cargo clippy --workspace --all-targets -D warnings`).
+- [x] Tag and release artifacts published as `v1.0.0`.
 
 ## Notes
 - Open GitHub issues: none (as of 2026-03-03).

@@ -1,0 +1,8 @@
+{
+  "task_id": "debug_rust_001",
+  "category": "debug",
+  "difficulty": "medium",
+  "prompt": "Given a Rust panic in production, describe a triage plan and the first three checks you would run.",
+  "expected_keywords": ["panic", "logs", "reproduce", "check"]
+}
+

@@ -1,0 +1,8 @@
+{
+  "task_id": "analysis_tradeoff_001",
+  "category": "analysis",
+  "difficulty": "hard",
+  "prompt": "Compare polling vs event-driven file watcher designs and recommend one for cross-platform stability.",
+  "expected_keywords": ["polling", "event", "tradeoff", "recommend"]
+}
+

@@ -1,0 +1,8 @@
+{
+  "task_id": "security_cmd_001",
+  "category": "security",
+  "difficulty": "medium",
+  "prompt": "List guardrails required before exposing shell and git operations to autonomous agents.",
+  "expected_keywords": ["guardrails", "validation", "allowlist", "security"]
+}
+

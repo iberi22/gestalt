@@ -7,9 +7,10 @@ _Last update: 2026-03-03_
 - Local `.github/issues/` keeps only templates and synchronization status.
 
 ## Current State
-- Open GitHub issues: `0`
+- Open GitHub issues: `1`
 - Open GitHub PRs: `0`
 - Milestone blockers closed: `#33`, `#31`, `#8`, `#19`, `#21`, `#82`, `#83`
+- Active handoff issue: `#85` ([JULES] Final release validation and test/check execution for v1.0.0)
 
 ## Notes
 - Historical issue specs previously stored as local markdown were removed after merge/closure.

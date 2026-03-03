@@ -35,6 +35,7 @@ impl GestaltApp {
     }
 
     pub fn init(&mut self) {
+        self.last_update = Utc::now();
         // Here we would spawn a background task to fetch events from SurrealDB
         // For the MVP, let's add some mock data if DB is empty
         if self.events.is_empty() {
@@ -74,6 +75,8 @@ impl eframe::App for GestaltApp {
                     ));
                     if ui.button("Refresh").clicked() {
                         self.init();
+                        self.last_update = Utc::now();
+                        ctx.request_repaint();
                     }
                 });
             });

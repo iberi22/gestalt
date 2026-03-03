@@ -18,6 +18,10 @@ cargo build -p gestalt_cli
 cargo build -p gestalt_core
 cargo build -p gestalt_timeline
 
+# Fast/full validation aliases
+cargo check-fast
+cargo check-full
+
 # Run the CLI
 cargo run -p gestalt_cli -- --help
 
@@ -39,6 +43,8 @@ cargo clippy -p gestalt_core --fix  # with auto-fix
 ```bash
 # Run all tests
 cargo test
+cargo check-fast
+cargo check-full
 
 # Run tests for specific crate
 cargo test -p gestalt_core

@@ -9,9 +9,11 @@ import os
 from pathlib import Path
 from datetime import datetime
 
-# Agregar path de gestalt
-GESTALT_PATH = Path(r"E:\scripts-python\gestalt-rust")
-sys.path.insert(0, str(GESTALT_PATH))
+# Agregar path de gestalt de forma portable
+DEFAULT_GESTALT_PATH = Path(__file__).resolve().parent
+GESTALT_PATH = Path(os.getenv("GESTALT_PATH", str(DEFAULT_GESTALT_PATH))).resolve()
+if GESTALT_PATH.exists():
+    sys.path.insert(0, str(GESTALT_PATH))
 
 # Intentar importar el bridge de Gestalt
 try:
@@ -32,14 +34,16 @@ EVAL_RESULTS = {
     "recommendations": []
 }
 
-def log_test(name, passed, details=""):
+def log_test(name, passed, details="", skipped=False):
     """Registrar resultado de test"""
     status = "✅ PASS" if passed else "❌ FAIL"
     print(f"{status}: {name}")
     if details:
         print(f"   → {details}")
     
-    if passed:
+    if skipped:
+        EVAL_RESULTS["tests_skipped"] += 1
+    elif passed:
         EVAL_RESULTS["tests_passed"] += 1
     else:
         EVAL_RESULTS["tests_failed"] += 1
@@ -57,7 +61,7 @@ def analyze_vfs_capabilities():
     
     if not vfs_path.exists():
         log_test("VFS source exists", False, "Archivo no encontrado")
-        return
+        return set()
     
     log_test("VFS source exists", True)
     
@@ -77,11 +81,13 @@ def analyze_vfs_capabilities():
     }
     
     print("📦 Features implementados:")
+    implemented = set()
     for feature, available in features.items():
         status = "✅" if available else "❌"
         print(f"   {status} {feature}")
         
         if available:
+            implemented.add(feature)
             EVAL_RESULTS["capabilities"].append(feature)
         else:
             EVAL_RESULTS["limitations"].append(f"Missing: {feature}")
@@ -113,7 +119,7 @@ def analyze_vfs_capabilities():
         print(f"   ⚠️ {lim}")
         EVAL_RESULTS["limitations"].append(lim)
     
-    return len([f for f in features.values() if f])
+    return implemented
 
 def test_gestalt_integration():
     """Prueba integración con Gestalt Bridge"""
@@ -122,8 +128,7 @@ def test_gestalt_integration():
     print("="*60 + "\n")
     
     if not GESTALT_AVAILABLE:
-        log_test("Gestalt Bridge import", False, "No disponible")
-        EVAL_RESULTS["tests_skipped"] += 1
+        log_test("Gestalt Bridge import", False, "No disponible", skipped=True)
         return False
     
     try:
@@ -140,7 +145,10 @@ def test_gestalt_integration():
         # Probar MCP tools
         try:
             result = bridge.mcp_call("echo", {"msg": "test"})
-            log_test("MCP echo tool", True, str(result)[:50])
+            valid_result = bool(result) and isinstance(result, dict) and (
+                "output" in result or "content" in result or "result" in result
+            )
+            log_test("MCP echo tool", valid_result, str(result)[:80])
         except Exception as e:
             log_test("MCP echo tool", False, str(e))
         
@@ -148,27 +156,29 @@ def test_gestalt_integration():
         
     except Exception as e:
         log_test("Gestalt Bridge", False, str(e))
-        EVAL_RESULTS["tests_skipped"] += 1
         return False
 
-def calculate_coverage():
+def calculate_coverage(analyzed_features):
     """Calcula % de cobertura de features"""
-    total_possible = 15  # Features estándar de VFS
-    
-    # Features que temos
-    covered = [
-        "read_to_string",    # ✅
-        "write_string",      # ✅
-        "create_dir_all",    # ✅
-        "flush",             # ✅
-        "acquire_lock",      # ✅
-        "release_locks",     # ✅
-        "discard",           # ✅
-        "version",           # ✅
-        "pending_changes",   # ✅
-    ]
-    
-    coverage = (len(covered) / total_possible) * 100
+    standard_features = {
+        "read_to_string",
+        "write_string",
+        "create_dir_all",
+        "flush",
+        "locks",
+        "discard",
+        "versioning",
+        "pending_changes",
+        "read_bytes",
+        "write_bytes",
+        "file_watcher",
+        "atomic_transactions",
+        "symlinks",
+        "permissions",
+        "snapshots",
+    }
+    covered = analyzed_features.intersection(standard_features)
+    coverage = (len(covered) / len(standard_features)) * 100
     
     print("\n" + "="*60)
     print(f"📈 COBERTURA: {coverage:.1f}%")
@@ -199,13 +209,13 @@ def main():
     print("="*60)
     
     # 1. Analizar código fuente
-    feature_count = analyze_vfs_capabilities()
+    analyzed_features = analyze_vfs_capabilities()
     
     # 2. Probar integración
     test_gestalt_integration()
     
     # 3. Calcular cobertura
-    coverage = calculate_coverage()
+    coverage = calculate_coverage(analyzed_features)
     
     # 4. Recomendaciones
     generate_recommendations()

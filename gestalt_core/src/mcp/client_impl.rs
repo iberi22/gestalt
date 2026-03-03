@@ -77,7 +77,7 @@ pub trait McpClient: Send + Sync {
 #[derive(Clone, Debug)]
 pub struct GestaltMcpClient {
     // Server URL
-    server_url: Option<String>,
+    _server_url: Option<String>,
     // Available tools cache
     tools: Vec<ToolInfo>,
     // Connection status
@@ -88,7 +88,7 @@ impl GestaltMcpClient {
     /// Create a new MCP client
     pub fn new() -> Self {
         Self {
-            server_url: None,
+            _server_url: None,
             tools: Vec::new(),
             connected: Arc::new(AtomicBool::new(false)),
         }
@@ -97,7 +97,7 @@ impl GestaltMcpClient {
     /// Create with server URL
     pub fn with_server(server_url: &str) -> Self {
         Self {
-            server_url: Some(server_url.to_string()),
+            _server_url: Some(server_url.to_string()),
             tools: Vec::new(),
             connected: Arc::new(AtomicBool::new(false)),
         }

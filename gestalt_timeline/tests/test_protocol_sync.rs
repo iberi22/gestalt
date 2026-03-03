@@ -1,7 +1,6 @@
 use gestalt_timeline::db::SurrealClient;
 use gestalt_timeline::models::{Project, Task, TaskStatus};
 use gestalt_timeline::services::{ProtocolSyncService, TimelineService};
-use std::path::Path;
 use tempfile::tempdir;
 use tokio::fs;
 

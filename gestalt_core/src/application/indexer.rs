@@ -227,9 +227,6 @@ impl Indexer {
     }
 }
 
-use crate::application::agent::tools::SearchCodeTool;
-use surrealdb::sql::Thing as RecordId;
-
 #[async_trait::async_trait]
 pub trait VectorAdapter: Send + Sync {
     async fn index_document(&self, repo_id: &str, doc: DocumentRecord) -> Result<()>;

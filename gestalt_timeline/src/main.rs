@@ -753,6 +753,7 @@ async fn main() -> anyhow::Result<()> {
             {
                 let telegram_settings = settings
                     .telegram
+                    .clone()
                     .ok_or_else(|| anyhow::anyhow!("Telegram settings not configured"))?;
 
                 // Initialize decision engine

@@ -12,8 +12,8 @@ use crate::services::{
     ProjectService, ReviewerMessage, TaskService, TimelineService, VirtualFs, WatchService,
 };
 use synapse_agentic::prelude::{
-    async_trait, CompactionConfig, Decision, DecisionContext, DecisionEngine, EmptyContext, Hive,
-    Message, MessageRole, SessionContext, ToolRegistry,
+    CompactionConfig, Decision, DecisionContext, DecisionEngine, EmptyContext, Hive, Message,
+    MessageRole, SessionContext, ToolRegistry,
 };
 
 /// Orchestration action executed by AgentRuntime.
@@ -117,7 +117,7 @@ struct ExecutionResult {
     is_success: bool,
 }
 
-fn spawn_sub_agent(mut sub_runtime: AgentRuntime, goal: String) {
+fn spawn_sub_agent(sub_runtime: AgentRuntime, goal: String) {
     tokio::spawn(async move {
         if let Err(e) = sub_runtime.run_loop(&goal).await {
             tracing::error!("Sub-agent failed: {}", e);
@@ -507,7 +507,6 @@ impl AgentRuntime {
 
     fn map_decision_to_actions(decision: &Decision) -> Vec<OrchestrationAction> {
         let action = decision.action.trim();
-        let reasoning = &decision.reasoning;
         let params = decision.parameters.as_ref();
 
         if let Some(tool_name) = action.strip_prefix("call:") {
@@ -717,10 +716,24 @@ impl AgentRuntime {
             }
             OrchestrationAction::ReadFile { path } => {
                 match self.vfs.read_to_string(Path::new(path)).await {
-                    Ok(content) => Ok(ExecutionResult {
-                        observation: format!("File '{}' content:\n{}", path, content),
-                        is_success: true,
-                    }),
+                    Ok(content) => {
+                        let content_bytes = content.len();
+                        let line_count = content.lines().count();
+                        let preview: String = content.chars().take(256).collect();
+                        let truncated = content.chars().count() > 256;
+                        let preview_msg = if truncated {
+                            format!("{}...", preview)
+                        } else {
+                            preview
+                        };
+                        Ok(ExecutionResult {
+                            observation: format!(
+                                "File '{}' read successfully ({} bytes, {} lines). Preview (max 256 chars): {}",
+                                path, content_bytes, line_count, preview_msg
+                            ),
+                            is_success: true,
+                        })
+                    }
                     Err(e) => Ok(ExecutionResult {
                         observation: format!("Error reading file '{}': {}", path, e),
                         is_success: false,
@@ -1093,8 +1106,6 @@ mod tests {
         AgentService, MemoryService, ProjectService, TaskService, TimelineService, WatchService,
     };
     use std::sync::Arc;
-    use synapse_agentic::prelude::*;
-
     #[tokio::test]
     async fn test_retry_loop_initialization() {
         let db = SurrealClient::connect_mem().await.unwrap();

@@ -9,6 +9,25 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/lang/es/).
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-03-03
+
+### 🐛 Fixed
+- Stabilized `gestalt_timeline` runtime tests by making schema bootstrap compatible with engines that do not support HNSW vector indexes.
+- Fixed strict base-version validation in VFS patch application to avoid silent stale patch merges.
+- Improved context compaction reliability under large history pressure and degraded token-estimation scenarios.
+- Hardened runtime file-read observations to avoid persisting full file contents in agent observations.
+
+### 🔄 Changed
+- Bumped workspace crates from `0.1.0` to `1.0.0`.
+- Updated benchmark workflow permissions and made PR comment publishing non-fatal.
+- Updated release workflow to produce deterministic `v1.0.0` tags and centralized release assets.
+- Added full-feature compile step in release quality gate.
+
+### 🎉 Added
+- CLI HTTP client timeout enforcement for MCP-related blocking calls.
+- Async/non-blocking MCP tool handlers for shell, git and web fetch operations.
+- Safety rationale comment for unsafe mmap model loading in infra embeddings.
+
 ### 🎉 Added
 - **PLANNING.md**: Documento de planificación con arquitectura, stack tecnológico y diseño del sistema
 - **TASK.md**: Sistema de gestión de tareas con fases y tracking de progreso

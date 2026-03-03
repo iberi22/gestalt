@@ -13,7 +13,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tracing::{error, info, warn};
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
@@ -202,9 +202,19 @@ fn save_tasks(db_path: &str, tasks: &HashMap<String, Task>) -> Result<(), String
     fs::write(db_path, content).map_err(|e| e.to_string())
 }
 
-fn call_mcp(url: &str, tool: &str, args: serde_json::Value) -> Result<serde_json::Value, String> {
-    let client = reqwest::blocking::Client::new();
+fn build_http_client() -> Result<reqwest::blocking::Client, String> {
+    reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(20))
+        .build()
+        .map_err(|e| e.to_string())
+}
 
+fn call_mcp(
+    client: &reqwest::blocking::Client,
+    url: &str,
+    tool: &str,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
     let payload = json!({
         "jsonrpc": "2.0",
         "method": "tools/call",
@@ -250,6 +260,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let url = args.url.unwrap_or_else(|| config.mcp.server_url.clone());
+    let http_client = build_http_client().map_err(std::io::Error::other)?;
     let default_db = "tasks.json";
 
     info!("Gestalt CLI starting with URL: {}", url);
@@ -271,8 +282,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         Commands::Status => {
             let tools_url = format!("{}/tools", url);
-            let resp =
-                tokio::task::spawn_blocking(move || reqwest::blocking::get(&tools_url)).await??;
+            let client = http_client.clone();
+            let resp = tokio::task::spawn_blocking(move || client.get(&tools_url).send()).await??;
 
             match resp {
                 resp if resp.status().is_success() => {
@@ -291,8 +302,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         Commands::Tools => {
             let tools_url = format!("{}/tools", url);
+            let client = http_client.clone();
             let response =
-                tokio::task::spawn_blocking(move || reqwest::blocking::get(&tools_url)).await??;
+                tokio::task::spawn_blocking(move || client.get(&tools_url).send()).await??;
 
             let tools: Vec<serde_json::Value> = response.json().map_err(|e| e.to_string())?;
 
@@ -313,9 +325,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             let url_clone = url.clone();
             let tool_clone = tool.clone();
-            let result =
-                tokio::task::spawn_blocking(move || call_mcp(&url_clone, &tool_clone, args_json))
-                    .await?;
+            let client = http_client.clone();
+            let result = tokio::task::spawn_blocking(move || {
+                call_mcp(&client, &url_clone, &tool_clone, args_json)
+            })
+            .await?;
 
             match result {
                 Ok(result) => {
@@ -403,9 +417,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::Analyze { path } => {
             let args = json!({ "path": path });
             let url_clone = url.clone();
-            let result =
-                tokio::task::spawn_blocking(move || call_mcp(&url_clone, "analyze_project", args))
-                    .await??;
+            let client = http_client.clone();
+            let result = tokio::task::spawn_blocking(move || {
+                call_mcp(&client, &url_clone, "analyze_project", args)
+            })
+            .await??;
 
             if let Some(content) = result
                 .get("result")
@@ -433,9 +449,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "extensions": ext
             });
             let url_clone = url.clone();
-            let result =
-                tokio::task::spawn_blocking(move || call_mcp(&url_clone, "search_code", args))
-                    .await??;
+            let client = http_client.clone();
+            let result = tokio::task::spawn_blocking(move || {
+                call_mcp(&client, &url_clone, "search_code", args)
+            })
+            .await??;
 
             if let Some(content) = result
                 .get("result")
@@ -472,8 +490,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             let args = json!({ "path": path });
             let url_clone = url.clone();
+            let client = http_client.clone();
             let result =
-                tokio::task::spawn_blocking(move || call_mcp(&url_clone, tool, args)).await??;
+                tokio::task::spawn_blocking(move || call_mcp(&client, &url_clone, tool, args))
+                    .await??;
 
             if let Some(content) = result
                 .get("result")
@@ -489,9 +509,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::Read { path, lines } => {
             let args = json!({ "path": path, "lines": lines });
             let url_clone = url.clone();
-            let result =
-                tokio::task::spawn_blocking(move || call_mcp(&url_clone, "read_file", args))
-                    .await??;
+            let client = http_client.clone();
+            let result = tokio::task::spawn_blocking(move || {
+                call_mcp(&client, &url_clone, "read_file", args)
+            })
+            .await??;
 
             if let Some(content) = result
                 .get("result")
@@ -507,9 +529,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::Tree { path, depth } => {
             let args = json!({ "path": path, "depth": depth });
             let url_clone = url.clone();
-            let result =
-                tokio::task::spawn_blocking(move || call_mcp(&url_clone, "file_tree", args))
-                    .await??;
+            let client = http_client.clone();
+            let result = tokio::task::spawn_blocking(move || {
+                call_mcp(&client, &url_clone, "file_tree", args)
+            })
+            .await??;
 
             if let Some(content) = result
                 .get("result")
@@ -532,9 +556,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::SysInfo => {
             let args = json!({});
             let url_clone = url.clone();
-            let result =
-                tokio::task::spawn_blocking(move || call_mcp(&url_clone, "system_info", args))
-                    .await??;
+            let client = http_client.clone();
+            let result = tokio::task::spawn_blocking(move || {
+                call_mcp(&client, &url_clone, "system_info", args)
+            })
+            .await??;
 
             if let Some(content) = result
                 .get("result")

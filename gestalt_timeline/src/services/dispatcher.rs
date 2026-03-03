@@ -51,13 +51,6 @@ impl DispatcherService {
             cmd.arg(&prompt_str);
             cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
 
-            #[cfg(windows)]
-            {
-                const CREATE_NO_WINDOW: u32 = 0x08000000;
-                use std::os::windows::process::CommandExt;
-                cmd.creation_flags(CREATE_NO_WINDOW);
-            }
-
             match cmd.spawn() {
                 Ok(mut child) => {
                     let stdout = child.stdout.take().expect("Failed to open stdout");

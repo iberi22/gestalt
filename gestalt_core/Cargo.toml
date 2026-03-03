@@ -5,7 +5,6 @@ edition = "2021"
 
 [features]
 default = []
-github = ["dep:octocrab"]
 ui-bridge = ["dep:flutter_rust_bridge"]
 
 [dependencies]
@@ -35,7 +34,6 @@ tracing-subscriber = "0.3.19"
 
 # Git
 git2 = "0.20.4"
-octocrab = { version = "0.38.0", optional = true }
 
 # OAuth2 helpers
 dirs = "5.0.1"

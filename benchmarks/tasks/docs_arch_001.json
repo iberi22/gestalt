@@ -1,0 +1,8 @@
+{
+  "task_id": "docs_arch_001",
+  "category": "docs",
+  "difficulty": "easy",
+  "prompt": "Write a concise architecture summary for a multi-agent runtime using bullet points.",
+  "expected_keywords": ["architecture", "agent", "runtime", "bullet"]
+}
+

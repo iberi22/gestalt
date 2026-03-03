@@ -1,0 +1,8 @@
+{
+  "task_id": "refactor_safety_001",
+  "category": "code",
+  "difficulty": "hard",
+  "prompt": "Propose a safe refactor strategy to split a large runtime module without behavior regression.",
+  "expected_keywords": ["refactor", "safety", "tests", "regression"]
+}
+

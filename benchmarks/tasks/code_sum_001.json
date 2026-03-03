@@ -1,0 +1,8 @@
+{
+  "task_id": "code_sum_001",
+  "category": "code",
+  "difficulty": "easy",
+  "prompt": "Write a function that returns the sum of a list of integers and include one short unit test.",
+  "expected_keywords": ["function", "sum", "test"]
+}
+

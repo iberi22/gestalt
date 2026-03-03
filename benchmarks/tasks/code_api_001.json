@@ -1,0 +1,8 @@
+{
+  "task_id": "code_api_001",
+  "category": "code",
+  "difficulty": "medium",
+  "prompt": "Design a minimal REST API contract for task management with endpoints, request bodies, and response schema.",
+  "expected_keywords": ["endpoint", "request", "response", "schema"]
+}
+

@@ -5,7 +5,8 @@ labels:
   - feature
   - benchmark
 assignees: []
-status: open
+status: closed
+closed_on: 2026-03-03
 last_reviewed: 2026-03-03
 ---
 
@@ -18,8 +19,8 @@ Implementar un sistema desacoplado de benchmark para agentes IA con leaderboard 
 - Integración con benchmarks existentes del monorepo.
 
 ## Acceptance
-- [ ] Runner agnóstico al agente.
-- [ ] 7+ tareas de benchmark.
-- [ ] Persistencia SQLite histórica.
-- [ ] API/CLI para leaderboard.
-- [ ] Cálculo de score compuesto.
+- [x] Runner agnóstico al agente.
+- [x] 7+ tareas de benchmark.
+- [x] Persistencia SQLite histórica.
+- [x] API/CLI para leaderboard.
+- [x] Cálculo de score compuesto.

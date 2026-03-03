@@ -77,8 +77,8 @@ impl VectorDb for SurrealDbAdapter {
     ) -> anyhow::Result<Vec<ScoredResult>> {
         let table = Self::sanitize_table_name(collection)?;
         let query = format!(
-            "SELECT id, metadata, vector::distance::cosine(embedding, $vector) AS score \
-             FROM {} WHERE embedding IS NOT NONE ORDER BY score ASC LIMIT $limit",
+            "SELECT id, metadata, vector::similarity::cosine(embedding, $vector) AS score \
+             FROM {} WHERE embedding IS NOT NONE ORDER BY score DESC LIMIT $limit",
             table
         );
 
@@ -111,7 +111,7 @@ impl VectorDb for SurrealDbAdapter {
             .into_iter()
             .map(|r| ScoredResult {
                 id: r.id.to_string(),
-                score: 1.0 - r.score, // Convert distance to similarity
+                score: r.score,
                 metadata: r.metadata,
             })
             .collect())

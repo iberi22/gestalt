@@ -77,7 +77,9 @@ impl TelegramService {
             while let Ok(msg) = rx.recv().await {
                 match msg {
                     WatchMessage::Event(event) => {
-                        let _ = service_clone.handle_timeline_event(bot_clone.clone(), *event).await;
+                        let _ = service_clone
+                            .handle_timeline_event(bot_clone.clone(), *event)
+                            .await;
                     }
                     WatchMessage::Shutdown => break,
                     _ => {}
@@ -149,7 +151,8 @@ impl TelegramService {
                     // Escape for MarkdownV2?
                     // Let's defer robust escaping to step 5, but use it here as well
                     let escaped = self.escape_markdown(&text);
-                    let _ = bot.send_message(ChatId(id), escaped)
+                    let _ = bot
+                        .send_message(ChatId(id), escaped)
                         .parse_mode(teloxide::types::ParseMode::MarkdownV2)
                         .await;
                 }
@@ -161,8 +164,8 @@ impl TelegramService {
 
     fn escape_markdown(&self, text: &str) -> String {
         let reserved = [
-            '_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!',
-            '\\',
+            '_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.',
+            '!', '\\',
         ];
         let mut escaped = String::with_capacity(text.len() * 2);
         for c in text.chars() {
@@ -252,9 +255,12 @@ impl TelegramService {
                     }
                     Err(e) => {
                         error!("Chat error: {:?}", e);
-                        bot.send_message(msg.chat.id, format!("❌ Error: {}", self.escape_markdown(&e.to_string())))
-                            .parse_mode(teloxide::types::ParseMode::MarkdownV2)
-                            .await?;
+                        bot.send_message(
+                            msg.chat.id,
+                            format!("❌ Error: {}", self.escape_markdown(&e.to_string())),
+                        )
+                        .parse_mode(teloxide::types::ParseMode::MarkdownV2)
+                        .await?;
                     }
                 }
             }
@@ -298,7 +304,10 @@ impl TelegramService {
                             error!("Failed to enqueue task: {}", e);
                             bot.send_message(
                                 msg.chat.id,
-                                format!("❌ Failed to queue task: {}", self.escape_markdown(&e.to_string())),
+                                format!(
+                                    "❌ Failed to queue task: {}",
+                                    self.escape_markdown(&e.to_string())
+                                ),
                             )
                             .parse_mode(teloxide::types::ParseMode::MarkdownV2)
                             .await?;

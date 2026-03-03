@@ -8,13 +8,12 @@ use tracing::{info, warn};
 
 use crate::models::{AgentRuntimeState, EventType, RuntimePhase, TimelineEvent};
 use crate::services::{
-    spawn_reviewer_agent, AgentService, ContextCompactor, FileManager,
-    LockStatus, MemoryService, ProjectService, ReviewerMessage,
-    TaskService, TimelineService, VirtualFs, WatchService,
+    spawn_reviewer_agent, AgentService, ContextCompactor, FileManager, LockStatus, MemoryService,
+    ProjectService, ReviewerMessage, TaskService, TimelineService, VirtualFs, WatchService,
 };
 use synapse_agentic::prelude::{
-    async_trait, Decision, DecisionContext, DecisionEngine, EmptyContext, Hive,
-    ToolRegistry, CompactionConfig, SessionContext, Message, MessageRole
+    async_trait, CompactionConfig, Decision, DecisionContext, DecisionEngine, EmptyContext, Hive,
+    Message, MessageRole, SessionContext, ToolRegistry,
 };
 
 /// Orchestration action executed by AgentRuntime.
@@ -369,9 +368,8 @@ impl AgentRuntime {
                             retry_count, self.max_retries
                         );
 
-                        let repair_actions = self
-                            .next_actions(goal, Some(&result.observation))
-                            .await?;
+                        let repair_actions =
+                            self.next_actions(goal, Some(&result.observation)).await?;
                         if repair_actions.is_empty() {
                             warn!("Engine returned no repair actions. Failing loop.");
                             return Err(anyhow::anyhow!(
@@ -717,16 +715,18 @@ impl AgentRuntime {
                     is_success: true,
                 })
             }
-            OrchestrationAction::ReadFile { path } => match self.vfs.read_to_string(Path::new(path)).await {
-                Ok(content) => Ok(ExecutionResult {
-                    observation: format!("File '{}' content:\n{}", path, content),
-                    is_success: true,
-                }),
-                Err(e) => Ok(ExecutionResult {
-                    observation: format!("Error reading file '{}': {}", path, e),
-                    is_success: false,
-                }),
-            },
+            OrchestrationAction::ReadFile { path } => {
+                match self.vfs.read_to_string(Path::new(path)).await {
+                    Ok(content) => Ok(ExecutionResult {
+                        observation: format!("File '{}' content:\n{}", path, content),
+                        is_success: true,
+                    }),
+                    Err(e) => Ok(ExecutionResult {
+                        observation: format!("Error reading file '{}': {}", path, e),
+                        is_success: false,
+                    }),
+                }
+            }
             OrchestrationAction::WriteFile { path, content } => {
                 if let Some(parent) = Path::new(path).parent() {
                     self.vfs.create_dir_all(parent).await?;
@@ -884,7 +884,10 @@ impl AgentRuntime {
                         let mut jobs = self.jobs.lock().await;
                         jobs.insert(name.clone(), child);
                         Ok(ExecutionResult {
-                            observation: format!("Job '{}' started successfully (PID: {}).", name, id),
+                            observation: format!(
+                                "Job '{}' started successfully (PID: {}).",
+                                name, id
+                            ),
                             is_success: true,
                         })
                     }
@@ -959,7 +962,10 @@ impl AgentRuntime {
                     .await;
 
                 Ok(ExecutionResult {
-                    observation: format!("Delegated task to '{}' in background. Watch timeline for updates.", agent),
+                    observation: format!(
+                        "Delegated task to '{}' in background. Watch timeline for updates.",
+                        agent
+                    ),
                     is_success: true,
                 })
             }
@@ -1024,7 +1030,10 @@ impl AgentRuntime {
                     drop(jobs);
                     match child.wait().await {
                         Ok(status) => Ok(ExecutionResult {
-                            observation: format!("Job '{}' finished with status: {}", job_id, status),
+                            observation: format!(
+                                "Job '{}' finished with status: {}",
+                                job_id, status
+                            ),
                             is_success: status.success(),
                         }),
                         Err(e) => Ok(ExecutionResult {
@@ -1079,16 +1088,16 @@ impl AgentRuntime {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db::SurrealClient;
     use crate::services::{
         AgentService, MemoryService, ProjectService, TaskService, TimelineService, WatchService,
     };
-    use crate::db::SurrealClient;
-    use synapse_agentic::prelude::*;
     use std::sync::Arc;
+    use synapse_agentic::prelude::*;
 
     #[tokio::test]
     async fn test_retry_loop_initialization() {
-        let db = SurrealClient::connect_temp().await.unwrap();
+        let db = SurrealClient::connect_mem().await.unwrap();
         let timeline = TimelineService::new(db.clone());
         let project = ProjectService::new(db.clone(), timeline.clone());
         let task = TaskService::new(db.clone(), timeline.clone());

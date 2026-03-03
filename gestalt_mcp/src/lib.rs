@@ -6,9 +6,9 @@ use axum::{
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
 use std::path::PathBuf;
 use std::process::Command;
+use std::sync::Arc;
 use tokio::sync::Mutex;
 use walkdir::WalkDir;
 
@@ -252,40 +252,57 @@ fn get_tools() -> Vec<serde_json::Value> {
                 "type": "object",
                 "properties": {}
             }
-        })
+        }),
     ]
 }
 
 // ============ TOOL HANDLERS ============
 
 fn handle_echo(args: &serde_json::Value) -> serde_json::Value {
-    let message = args.get("message").and_then(|v| v.as_str()).unwrap_or("hello");
+    let message = args
+        .get("message")
+        .and_then(|v| v.as_str())
+        .unwrap_or("hello");
     serde_json::json!({
         "content": [{ "type": "text", "text": format!("Echo: {}", message) }]
     })
 }
 
 fn handle_analyze_project(args: &serde_json::Value) -> serde_json::Value {
-    let path = args.get("path")
+    let path = args
+        .get("path")
         .and_then(|v| v.as_str())
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("."));
-    
+
     let mut lang_counts: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
     let mut main_files: Vec<serde_json::Value> = Vec::new();
     let mut total: u32 = 0;
-    
-    for entry in WalkDir::new(&path).max_depth(3).into_iter().filter_map(|e| e.ok()) {
+
+    for entry in WalkDir::new(&path)
+        .max_depth(3)
+        .into_iter()
+        .filter_map(|e| e.ok())
+    {
         if entry.file_type().is_file() {
             total += 1;
             if let Some(ext) = entry.path().extension() {
                 let ext_str = ext.to_string_lossy().to_lowercase();
                 *lang_counts.entry(ext_str.clone()).or_insert(0) += 1;
-                
+
                 let name = entry.file_name().to_string_lossy();
-                if ["Cargo.toml", "package.json", "pyproject.toml", "main.rs", "lib.rs", "README.md", "go.mod", "requirements.txt"]
-                    .iter()
-                    .any(|&n| name == n)
+                if [
+                    "Cargo.toml",
+                    "package.json",
+                    "pyproject.toml",
+                    "main.rs",
+                    "lib.rs",
+                    "README.md",
+                    "go.mod",
+                    "requirements.txt",
+                ]
+                .iter()
+                .any(|&n| name == n)
                 {
                     main_files.push(serde_json::json!({
                         "name": name,
@@ -295,7 +312,7 @@ fn handle_analyze_project(args: &serde_json::Value) -> serde_json::Value {
             }
         }
     }
-    
+
     serde_json::json!({
         "content": [{
             "type": "text",
@@ -310,34 +327,44 @@ fn handle_analyze_project(args: &serde_json::Value) -> serde_json::Value {
 }
 
 fn handle_list_files(args: &serde_json::Value) -> serde_json::Value {
-    let path = args.get("path")
+    let path = args
+        .get("path")
         .and_then(|v| v.as_str())
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("."));
-    
+
     let depth = args.get("depth").and_then(|v| v.as_u64()).unwrap_or(2) as usize;
-    
-    let filter = args.get("filter")
-        .and_then(|v| v.as_str())
-        .map(|s| s.split(',').map(|e| e.trim().to_lowercase()).collect::<Vec<_>>());
-    
+
+    let filter = args.get("filter").and_then(|v| v.as_str()).map(|s| {
+        s.split(',')
+            .map(|e| e.trim().to_lowercase())
+            .collect::<Vec<_>>()
+    });
+
     let mut files: Vec<serde_json::Value> = Vec::new();
-    
-    for entry in WalkDir::new(&path).max_depth(depth).into_iter().filter_map(|e| e.ok()) {
+
+    for entry in WalkDir::new(&path)
+        .max_depth(depth)
+        .into_iter()
+        .filter_map(|e| e.ok())
+    {
         if entry.file_type().is_file() {
             let path_str = entry.path().to_string_lossy().to_string();
-            
+
             if let Some(ref filter_exts) = filter {
                 if let Some(ext) = entry.path().extension() {
                     let ext_str = ext.to_string_lossy().to_lowercase();
-                    if !filter_exts.iter().any(|f| f == &ext_str || f == &format!(".{}", ext_str)) {
+                    if !filter_exts
+                        .iter()
+                        .any(|f| f == &ext_str || f == &format!(".{}", ext_str))
+                    {
                         continue;
                     }
                 } else {
                     continue;
                 }
             }
-            
+
             let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
             files.push(serde_json::json!({
                 "path": path_str,
@@ -345,7 +372,7 @@ fn handle_list_files(args: &serde_json::Value) -> serde_json::Value {
             }));
         }
     }
-    
+
     serde_json::json!({
         "content": [{ "type": "text", "text": files }]
     })
@@ -356,9 +383,9 @@ fn handle_read_file(args: &serde_json::Value) -> serde_json::Value {
         Some(p) => PathBuf::from(p),
         None => return error_response("Missing path parameter"),
     };
-    
+
     let max_lines = args.get("lines").and_then(|v| v.as_u64()).unwrap_or(100) as usize;
-    
+
     match std::fs::read_to_string(&path) {
         Ok(content) => {
             let lines: Vec<&str> = content.lines().take(max_lines).collect();
@@ -369,23 +396,24 @@ fn handle_read_file(args: &serde_json::Value) -> serde_json::Value {
                 }]
             })
         }
-        Err(e) => error_response(&format!("Failed to read file: {}", e))
+        Err(e) => error_response(&format!("Failed to read file: {}", e)),
     }
 }
 
 fn handle_get_context(args: &serde_json::Value) -> serde_json::Value {
-    let path = args.get("path")
+    let path = args
+        .get("path")
         .and_then(|v| v.as_str())
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("."));
-    
+
     let mut context = serde_json::json!({
         "project_type": "unknown",
         "structure": [],
         "configs": [],
         "readme": serde_json::Value::Null
     });
-    
+
     if (path.join("Cargo.toml")).exists() {
         context["project_type"] = serde_json::json!("rust");
     } else if (path.join("package.json")).exists() {
@@ -397,25 +425,41 @@ fn handle_get_context(args: &serde_json::Value) -> serde_json::Value {
     } else if (path.join("requirements.txt")).exists() {
         context["project_type"] = serde_json::json!("python");
     }
-    
+
     let mut structure: Vec<String> = Vec::new();
-    for entry in WalkDir::new(&path).max_depth(2).into_iter().filter_map(|e| e.ok()) {
-        if entry.file_type().is_dir() && !entry.path().to_string_lossy().contains("node_modules") 
-           && !entry.path().to_string_lossy().contains("target") && !entry.path().to_string_lossy().contains(".git") {
+    for entry in WalkDir::new(&path)
+        .max_depth(2)
+        .into_iter()
+        .filter_map(|e| e.ok())
+    {
+        if entry.file_type().is_dir()
+            && !entry.path().to_string_lossy().contains("node_modules")
+            && !entry.path().to_string_lossy().contains("target")
+            && !entry.path().to_string_lossy().contains(".git")
+        {
             let depth = entry.depth();
             let prefix = "  ".repeat(depth);
             structure.push(format!("{}{}", prefix, entry.file_name().to_string_lossy()));
         }
     }
     context["structure"] = serde_json::json!(structure);
-    
-    let configs = ["Cargo.toml", "package.json", "pyproject.toml", "gestalt.toml", "openclaw.json", "go.mod", "requirements.txt"];
-    let found_configs: Vec<&str> = configs.iter()
+
+    let configs = [
+        "Cargo.toml",
+        "package.json",
+        "pyproject.toml",
+        "gestalt.toml",
+        "openclaw.json",
+        "go.mod",
+        "requirements.txt",
+    ];
+    let found_configs: Vec<&str> = configs
+        .iter()
         .filter(|c| path.join(c).exists())
         .copied()
         .collect();
     context["configs"] = serde_json::json!(found_configs);
-    
+
     let readme_paths = ["README.md", "readme.md", "README.txt"];
     for r in readme_paths {
         if let Ok(content) = std::fs::read_to_string(path.join(r)) {
@@ -424,7 +468,7 @@ fn handle_get_context(args: &serde_json::Value) -> serde_json::Value {
             break;
         }
     }
-    
+
     serde_json::json!({
         "content": [{ "type": "text", "text": context }]
     })
@@ -435,35 +479,50 @@ fn handle_search_code(args: &serde_json::Value) -> serde_json::Value {
         Some(p) => p,
         None => return error_response("Missing pattern parameter"),
     };
-    
-    let path = args.get("path")
+
+    let path = args
+        .get("path")
         .and_then(|v| v.as_str())
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("."));
-    
-    let extensions = args.get("extensions")
+
+    let extensions = args
+        .get("extensions")
         .and_then(|v| v.as_str())
-        .map(|s| s.split(',').map(|e| e.trim().to_lowercase()).collect::<Vec<_>>())
-        .unwrap_or_else(|| vec![".rs".to_string(), ".ts".to_string(), ".js".to_string(), ".py".to_string()]);
-    
+        .map(|s| {
+            s.split(',')
+                .map(|e| e.trim().to_lowercase())
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_else(|| {
+            vec![
+                ".rs".to_string(),
+                ".ts".to_string(),
+                ".js".to_string(),
+                ".py".to_string(),
+            ]
+        });
+
     let mut results: Vec<serde_json::Value> = Vec::new();
-    
+
     for entry in WalkDir::new(&path)
         .into_iter()
         .filter_map(|e| e.ok())
         .filter(|e| e.file_type().is_file())
     {
-        let ext_match = entry.path().extension()
+        let ext_match = entry
+            .path()
+            .extension()
             .map(|ext| {
                 let ext_str = format!(".{}", ext.to_string_lossy().to_lowercase());
                 extensions.contains(&ext_str)
             })
             .unwrap_or(false);
-        
+
         if !ext_match {
             continue;
         }
-        
+
         if let Ok(content) = std::fs::read_to_string(entry.path()) {
             for (line_num, line) in content.lines().enumerate() {
                 if line.to_lowercase().contains(&pattern.to_lowercase()) {
@@ -476,7 +535,7 @@ fn handle_search_code(args: &serde_json::Value) -> serde_json::Value {
             }
         }
     }
-    
+
     serde_json::json!({
         "content": [{ "type": "text", "text": results }]
     })
@@ -487,10 +546,10 @@ fn handle_exec_command(args: &serde_json::Value) -> serde_json::Value {
         Some(c) => c,
         None => return error_response("Missing command parameter"),
     };
-    
+
     let _timeout = args.get("timeout").and_then(|v| v.as_u64()).unwrap_or(30);
     let cwd = args.get("cwd").and_then(|v| v.as_str()).map(PathBuf::from);
-    
+
     let output = if cfg!(target_os = "windows") {
         Command::new("cmd")
             .args(["/C", command])
@@ -502,7 +561,7 @@ fn handle_exec_command(args: &serde_json::Value) -> serde_json::Value {
             .current_dir(cwd.unwrap_or_else(|| PathBuf::from(".")))
             .output()
     };
-    
+
     match output {
         Ok(out) => {
             let stdout = String::from_utf8_lossy(&out.stdout).to_string();
@@ -519,21 +578,22 @@ fn handle_exec_command(args: &serde_json::Value) -> serde_json::Value {
                 }]
             })
         }
-        Err(e) => error_response(&format!("Failed to execute: {}", e))
+        Err(e) => error_response(&format!("Failed to execute: {}", e)),
     }
 }
 
 fn handle_git_status(args: &serde_json::Value) -> serde_json::Value {
-    let path = args.get("path")
+    let path = args
+        .get("path")
         .and_then(|v| v.as_str())
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("."));
-    
+
     let output = Command::new("git")
         .args(["status", "--porcelain"])
         .current_dir(&path)
         .output();
-    
+
     match output {
         Ok(out) => {
             let stdout = String::from_utf8_lossy(&out.stdout).to_string();
@@ -544,23 +604,24 @@ fn handle_git_status(args: &serde_json::Value) -> serde_json::Value {
                 }]
             })
         }
-        Err(e) => error_response(&format!("Git error: {}", e))
+        Err(e) => error_response(&format!("Git error: {}", e)),
     }
 }
 
 fn handle_git_log(args: &serde_json::Value) -> serde_json::Value {
-    let path = args.get("path")
+    let path = args
+        .get("path")
         .and_then(|v| v.as_str())
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("."));
-    
+
     let count = args.get("count").and_then(|v| v.as_u64()).unwrap_or(5) as u32;
-    
+
     let output = Command::new("git")
         .args(["log", &format!("--oneline -{}", count)])
         .current_dir(&path)
         .output();
-    
+
     match output {
         Ok(out) => {
             let stdout = String::from_utf8_lossy(&out.stdout).to_string();
@@ -571,42 +632,52 @@ fn handle_git_log(args: &serde_json::Value) -> serde_json::Value {
                 }]
             })
         }
-        Err(e) => error_response(&format!("Git error: {}", e))
+        Err(e) => error_response(&format!("Git error: {}", e)),
     }
 }
 
 fn handle_file_tree(args: &serde_json::Value) -> serde_json::Value {
-    let path = args.get("path")
+    let path = args
+        .get("path")
         .and_then(|v| v.as_str())
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("."));
-    
+
     let depth = args.get("depth").and_then(|v| v.as_u64()).unwrap_or(3) as usize;
-    
-    let exclude = args.get("exclude")
+
+    let exclude = args
+        .get("exclude")
         .and_then(|v| v.as_str())
         .map(|s| s.split(',').collect::<Vec<_>>())
         .unwrap_or_else(|| vec!["node_modules", "target", ".git", "dist", "build"]);
-    
+
     let mut tree: Vec<serde_json::Value> = Vec::new();
-    
-    for entry in WalkDir::new(&path).max_depth(depth).into_iter().filter_map(|e| e.ok()) {
+
+    for entry in WalkDir::new(&path)
+        .max_depth(depth)
+        .into_iter()
+        .filter_map(|e| e.ok())
+    {
         let entry_path = entry.path().to_string_lossy();
-        
+
         if exclude.iter().any(|ex| entry_path.contains(ex)) {
             continue;
         }
-        
+
         let depth = entry.depth();
-        let icon = if entry.file_type().is_dir() { "📁" } else { "📄" };
-        
+        let icon = if entry.file_type().is_dir() {
+            "📁"
+        } else {
+            "📄"
+        };
+
         tree.push(serde_json::json!({
             "depth": depth,
             "name": format!("{} {}", icon, entry.file_name().to_string_lossy()),
             "path": entry_path
         }));
     }
-    
+
     serde_json::json!({
         "content": [{ "type": "text", "text": tree }]
     })
@@ -617,37 +688,52 @@ fn handle_grep(args: &serde_json::Value) -> serde_json::Value {
         Some(p) => p,
         None => return error_response("Missing pattern parameter"),
     };
-    
-    let path = args.get("path")
+
+    let path = args
+        .get("path")
         .and_then(|v| v.as_str())
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("."));
-    
+
     let context = args.get("context").and_then(|v| v.as_u64()).unwrap_or(2) as usize;
-    
-    let extensions = args.get("extensions")
+
+    let extensions = args
+        .get("extensions")
         .and_then(|v| v.as_str())
-        .map(|s| s.split(',').map(|e| e.trim().to_lowercase()).collect::<Vec<_>>())
-        .unwrap_or_else(|| vec![".rs".to_string(), ".ts".to_string(), ".js".to_string(), ".py".to_string()]);
-    
+        .map(|s| {
+            s.split(',')
+                .map(|e| e.trim().to_lowercase())
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_else(|| {
+            vec![
+                ".rs".to_string(),
+                ".ts".to_string(),
+                ".js".to_string(),
+                ".py".to_string(),
+            ]
+        });
+
     let mut results: Vec<serde_json::Value> = Vec::new();
-    
+
     for entry in WalkDir::new(&path)
         .into_iter()
         .filter_map(|e| e.ok())
         .filter(|e| e.file_type().is_file())
     {
-        let ext_match = entry.path().extension()
+        let ext_match = entry
+            .path()
+            .extension()
             .map(|ext| {
                 let ext_str = format!(".{}", ext.to_string_lossy().to_lowercase());
                 extensions.contains(&ext_str)
             })
             .unwrap_or(false);
-        
+
         if !ext_match {
             continue;
         }
-        
+
         if let Ok(content) = std::fs::read_to_string(entry.path()) {
             let lines: Vec<&str> = content.lines().collect();
             for (line_num, line) in lines.iter().enumerate() {
@@ -659,7 +745,7 @@ fn handle_grep(args: &serde_json::Value) -> serde_json::Value {
                         .enumerate()
                         .map(|(i, l)| format!("{:>4}: {}", start + i + 1, l))
                         .collect();
-                    
+
                     results.push(serde_json::json!({
                         "file": entry.path().to_string_lossy(),
                         "line": line_num + 1,
@@ -670,7 +756,7 @@ fn handle_grep(args: &serde_json::Value) -> serde_json::Value {
             }
         }
     }
-    
+
     serde_json::json!({
         "content": [{ "type": "text", "text": results }]
     })
@@ -681,17 +767,17 @@ fn handle_create_file(args: &serde_json::Value) -> serde_json::Value {
         Some(p) => PathBuf::from(p),
         None => return error_response("Missing path parameter"),
     };
-    
+
     let content = match args.get("content").and_then(|v| v.as_str()) {
         Some(c) => c,
         None => return error_response("Missing content parameter"),
     };
-    
+
     match std::fs::write(&path, content) {
         Ok(_) => serde_json::json!({
             "content": [{ "type": "text", "text": format!("File created: {}", path.to_string_lossy()) }]
         }),
-        Err(e) => error_response(&format!("Failed to create file: {}", e))
+        Err(e) => error_response(&format!("Failed to create file: {}", e)),
     }
 }
 
@@ -700,9 +786,12 @@ fn handle_web_fetch(args: &serde_json::Value) -> serde_json::Value {
         Some(u) => u,
         None => return error_response("Missing url parameter"),
     };
-    
-    let max_chars = args.get("max_chars").and_then(|v| v.as_u64()).unwrap_or(5000) as usize;
-    
+
+    let max_chars = args
+        .get("max_chars")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(5000) as usize;
+
     match reqwest::blocking::get(url) {
         Ok(resp) => {
             let text = resp.text().unwrap_or_default();
@@ -714,7 +803,7 @@ fn handle_web_fetch(args: &serde_json::Value) -> serde_json::Value {
                 }]
             })
         }
-        Err(e) => error_response(&format!("Failed to fetch: {}", e))
+        Err(e) => error_response(&format!("Failed to fetch: {}", e)),
     }
 }
 
@@ -740,9 +829,12 @@ fn current_time() -> String {
 }
 
 fn handle_task_create(args: &serde_json::Value) -> serde_json::Value {
-    let task_id = args.get("task_id").and_then(|v| v.as_str()).unwrap_or("default");
+    let task_id = args
+        .get("task_id")
+        .and_then(|v| v.as_str())
+        .unwrap_or("default");
     let command = args.get("command").and_then(|v| v.as_str()).unwrap_or("");
-    
+
     serde_json::json!({
         "content": [{
             "type": "text",
@@ -758,7 +850,7 @@ fn handle_task_create(args: &serde_json::Value) -> serde_json::Value {
 
 fn handle_task_status(args: &serde_json::Value) -> serde_json::Value {
     let task_id = args.get("task_id").and_then(|v| v.as_str()).unwrap_or("");
-    
+
     serde_json::json!({
         "content": [{
             "type": "text",
@@ -807,7 +899,7 @@ fn handle_tool(name: &str, args: &serde_json::Value) -> serde_json::Value {
         "task_create" => handle_task_create(args),
         "task_status" => handle_task_status(args),
         "task_list" => handle_task_list(args),
-        _ => error_response(&format!("Tool not found: {}", name))
+        _ => error_response(&format!("Tool not found: {}", name)),
     }
 }
 
@@ -823,7 +915,10 @@ pub async fn start_server() -> anyhow::Result<()> {
         .with_state(state);
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:3000").await?;
-    println!("🧠 Gestalt MCP Server v0.3.0 listening on {}", listener.local_addr()?);
+    println!(
+        "🧠 Gestalt MCP Server v0.3.0 listening on {}",
+        listener.local_addr()?
+    );
     println!("📋 Available tools: {}", get_tools().len());
     axum::serve(listener, app).await?;
 
@@ -856,7 +951,10 @@ async fn handle_mcp_request(
         "tools/call" => {
             if let Some(params) = &payload.params {
                 let name = params.get("name").and_then(|v| v.as_str()).unwrap_or("");
-                let args = params.get("arguments").cloned().unwrap_or(serde_json::Value::Null);
+                let args = params
+                    .get("arguments")
+                    .cloned()
+                    .unwrap_or(serde_json::Value::Null);
                 handle_tool(name, &args)
             } else {
                 return Json(JsonRpcResponse {
@@ -935,13 +1033,20 @@ async fn process_rpc_request(payload: JsonRpcRequest) -> JsonRpcResponse {
         "tools/call" => {
             if let Some(params) = &payload.params {
                 let name = params.get("name").and_then(|v| v.as_str()).unwrap_or("");
-                let args = params.get("arguments").cloned().unwrap_or(serde_json::Value::Null);
+                let args = params
+                    .get("arguments")
+                    .cloned()
+                    .unwrap_or(serde_json::Value::Null);
                 handle_tool(name, &args)
             } else {
                 return JsonRpcResponse {
                     jsonrpc: "2.0".to_string(),
                     result: None,
-                    error: Some(JsonRpcError { code: -32602, message: "Missing params".to_string(), data: None }),
+                    error: Some(JsonRpcError {
+                        code: -32602,
+                        message: "Missing params".to_string(),
+                        data: None,
+                    }),
                     id: payload.id,
                 };
             }
@@ -950,13 +1055,22 @@ async fn process_rpc_request(payload: JsonRpcRequest) -> JsonRpcResponse {
             return JsonRpcResponse {
                 jsonrpc: "2.0".to_string(),
                 result: None,
-                error: Some(JsonRpcError { code: -32601, message: format!("Method not found: {}", payload.method), data: None }),
+                error: Some(JsonRpcError {
+                    code: -32601,
+                    message: format!("Method not found: {}", payload.method),
+                    data: None,
+                }),
                 id: payload.id,
             }
         }
     };
 
-    JsonRpcResponse { jsonrpc: "2.0".to_string(), result: Some(result), error: None, id: payload.id }
+    JsonRpcResponse {
+        jsonrpc: "2.0".to_string(),
+        result: Some(result),
+        error: None,
+        id: payload.id,
+    }
 }
 
 async fn sse_handler() -> impl axum::response::IntoResponse {
@@ -972,6 +1086,8 @@ mod tests {
         let tools = get_tools();
         assert!(tools.len() > 10);
         assert!(tools.iter().any(|t| t.get("name").unwrap() == "echo"));
-        assert!(tools.iter().any(|t| t.get("name").unwrap() == "analyze_project"));
+        assert!(tools
+            .iter()
+            .any(|t| t.get("name").unwrap() == "analyze_project"));
     }
 }

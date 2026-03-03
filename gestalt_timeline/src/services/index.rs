@@ -1,12 +1,12 @@
+use crate::db::SurrealClient;
 use anyhow::Result;
 use chrono::Utc;
-use gestalt_core::application::indexer::{Indexer, RepositoryMetadata, DocumentRecord};
+use gestalt_core::application::indexer::{DocumentRecord, Indexer, RepositoryMetadata};
 use gestalt_core::domain::rag::embeddings::EmbeddingModel;
-use crate::db::SurrealClient;
-use tracing::info;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use surrealdb::sql::Thing;
+use tracing::info;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct RepoRecord {
@@ -79,7 +79,10 @@ impl IndexService {
 
     async fn ensure_repo(&self, meta: &RepositoryMetadata) -> Result<String> {
         let query = "SELECT * FROM repositories WHERE url = $url";
-        let existing: Vec<RepoRecord> = self.db.query_with(query, serde_json::json!({ "url": meta.url })).await?;
+        let existing: Vec<RepoRecord> = self
+            .db
+            .query_with(query, serde_json::json!({ "url": meta.url }))
+            .await?;
 
         if let Some(repo) = existing.first() {
             Ok(repo.id.as_ref().unwrap().to_string())
@@ -96,12 +99,22 @@ impl IndexService {
         }
     }
 
-    async fn should_update_doc(&self, repo_id: &str, record: &DocumentRecord) -> Result<Option<String>> {
+    async fn should_update_doc(
+        &self,
+        repo_id: &str,
+        record: &DocumentRecord,
+    ) -> Result<Option<String>> {
         let query = "SELECT * FROM documents WHERE repo_id = $repo_id AND path = $path";
-        let existing: Vec<DocRecord> = self.db.query_with(query, serde_json::json!({
-            "repo_id": repo_id,
-            "path": record.metadata.path
-        })).await?;
+        let existing: Vec<DocRecord> = self
+            .db
+            .query_with(
+                query,
+                serde_json::json!({
+                    "repo_id": repo_id,
+                    "path": record.metadata.path
+                }),
+            )
+            .await?;
 
         if let Some(doc) = existing.first() {
             if doc.checksum == record.metadata.checksum {
@@ -126,20 +139,26 @@ impl IndexService {
 
     async fn persist_doc(&self, doc_id: &str, record: DocumentRecord) -> Result<()> {
         // 1. Update document checksum and updated_at
-        let _: Vec<serde_json::Value> = self.db.query_with(
-            "UPDATE type::thing($doc_id) SET checksum = $checksum, updated_at = $now",
-            serde_json::json!({
-                "doc_id": doc_id,
-                "checksum": record.metadata.checksum,
-                "now": Utc::now()
-            })
-        ).await?;
+        let _: Vec<serde_json::Value> = self
+            .db
+            .query_with(
+                "UPDATE type::thing($doc_id) SET checksum = $checksum, updated_at = $now",
+                serde_json::json!({
+                    "doc_id": doc_id,
+                    "checksum": record.metadata.checksum,
+                    "now": Utc::now()
+                }),
+            )
+            .await?;
 
         // 2. Delete old chunks
-        let _: Vec<serde_json::Value> = self.db.query_with(
-            "DELETE chunks WHERE doc_id = $doc_id",
-            serde_json::json!({ "doc_id": doc_id })
-        ).await?;
+        let _: Vec<serde_json::Value> = self
+            .db
+            .query_with(
+                "DELETE chunks WHERE doc_id = $doc_id",
+                serde_json::json!({ "doc_id": doc_id }),
+            )
+            .await?;
 
         // 3. Insert new chunks with embeddings and metadata for RAG
         for chunk in record.chunks {

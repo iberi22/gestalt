@@ -1,13 +1,13 @@
+use anyhow::{bail, Result};
+use async_trait::async_trait;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot};
 use tokio::time::{Duration, Instant};
-use anyhow::{Result, bail};
 use tracing::{info, warn};
-use async_trait::async_trait;
 
-use crate::services::vfs::{VirtualFs, FlushReport, PendingChange, LockStatus, FlushError};
+use crate::services::vfs::{FlushError, FlushReport, LockStatus, PendingChange, VirtualFs};
 
 /// Core FileManager Actor implementation.
 /// Handles in-memory file states and serialized patch application.
@@ -93,7 +93,9 @@ impl FileManager {
 
     pub async fn read_file_state(&self, path: PathBuf) -> Result<FileState> {
         let (reply, rx) = oneshot::channel();
-        self.sender.send(FileCommand::ReadFileState { path, reply }).await?;
+        self.sender
+            .send(FileCommand::ReadFileState { path, reply })
+            .await?;
         rx.await?
     }
 
@@ -122,24 +124,36 @@ impl FileManager {
 impl VirtualFs for FileManager {
     async fn read_to_string(&self, path: &Path) -> Result<String> {
         let (reply, rx) = oneshot::channel();
-        self.sender.send(FileCommand::ReadFile { path: path.to_path_buf(), reply }).await?;
+        self.sender
+            .send(FileCommand::ReadFile {
+                path: path.to_path_buf(),
+                reply,
+            })
+            .await?;
         rx.await?
     }
 
     async fn write_string(&self, path: &Path, content: String, owner: &str) -> Result<()> {
         let (reply, rx) = oneshot::channel();
-        self.sender.send(FileCommand::WriteString {
-            path: path.to_path_buf(),
-            content,
-            owner: owner.to_string(),
-            reply
-        }).await?;
+        self.sender
+            .send(FileCommand::WriteString {
+                path: path.to_path_buf(),
+                content,
+                owner: owner.to_string(),
+                reply,
+            })
+            .await?;
         rx.await?
     }
 
     async fn create_dir_all(&self, path: &Path) -> Result<()> {
         let (reply, rx) = oneshot::channel();
-        self.sender.send(FileCommand::CreateDirAll { path: path.to_path_buf(), reply }).await?;
+        self.sender
+            .send(FileCommand::CreateDirAll {
+                path: path.to_path_buf(),
+                reply,
+            })
+            .await?;
         rx.await?
     }
 
@@ -151,7 +165,12 @@ impl VirtualFs for FileManager {
 
     async fn pending_changes(&self) -> Vec<PendingChange> {
         let (reply, rx) = oneshot::channel();
-        if self.sender.send(FileCommand::GetPendingChanges { reply }).await.is_err() {
+        if self
+            .sender
+            .send(FileCommand::GetPendingChanges { reply })
+            .await
+            .is_err()
+        {
             return vec![];
         }
         rx.await.unwrap_or_default()
@@ -159,16 +178,23 @@ impl VirtualFs for FileManager {
 
     async fn acquire_lock(&self, path: &Path, owner: &str) -> Result<LockStatus> {
         let (reply, rx) = oneshot::channel();
-        self.sender.send(FileCommand::AcquireLock {
-            path: path.to_path_buf(),
-            owner: owner.to_string(),
-            reply
-        }).await?;
+        self.sender
+            .send(FileCommand::AcquireLock {
+                path: path.to_path_buf(),
+                owner: owner.to_string(),
+                reply,
+            })
+            .await?;
         rx.await?
     }
 
     async fn release_locks(&self, owner: &str) {
-        let _ = self.sender.send(FileCommand::ReleaseLocks { owner: owner.to_string() }).await;
+        let _ = self
+            .sender
+            .send(FileCommand::ReleaseLocks {
+                owner: owner.to_string(),
+            })
+            .await;
     }
 
     async fn discard(&self) {
@@ -177,7 +203,12 @@ impl VirtualFs for FileManager {
 
     async fn version(&self) -> u64 {
         let (reply, rx) = oneshot::channel();
-        if self.sender.send(FileCommand::GetVersion { reply }).await.is_err() {
+        if self
+            .sender
+            .send(FileCommand::GetVersion { reply })
+            .await
+            .is_err()
+        {
             return 0;
         }
         rx.await.unwrap_or(0)
@@ -213,14 +244,22 @@ impl FileManagerActor {
     async fn handle_command(&mut self, command: FileCommand) {
         match command {
             FileCommand::ReadFile { path, reply } => {
-                let res = self.do_read_file_state(path).await.map(|s| (*s.content).clone());
+                let res = self
+                    .do_read_file_state(path)
+                    .await
+                    .map(|s| (*s.content).clone());
                 let _ = reply.send(res);
             }
             FileCommand::ReadFileState { path, reply } => {
                 let res = self.do_read_file_state(path).await;
                 let _ = reply.send(res);
             }
-            FileCommand::WriteString { path, content, owner, reply } => {
+            FileCommand::WriteString {
+                path,
+                content,
+                owner,
+                reply,
+            } => {
                 let res = self.do_write_string(path, content, owner).await;
                 if res.is_ok() {
                     self.last_modification = Some(Instant::now());
@@ -254,7 +293,10 @@ impl FileManagerActor {
                     pending.push(PendingChange::CreateDir { path: path.clone() });
                 }
                 for (path, state) in &self.files {
-                    pending.push(PendingChange::WriteFile { path: path.clone(), bytes: state.content.len() });
+                    pending.push(PendingChange::WriteFile {
+                        path: path.clone(),
+                        bytes: state.content.len(),
+                    });
                 }
                 let _ = reply.send(pending);
             }
@@ -264,7 +306,9 @@ impl FileManagerActor {
                         self.locks.insert(path, owner);
                         LockStatus::Acquired
                     }
-                    Some(current_owner) if current_owner == &owner => LockStatus::AlreadyHeldByOwner,
+                    Some(current_owner) if current_owner == &owner => {
+                        LockStatus::AlreadyHeldByOwner
+                    }
                     Some(current_owner) => LockStatus::HeldByOther {
                         owner: current_owner.clone(),
                     },
@@ -300,10 +344,19 @@ impl FileManagerActor {
         Ok(state)
     }
 
-    async fn do_write_string(&mut self, path: PathBuf, content: String, owner: String) -> Result<()> {
+    async fn do_write_string(
+        &mut self,
+        path: PathBuf,
+        content: String,
+        owner: String,
+    ) -> Result<()> {
         match self.locks.get(&path) {
             Some(current_owner) if current_owner != &owner => {
-                bail!("lock conflict for '{}': held by '{}'", path.display(), current_owner);
+                bail!(
+                    "lock conflict for '{}': held by '{}'",
+                    path.display(),
+                    current_owner
+                );
             }
             _ => {
                 self.locks.insert(path.clone(), owner);
@@ -311,10 +364,13 @@ impl FileManagerActor {
         }
 
         let current_version = self.files.get(&path).map(|s| s.version).unwrap_or(0);
-        self.files.insert(path, FileState {
-            content: Arc::new(content),
-            version: current_version + 1,
-        });
+        self.files.insert(
+            path,
+            FileState {
+                content: Arc::new(content),
+                version: current_version + 1,
+            },
+        );
         Ok(())
     }
 
@@ -327,7 +383,11 @@ impl FileManagerActor {
     ) -> Result<FileState> {
         match self.locks.get(&path) {
             Some(current_owner) if current_owner != &owner => {
-                bail!("lock conflict for '{}': held by '{}'", path.display(), current_owner);
+                bail!(
+                    "lock conflict for '{}': held by '{}'",
+                    path.display(),
+                    current_owner
+                );
             }
             _ => {
                 self.locks.insert(path.clone(), owner.clone());
@@ -455,10 +515,7 @@ impl UnifiedDiff {
                 let new_part = parts[2].trim_start_matches('+');
 
                 let parse_range = |s: &str| -> (usize, usize) {
-                    let r: Vec<usize> = s
-                        .split(',')
-                        .map(|v| v.parse().unwrap_or(0))
-                        .collect();
+                    let r: Vec<usize> = s.split(',').map(|v| v.parse().unwrap_or(0)).collect();
                     if r.len() == 1 {
                         (r[0], 1)
                     } else {
@@ -545,7 +602,9 @@ mod tests {
         tokio::spawn(actor.run());
 
         let patch = "@@ -1,3 +1,4 @@\n line1\n+new line\n line2\n line3";
-        let state = manager.apply_patch(file_path, patch.to_string(), 0, "agent1".to_string()).await?;
+        let state = manager
+            .apply_patch(file_path, patch.to_string(), 0, "agent1".to_string())
+            .await?;
 
         assert_eq!(state.content.as_str(), "line1\nnew line\nline2\nline3");
         assert_eq!(state.version, 1);
@@ -563,7 +622,14 @@ mod tests {
         tokio::spawn(actor.run());
 
         let patch = "@@ -1,1 +1,1 @@\n-initial\n+modified";
-        manager.apply_patch(file_path.clone(), patch.to_string(), 0, "agent1".to_string()).await?;
+        manager
+            .apply_patch(
+                file_path.clone(),
+                patch.to_string(),
+                0,
+                "agent1".to_string(),
+            )
+            .await?;
 
         let content_immediate = tokio::fs::read_to_string(&file_path).await?;
         assert_eq!(content_immediate, "initial");
@@ -605,11 +671,23 @@ mod tests {
         tokio::spawn(actor.run());
 
         // Update to v1
-        manager.apply_patch(file_path.clone(), "@@ -1,2 +1,3 @@\n line1\n+agent1\n line2".to_string(), 0, "a1".to_string()).await?;
+        manager
+            .apply_patch(
+                file_path.clone(),
+                "@@ -1,2 +1,3 @@\n line1\n+agent1\n line2".to_string(),
+                0,
+                "a1".to_string(),
+            )
+            .await?;
 
         // Attempt update based on v0 should fail if logic strictly enforced (it is in our bail!)
         let err = manager
-            .apply_patch(file_path, "@@ -1,2 +1,3 @@\n line1\n line2\n+agent2".to_string(), 0, "a2".to_string())
+            .apply_patch(
+                file_path,
+                "@@ -1,2 +1,3 @@\n line1\n line2\n+agent2".to_string(),
+                0,
+                "a2".to_string(),
+            )
             .await
             .unwrap_err();
 
@@ -626,10 +704,24 @@ mod tests {
         let (manager, actor) = FileManager::new();
         tokio::spawn(actor.run());
 
-        let s1 = manager.apply_patch(file_path.clone(), "@@ -1,1 +1,1 @@\n-start\n+v1".to_string(), 0, "a1".to_string()).await?;
+        let s1 = manager
+            .apply_patch(
+                file_path.clone(),
+                "@@ -1,1 +1,1 @@\n-start\n+v1".to_string(),
+                0,
+                "a1".to_string(),
+            )
+            .await?;
         assert_eq!(s1.version, 1);
 
-        let s2 = manager.apply_patch(file_path.clone(), "@@ -1,1 +1,1 @@\n-v1\n+v2".to_string(), 1, "a1".to_string()).await?;
+        let s2 = manager
+            .apply_patch(
+                file_path.clone(),
+                "@@ -1,1 +1,1 @@\n-v1\n+v2".to_string(),
+                1,
+                "a1".to_string(),
+            )
+            .await?;
         assert_eq!(s2.version, 2);
 
         Ok(())

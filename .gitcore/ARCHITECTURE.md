@@ -4,6 +4,7 @@
 - **Language:** Rust (Edition 2021)
 - **Framework:**
   - `gestalt_core`: Generic Logic (No IO)
+  - `gestalt_infra_*`: Provider-specific adapters (optional)
   - `gestalt_timeline`: Tokio + SurrealDB (Orchestration)
   - `gestalt_cli`: Clap + Rustyline (Interface)
 - **Database:** SurrealDB (Embedded / WebSocket)
@@ -53,6 +54,15 @@
 **Decision:** Adopt the "Hive" actor model for agent lifecycle management.
 **Rationale:** Standardizes resiliency, supervision (auto-restart on panic), and failover strategies.
 **Implementation:** `AgentRuntime` leverages `synapse_agentic::framework::Hive` for agent supervision and inter-agent communication.
+
+### 8. Minimal Compile Graph by Default
+**Decision:** Heavy integrations must be isolated in infrastructure crates and activated by explicit Cargo features.
+**Rationale:** Reduce local feedback time and keep domain logic independent from vendor SDKs.
+**Implementation:**
+- `gestalt_core` keeps domain traits + lightweight defaults.
+- `gestalt_infra_embeddings` contains BERT/candle implementation.
+- `gestalt_infra_github` contains Octocrab implementation.
+- `gestalt_timeline` enables optional integrations via `--features` (e.g., `telegram`, `rag-embeddings`).
 
 ## Component Diagram
 ```mermaid

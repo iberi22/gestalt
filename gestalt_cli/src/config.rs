@@ -1,5 +1,5 @@
+use config::{Config, ConfigError, Environment, File};
 use serde::{Deserialize, Serialize};
-use config::{Config, ConfigError, File, Environment};
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct CliConfig {
@@ -50,10 +50,7 @@ impl CliConfig {
         let mut s = Config::builder();
 
         // 1. Add configuration from file
-        let config_paths = [
-            "gestalt",
-            "config/gestalt",
-        ];
+        let config_paths = ["gestalt", "config/gestalt"];
 
         for path in config_paths {
             if std::path::Path::new(&format!("{}.toml", path)).exists() {
@@ -71,7 +68,7 @@ impl CliConfig {
 
         // Manual override if it was still "localhost" from the file but we want "127.0.0.1" as default
         if res.mcp.server_url == "http://localhost:3000" {
-             res.mcp.server_url = "http://127.0.0.1:3000".to_string();
+            res.mcp.server_url = "http://127.0.0.1:3000".to_string();
         }
 
         Ok(res)

@@ -35,18 +35,30 @@ pub fn get_git_status() -> String {
         let path = entry.path().unwrap_or("unknown");
 
         let mut index_char = ' ';
-        if status.is_index_new() { index_char = 'A'; }
-        else if status.is_index_modified() { index_char = 'M'; }
-        else if status.is_index_deleted() { index_char = 'D'; }
-        else if status.is_index_renamed() { index_char = 'R'; }
-        else if status.is_index_typechange() { index_char = 'T'; }
+        if status.is_index_new() {
+            index_char = 'A';
+        } else if status.is_index_modified() {
+            index_char = 'M';
+        } else if status.is_index_deleted() {
+            index_char = 'D';
+        } else if status.is_index_renamed() {
+            index_char = 'R';
+        } else if status.is_index_typechange() {
+            index_char = 'T';
+        }
 
         let mut wt_char = ' ';
-        if status.is_wt_new() { wt_char = '?'; }
-        else if status.is_wt_modified() { wt_char = 'M'; }
-        else if status.is_wt_deleted() { wt_char = 'D'; }
-        else if status.is_wt_renamed() { wt_char = 'R'; }
-        else if status.is_wt_typechange() { wt_char = 'T'; }
+        if status.is_wt_new() {
+            wt_char = '?';
+        } else if status.is_wt_modified() {
+            wt_char = 'M';
+        } else if status.is_wt_deleted() {
+            wt_char = 'D';
+        } else if status.is_wt_renamed() {
+            wt_char = 'R';
+        } else if status.is_wt_typechange() {
+            wt_char = 'T';
+        }
 
         let status_code = if wt_char == '?' && index_char == ' ' {
             String::from("??")
@@ -66,16 +78,16 @@ fn get_current_branch(repo: &Repository) -> Option<String> {
             if head.is_branch() {
                 head.shorthand().map(|s| s.to_string())
             } else {
-                head.target().map(|oid| format!("(detached at {})", &oid.to_string()[..7]))
+                head.target()
+                    .map(|oid| format!("(detached at {})", &oid.to_string()[..7]))
             }
         }
         Err(_) => {
             // If head() fails, we might be on a new branch with no commits.
             // We can try to get the symbolic reference HEAD points to.
             repo.find_reference("HEAD").ok().and_then(|refs| {
-                refs.symbolic_target().map(|s| {
-                    s.strip_prefix("refs/heads/").unwrap_or(s).to_string()
-                })
+                refs.symbolic_target()
+                    .map(|s| s.strip_prefix("refs/heads/").unwrap_or(s).to_string())
             })
         }
     }

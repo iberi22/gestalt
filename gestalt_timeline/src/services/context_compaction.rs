@@ -1,8 +1,8 @@
-use synapse_agentic::prelude::{
-    CompactionConfig, ContextOverflowRisk, Message, MessageRole, SessionContext,
-    SimpleTokenEstimator, TokenCounter, LLMSummarizer, LLMProvider,
-};
 use std::sync::Arc;
+use synapse_agentic::prelude::{
+    CompactionConfig, ContextOverflowRisk, LLMProvider, LLMSummarizer, Message, MessageRole,
+    SessionContext, SimpleTokenEstimator, TokenCounter,
+};
 
 #[derive(Debug, Clone)]
 pub struct CompactionOutcome {
@@ -58,10 +58,7 @@ impl ContextCompactor {
             };
         }
 
-        let chunk = synapse_agentic::prelude::MessageChunk::new(
-            compactable_messages.to_vec(),
-            0,
-        );
+        let chunk = synapse_agentic::prelude::MessageChunk::new(compactable_messages.to_vec(), 0);
 
         match self.summarizer.summarize(&chunk).await {
             Ok(summary_msg) => {
@@ -130,12 +127,15 @@ mod tests {
                     "Action {} Observation with verbose payload {}",
                     i,
                     "x".repeat(120)
-                )
+                ),
             ));
         }
 
         let outcome = compactor.compact(&mut session).await;
         assert!(outcome.compacted);
-        assert_eq!(session.recent_messages().first().unwrap().content, "Summary from mock provider");
+        assert_eq!(
+            session.recent_messages().first().unwrap().content,
+            "Summary from mock provider"
+        );
     }
 }

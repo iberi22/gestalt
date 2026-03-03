@@ -29,18 +29,26 @@ async fn test_protocol_sync_two_way() -> anyhow::Result<()> {
     db.create("projects", &project).await?;
 
     // 1. Sync from markdown to DB
-    sync_service.sync_from_markdown(&task_md_path, "test-project", "tester").await?;
+    sync_service
+        .sync_from_markdown(&task_md_path, "test-project", "tester")
+        .await?;
 
     // Verify tasks in DB
     let tasks: Vec<Task> = db.select_all("tasks").await?;
     println!("Tasks in DB: {:?}", tasks);
     assert_eq!(tasks.len(), 2);
 
-    let t1 = tasks.iter().find(|t| t.external_id.as_deref() == Some("T-01")).unwrap();
+    let t1 = tasks
+        .iter()
+        .find(|t| t.external_id.as_deref() == Some("T-01"))
+        .unwrap();
     assert_eq!(t1.status, TaskStatus::Pending);
     assert_eq!(t1.description, "Fix auth bug");
 
-    let t2 = tasks.iter().find(|t| t.external_id.as_deref() == Some("T-02")).unwrap();
+    let t2 = tasks
+        .iter()
+        .find(|t| t.external_id.as_deref() == Some("T-02"))
+        .unwrap();
     assert_eq!(t2.status, TaskStatus::Completed);
 
     // 2. Update task in DB
@@ -53,7 +61,9 @@ async fn test_protocol_sync_two_way() -> anyhow::Result<()> {
     db.update("tasks", &t1_id, &t1_updated).await?;
 
     // 3. Sync from DB to markdown
-    sync_service.sync_to_markdown(&task_md_path, "test-project").await?;
+    sync_service
+        .sync_to_markdown(&task_md_path, "test-project")
+        .await?;
 
     // Verify markdown content
     let updated_content = fs::read_to_string(&task_md_path).await?;

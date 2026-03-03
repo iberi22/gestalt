@@ -1,8 +1,8 @@
-use std::sync::Arc;
-use tokio::runtime::Runtime;
+use chrono::{DateTime, Utc};
 use eframe::egui;
 use gestalt_timeline::models::TimelineEvent;
-use chrono::{DateTime, Utc};
+use std::sync::Arc;
+use tokio::runtime::Runtime;
 
 #[allow(dead_code)]
 pub struct GestaltApp {
@@ -38,7 +38,7 @@ impl GestaltApp {
         // Here we would spawn a background task to fetch events from SurrealDB
         // For the MVP, let's add some mock data if DB is empty
         if self.events.is_empty() {
-             self.add_mock_data();
+            self.add_mock_data();
         }
     }
 
@@ -68,7 +68,10 @@ impl eframe::App for GestaltApp {
 
             ui.with_layout(egui::Layout::bottom_up(egui::Align::Center), |ui| {
                 ui.horizontal(|ui| {
-                    ui.label(format!("Last updated: {}", self.last_update.format("%H:%M:%S")));
+                    ui.label(format!(
+                        "Last updated: {}",
+                        self.last_update.format("%H:%M:%S")
+                    ));
                     if ui.button("Refresh").clicked() {
                         self.init();
                     }

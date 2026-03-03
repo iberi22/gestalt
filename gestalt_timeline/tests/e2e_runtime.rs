@@ -1,5 +1,8 @@
 use anyhow::Result;
-use gestalt_core::application::agent::tools::{ExecuteShellTool, ReadFileTool, WriteFileTool};
+use gestalt_core::application::agent::tools::{
+    ExecuteShellTool, GitAddTool, GitBranchTool, GitCommitTool, GitLogTool, GitPushTool,
+    GitStatusTool, ReadFileTool, WriteFileTool,
+};
 use gestalt_timeline::config::DatabaseSettings;
 use gestalt_timeline::db::SurrealClient;
 use gestalt_timeline::services::{
@@ -14,6 +17,12 @@ async fn init_tool_registry() -> Arc<ToolRegistry> {
     registry.register_tool(ExecuteShellTool).await;
     registry.register_tool(ReadFileTool).await;
     registry.register_tool(WriteFileTool).await;
+    registry.register_tool(GitStatusTool).await;
+    registry.register_tool(GitLogTool).await;
+    registry.register_tool(GitBranchTool).await;
+    registry.register_tool(GitAddTool).await;
+    registry.register_tool(GitCommitTool).await;
+    registry.register_tool(GitPushTool).await;
     registry
 }
 

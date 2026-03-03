@@ -1,7 +1,10 @@
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use clap::Parser;
-use gestalt_core::application::agent::tools::{ExecuteShellTool, ReadFileTool, WriteFileTool};
+use gestalt_core::application::agent::tools::{
+    ExecuteShellTool, GitAddTool, GitBranchTool, GitCommitTool, GitLogTool, GitPushTool,
+    GitStatusTool, ReadFileTool, WriteFileTool,
+};
 use gestalt_timeline::cli::{repl, AgentCommands, Cli, Commands};
 use gestalt_timeline::config::Settings;
 use gestalt_timeline::db::SurrealClient;
@@ -125,6 +128,12 @@ async fn init_tool_registry(
     registry.register_tool(ExecuteShellTool).await;
     registry.register_tool(ReadFileTool).await;
     registry.register_tool(WriteFileTool).await;
+    registry.register_tool(GitStatusTool).await;
+    registry.register_tool(GitLogTool).await;
+    registry.register_tool(GitBranchTool).await;
+    registry.register_tool(GitAddTool).await;
+    registry.register_tool(GitCommitTool).await;
+    registry.register_tool(GitPushTool).await;
     registry
         .register_tool(
             gestalt_core::application::agent::tools::SearchCodeTool::new(

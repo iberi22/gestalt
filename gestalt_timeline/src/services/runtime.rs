@@ -51,6 +51,28 @@ pub enum OrchestrationAction {
     ExecuteShell {
         command: String,
     },
+    GitStatus,
+    GitLog {
+        count: usize,
+    },
+    GitBranchList,
+    GitBranchCreate {
+        name: String,
+        checkout: bool,
+    },
+    GitCheckout {
+        name: String,
+    },
+    GitAdd {
+        paths: Vec<String>,
+    },
+    GitCommit {
+        message: String,
+    },
+    GitPush {
+        remote: String,
+        branch: String,
+    },
     StartJob {
         name: String,
         command: String,
@@ -583,6 +605,68 @@ impl AgentRuntime {
                     .to_string();
                 vec![OrchestrationAction::ExecuteShell { command }]
             }
+            "git_status" => vec![OrchestrationAction::GitStatus],
+            "git_log" => {
+                let count = params
+                    .and_then(|p| p.get("count"))
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(5) as usize;
+                vec![OrchestrationAction::GitLog { count }]
+            }
+            "git_branch_list" => vec![OrchestrationAction::GitBranchList],
+            "git_branch_create" => {
+                let name = params
+                    .and_then(|p| p.get("name"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string();
+                let checkout = params
+                    .and_then(|p| p.get("checkout"))
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                vec![OrchestrationAction::GitBranchCreate { name, checkout }]
+            }
+            "git_checkout" => {
+                let name = params
+                    .and_then(|p| p.get("name"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string();
+                vec![OrchestrationAction::GitCheckout { name }]
+            }
+            "git_add" => {
+                let paths = params
+                    .and_then(|p| p.get("paths"))
+                    .and_then(|v| v.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|v| v.as_str().map(ToOwned::to_owned))
+                            .collect::<Vec<_>>()
+                    })
+                    .unwrap_or_default();
+                vec![OrchestrationAction::GitAdd { paths }]
+            }
+            "git_commit" => {
+                let message = params
+                    .and_then(|p| p.get("message"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string();
+                vec![OrchestrationAction::GitCommit { message }]
+            }
+            "git_push" => {
+                let remote = params
+                    .and_then(|p| p.get("remote"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("origin")
+                    .to_string();
+                let branch = params
+                    .and_then(|p| p.get("branch"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("main")
+                    .to_string();
+                vec![OrchestrationAction::GitPush { remote, branch }]
+            }
             "list_projects" => vec![OrchestrationAction::ListProjects],
             "list_jobs" => vec![OrchestrationAction::ListJobs],
             "flush_vfs" => vec![OrchestrationAction::FlushVfs],
@@ -638,6 +722,52 @@ impl AgentRuntime {
                 response: format!("Decision: {} | {}", decision.action, decision.reasoning),
             }],
         }
+    }
+
+    fn validate_branch_name(name: &str) -> Result<()> {
+        if name.is_empty() {
+            anyhow::bail!("branch name cannot be empty");
+        }
+        if name.contains("..")
+            || name.starts_with('/')
+            || name.ends_with('/')
+            || name.starts_with('-')
+            || name.contains('\\')
+            || name.contains(' ')
+        {
+            anyhow::bail!("invalid branch name '{}'", name);
+        }
+        Ok(())
+    }
+
+    fn validate_git_path(path: &str) -> Result<()> {
+        if path.is_empty() {
+            anyhow::bail!("path cannot be empty");
+        }
+        if path.starts_with('/') || path.starts_with('\\') || path.contains("..") {
+            anyhow::bail!("unsafe git path '{}'", path);
+        }
+        Ok(())
+    }
+
+    async fn execute_git(&self, args: &[String]) -> Result<ExecutionResult> {
+        let output = tokio::process::Command::new("git")
+            .args(args)
+            .output()
+            .await?;
+        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        let exit_code = output.status.code().unwrap_or(-1);
+        Ok(ExecutionResult {
+            observation: format!(
+                "Git command executed: git {}\nExit: {}\nSTDOUT:\n{}\nSTDERR:\n{}",
+                args.join(" "),
+                exit_code,
+                stdout,
+                stderr
+            ),
+            is_success: exit_code == 0,
+        })
     }
 
     async fn execute_action(&self, action: &OrchestrationAction) -> Result<ExecutionResult> {
@@ -876,6 +1006,74 @@ impl AgentRuntime {
                         is_success: false,
                     }),
                 }
+            }
+            OrchestrationAction::GitStatus => {
+                self.execute_git(&[String::from("status"), String::from("--porcelain")])
+                    .await
+            }
+            OrchestrationAction::GitLog { count } => {
+                self.execute_git(&[
+                    String::from("log"),
+                    String::from("--oneline"),
+                    format!("-{}", count),
+                ])
+                .await
+            }
+            OrchestrationAction::GitBranchList => {
+                self.execute_git(&[String::from("branch"), String::from("--list")])
+                    .await
+            }
+            OrchestrationAction::GitBranchCreate { name, checkout } => {
+                Self::validate_branch_name(name)?;
+                if *checkout {
+                    self.execute_git(&[
+                        String::from("checkout"),
+                        String::from("-b"),
+                        name.to_string(),
+                    ])
+                    .await
+                } else {
+                    self.execute_git(&[String::from("branch"), name.to_string()])
+                        .await
+                }
+            }
+            OrchestrationAction::GitCheckout { name } => {
+                Self::validate_branch_name(name)?;
+                self.execute_git(&[String::from("checkout"), name.to_string()])
+                    .await
+            }
+            OrchestrationAction::GitAdd { paths } => {
+                if paths.is_empty() {
+                    return Ok(ExecutionResult {
+                        observation: "git_add requires at least one path".to_string(),
+                        is_success: false,
+                    });
+                }
+                let mut argv = vec![String::from("add")];
+                for path in paths {
+                    Self::validate_git_path(path)?;
+                    argv.push(path.clone());
+                }
+                self.execute_git(&argv).await
+            }
+            OrchestrationAction::GitCommit { message } => {
+                if message.trim().is_empty() {
+                    return Ok(ExecutionResult {
+                        observation: "git_commit requires a non-empty message".to_string(),
+                        is_success: false,
+                    });
+                }
+                self.execute_git(&[
+                    String::from("commit"),
+                    String::from("-m"),
+                    message.to_string(),
+                ])
+                .await
+            }
+            OrchestrationAction::GitPush { remote, branch } => {
+                Self::validate_branch_name(branch)?;
+                self.execute_git(&[String::from("push"), remote.to_string(), branch.to_string()])
+                    .await
             }
             OrchestrationAction::StartJob { name, command } => {
                 #[cfg(target_os = "windows")]

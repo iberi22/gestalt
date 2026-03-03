@@ -27,6 +27,12 @@ pub async fn create_gestalt_tools(
     registry.register_tool(ExecuteShellTool).await;
     registry.register_tool(ReadFileTool).await;
     registry.register_tool(WriteFileTool).await;
+    registry.register_tool(GitStatusTool).await;
+    registry.register_tool(GitLogTool).await;
+    registry.register_tool(GitBranchTool).await;
+    registry.register_tool(GitAddTool).await;
+    registry.register_tool(GitCommitTool).await;
+    registry.register_tool(GitPushTool).await;
 
     registry
         .register_tool(CloneRepoTool {
@@ -338,5 +344,319 @@ impl Tool for WriteFileTool {
             Ok(_) => Ok(json!({ "success": true, "bytes_written": content.len() })),
             Err(e) => Err(anyhow::anyhow!("Failed to write file '{}': {}", path, e)),
         }
+    }
+}
+
+fn validate_branch_name(name: &str) -> anyhow::Result<()> {
+    if name.is_empty() {
+        anyhow::bail!("branch name cannot be empty");
+    }
+    if name.contains("..")
+        || name.starts_with('/')
+        || name.ends_with('/')
+        || name.starts_with('-')
+        || name.contains('\\')
+        || name.contains(' ')
+    {
+        anyhow::bail!("invalid branch name '{}'", name);
+    }
+    Ok(())
+}
+
+fn validate_git_path(path: &str) -> anyhow::Result<()> {
+    if path.is_empty() {
+        anyhow::bail!("path cannot be empty");
+    }
+    if path.starts_with('/') || path.starts_with('\\') || path.contains("..") {
+        anyhow::bail!("unsafe git path '{}'", path);
+    }
+    Ok(())
+}
+
+async fn run_git(args: &[String]) -> anyhow::Result<Value> {
+    let output = tokio::process::Command::new("git")
+        .args(args)
+        .output()
+        .await?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    let exit_code = output.status.code().unwrap_or(-1);
+
+    Ok(json!({
+        "exit_code": exit_code,
+        "stdout": stdout,
+        "stderr": stderr,
+        "success": exit_code == 0
+    }))
+}
+
+pub struct GitStatusTool;
+
+#[async_trait]
+impl Tool for GitStatusTool {
+    fn name(&self) -> &str {
+        "git_status"
+    }
+
+    fn description(&self) -> &str {
+        "Show git repository status in porcelain format."
+    }
+
+    fn parameters(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {}
+        })
+    }
+
+    async fn call(&self, _ctx: &dyn ToolContext, _args: Value) -> anyhow::Result<Value> {
+        run_git(&[String::from("status"), String::from("--porcelain")]).await
+    }
+}
+
+pub struct GitLogTool;
+
+#[async_trait]
+impl Tool for GitLogTool {
+    fn name(&self) -> &str {
+        "git_log"
+    }
+
+    fn description(&self) -> &str {
+        "Show recent git commits in one-line format."
+    }
+
+    fn parameters(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "count": { "type": "integer", "default": 5 }
+            }
+        })
+    }
+
+    async fn call(&self, _ctx: &dyn ToolContext, args: Value) -> anyhow::Result<Value> {
+        let count = args.get("count").and_then(|v| v.as_u64()).unwrap_or(5);
+        run_git(&[
+            String::from("log"),
+            String::from("--oneline"),
+            format!("-{}", count),
+        ])
+        .await
+    }
+}
+
+pub struct GitBranchTool;
+
+#[async_trait]
+impl Tool for GitBranchTool {
+    fn name(&self) -> &str {
+        "git_branch"
+    }
+
+    fn description(&self) -> &str {
+        "List, create, or checkout git branches using safe arguments."
+    }
+
+    fn parameters(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "action": { "type": "string", "enum": ["list", "create", "checkout"] },
+                "name": { "type": "string", "description": "Branch name for create/checkout" },
+                "checkout": { "type": "boolean", "default": false }
+            },
+            "required": ["action"]
+        })
+    }
+
+    async fn call(&self, _ctx: &dyn ToolContext, args: Value) -> anyhow::Result<Value> {
+        let action = args
+            .get("action")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("Missing 'action' parameter"))?;
+
+        match action {
+            "list" => run_git(&[String::from("branch"), String::from("--list")]).await,
+            "create" => {
+                let name = args
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| anyhow::anyhow!("Missing 'name' parameter"))?;
+                validate_branch_name(name)?;
+                let checkout = args
+                    .get("checkout")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                if checkout {
+                    run_git(&[
+                        String::from("checkout"),
+                        String::from("-b"),
+                        name.to_string(),
+                    ])
+                    .await
+                } else {
+                    run_git(&[String::from("branch"), name.to_string()]).await
+                }
+            }
+            "checkout" => {
+                let name = args
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| anyhow::anyhow!("Missing 'name' parameter"))?;
+                validate_branch_name(name)?;
+                run_git(&[String::from("checkout"), name.to_string()]).await
+            }
+            _ => anyhow::bail!("unsupported git_branch action '{}'", action),
+        }
+    }
+}
+
+pub struct GitAddTool;
+
+#[async_trait]
+impl Tool for GitAddTool {
+    fn name(&self) -> &str {
+        "git_add"
+    }
+
+    fn description(&self) -> &str {
+        "Stage one or more paths with git add, enforcing safe relative paths."
+    }
+
+    fn parameters(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "paths": {
+                    "type": "array",
+                    "items": { "type": "string" }
+                }
+            },
+            "required": ["paths"]
+        })
+    }
+
+    async fn call(&self, _ctx: &dyn ToolContext, args: Value) -> anyhow::Result<Value> {
+        let paths = args
+            .get("paths")
+            .and_then(|v| v.as_array())
+            .ok_or_else(|| anyhow::anyhow!("Missing 'paths' parameter"))?;
+
+        if paths.is_empty() {
+            anyhow::bail!("paths cannot be empty");
+        }
+
+        let mut argv = vec![String::from("add")];
+        for p in paths {
+            let path = p
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("paths must contain strings"))?;
+            validate_git_path(path)?;
+            argv.push(path.to_string());
+        }
+
+        run_git(&argv).await
+    }
+}
+
+pub struct GitCommitTool;
+
+#[async_trait]
+impl Tool for GitCommitTool {
+    fn name(&self) -> &str {
+        "git_commit"
+    }
+
+    fn description(&self) -> &str {
+        "Commit staged changes with a validated commit message."
+    }
+
+    fn parameters(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "message": { "type": "string" }
+            },
+            "required": ["message"]
+        })
+    }
+
+    async fn call(&self, _ctx: &dyn ToolContext, args: Value) -> anyhow::Result<Value> {
+        let message = args
+            .get("message")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("Missing 'message' parameter"))?;
+
+        if message.trim().is_empty() {
+            anyhow::bail!("commit message cannot be empty");
+        }
+
+        run_git(&[
+            String::from("commit"),
+            String::from("-m"),
+            message.to_string(),
+        ])
+        .await
+    }
+}
+
+pub struct GitPushTool;
+
+#[async_trait]
+impl Tool for GitPushTool {
+    fn name(&self) -> &str {
+        "git_push"
+    }
+
+    fn description(&self) -> &str {
+        "Push current branch to remote with safe branch validation."
+    }
+
+    fn parameters(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "remote": { "type": "string", "default": "origin" },
+                "branch": { "type": "string", "default": "main" }
+            }
+        })
+    }
+
+    async fn call(&self, _ctx: &dyn ToolContext, args: Value) -> anyhow::Result<Value> {
+        let remote = args
+            .get("remote")
+            .and_then(|v| v.as_str())
+            .unwrap_or("origin");
+        let branch = args
+            .get("branch")
+            .and_then(|v| v.as_str())
+            .unwrap_or("main");
+
+        validate_branch_name(branch)?;
+
+        run_git(&[String::from("push"), remote.to_string(), branch.to_string()]).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{validate_branch_name, validate_git_path};
+
+    #[test]
+    fn branch_validation_rejects_unsafe_names() {
+        assert!(validate_branch_name("feature/ok-name").is_ok());
+        assert!(validate_branch_name("bad name").is_err());
+        assert!(validate_branch_name("../bad").is_err());
+        assert!(validate_branch_name("-bad").is_err());
+    }
+
+    #[test]
+    fn git_path_validation_rejects_unsafe_paths() {
+        assert!(validate_git_path("src/main.rs").is_ok());
+        assert!(validate_git_path("../secret").is_err());
+        assert!(validate_git_path("/etc/passwd").is_err());
+        assert!(validate_git_path("\\\\server\\share").is_err());
     }
 }

@@ -1,9 +1,16 @@
 [workspace]
 members = [
     "gestalt_core",
+    "gestalt_infra_embeddings",
     "gestalt_cli",
     "gestalt_timeline", "gestalt_mcp", "gestalt_ui",
     "gestaltctl",
     "synapse-agentic",
 ]
 resolver = "2"
+
+[profile.dev-fast]
+inherits = "dev"
+debug = 0
+incremental = true
+codegen-units = 256

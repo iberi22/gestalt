@@ -6,6 +6,11 @@ authors = ["Gestalt Team"]
 description = "Meta-Agent CLI Orchestrator with Universal Timeline"
 license = "MIT"
 
+[features]
+default = []
+rag-embeddings = ["dep:gestalt_infra_embeddings", "gestalt_infra_embeddings/bert"]
+telegram = ["dep:teloxide"]
+
 [[bin]]
 name = "gestalt"
 path = "src/main.rs"
@@ -50,11 +55,6 @@ async-trait = "0.1"
 # Environment
 dotenvy = "0.15"
 
-# AWS Bedrock
-aws-config = "1.5"
-aws-sdk-bedrockruntime = "1.71"
-aws-sdk-bedrock = "1.71"
-
 # For streaming responses
 futures = "0.3"
 config = "0.15.19"
@@ -62,7 +62,8 @@ rustyline = "17.0.2"
 
 # Core Logic
 gestalt_core = { path = "../gestalt_core" }
-teloxide = { version = "0.17.0", features = ["macros"] }
+gestalt_infra_embeddings = { path = "../gestalt_infra_embeddings", optional = true }
+teloxide = { version = "0.17.0", features = ["macros"], optional = true }
 
 # Synapse Agentic - Framework base for Hive, Memory, Resilience, Compaction
 synapse-agentic = { path = "../synapse-agentic", default-features = false, features = ["mcp", "db-surreal"] }

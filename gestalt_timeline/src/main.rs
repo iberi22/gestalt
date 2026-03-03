@@ -8,9 +8,11 @@ use gestalt_timeline::db::SurrealClient;
 use gestalt_timeline::services::{
     start_server, AgentRuntime, AgentService, AuthService, DispatcherService, IndexService,
     MemoryService, ProjectService, ProtocolSyncService, QueuedTask, TaskQueue, TaskService,
-    TaskSource, TelegramService, TimelineService, WatchService,
+    TaskSource, TimelineService, WatchService,
 };
 use std::path::Path;
+#[cfg(feature = "telegram")]
+use gestalt_timeline::services::TelegramService;
 
 use gestalt_core::context::{detector, scanner};
 use std::sync::Arc;
@@ -109,9 +111,7 @@ async fn init_decision_engine(
         // providing transparent failover between all added providers.
         // It's crucial this is the FIRST provider added so AgentRuntime picks it up.
         Ok(Arc::new(
-            DecisionEngine::builder()
-                .with_provider(rotator)
-                .build(),
+            DecisionEngine::builder().with_provider(rotator).build(),
         ))
     }
 }
@@ -126,10 +126,12 @@ async fn init_tool_registry(
     registry.register_tool(ReadFileTool).await;
     registry.register_tool(WriteFileTool).await;
     registry
-        .register_tool(gestalt_core::application::agent::tools::SearchCodeTool::new(
-            vector_db,
-            embedding_model,
-        ))
+        .register_tool(
+            gestalt_core::application::agent::tools::SearchCodeTool::new(
+                vector_db,
+                embedding_model,
+            ),
+        )
         .await;
     registry
 }
@@ -188,29 +190,46 @@ async fn main() -> anyhow::Result<()> {
 
     // Initialize database connection
     let db = SurrealClient::connect(&settings.database).await?;
-    let vector_db: Arc<dyn gestalt_core::ports::outbound::repo_manager::VectorDb> = Arc::new(db.clone());
+    let vector_db: Arc<dyn gestalt_core::ports::outbound::repo_manager::VectorDb> =
+        Arc::new(db.clone());
 
-    // Attempt to initialize BERT embedding model if files exist, fallback to dummy
-    let embedding_model: Arc<dyn gestalt_core::domain::rag::embeddings::EmbeddingModel> =
-        if std::path::Path::new("models/bert/config.json").exists() &&
-           std::path::Path::new("models/bert/tokenizer.json").exists() &&
-           std::path::Path::new("models/bert/model.safetensors").exists() {
-               info!("🚀 Initializing BertEmbeddingModel...");
-               match gestalt_core::domain::rag::embeddings::BertEmbeddingModel::new(
-                   "models/bert/config.json",
-                   "models/bert/tokenizer.json",
-                   "models/bert/model.safetensors"
-               ) {
-                   Ok(m) => Arc::new(m),
-                   Err(e) => {
-                       warn!("Failed to load BERT model: {}. Falling back to DummyEmbeddingModel.", e);
-                       Arc::new(gestalt_core::domain::rag::embeddings::DummyEmbeddingModel::new(384))
-                   }
-               }
-           } else {
-               info!("Using DummyEmbeddingModel for RAG.");
-               Arc::new(gestalt_core::domain::rag::embeddings::DummyEmbeddingModel::new(384))
-           };
+    // Default lightweight embedding model for fast local builds.
+    let embedding_model: Arc<dyn gestalt_core::domain::rag::embeddings::EmbeddingModel> = {
+        #[cfg(feature = "rag-embeddings")]
+        {
+            let mut model = Arc::new(gestalt_core::domain::rag::embeddings::DummyEmbeddingModel::new(
+                384,
+            )) as Arc<dyn gestalt_core::domain::rag::embeddings::EmbeddingModel>;
+
+            if std::path::Path::new("models/bert/config.json").exists()
+                && std::path::Path::new("models/bert/tokenizer.json").exists()
+                && std::path::Path::new("models/bert/model.safetensors").exists()
+            {
+                info!("🚀 Initializing BertEmbeddingModel...");
+                match gestalt_infra_embeddings::BertEmbeddingModel::new(
+                    "models/bert/config.json",
+                    "models/bert/tokenizer.json",
+                    "models/bert/model.safetensors",
+                ) {
+                    Ok(m) => model = Arc::new(m),
+                    Err(e) => warn!(
+                        "Failed to load BERT model: {}. Falling back to DummyEmbeddingModel.",
+                        e
+                    ),
+                }
+            } else {
+                info!("BERT model files not found. Using DummyEmbeddingModel for RAG.");
+            }
+            model
+        }
+        #[cfg(not(feature = "rag-embeddings"))]
+        {
+            info!("Feature 'rag-embeddings' disabled. Using DummyEmbeddingModel for RAG.");
+            Arc::new(gestalt_core::domain::rag::embeddings::DummyEmbeddingModel::new(
+                384,
+            ))
+        }
+    };
 
     // Initialize services
     let timeline_service = TimelineService::new(db.clone());
@@ -611,7 +630,10 @@ async fn main() -> anyhow::Result<()> {
             let path_buf = std::path::PathBuf::from(path);
 
             if to_db {
-                println!("📥 Syncing from markdown to database for project: {}", project);
+                println!(
+                    "📥 Syncing from markdown to database for project: {}",
+                    project
+                );
                 match sync_service
                     .sync_from_markdown(&path_buf, &project, &agent_id)
                     .await
@@ -622,7 +644,10 @@ async fn main() -> anyhow::Result<()> {
             }
 
             if to_markdown {
-                println!("📤 Syncing from database to markdown for project: {}", project);
+                println!(
+                    "📤 Syncing from database to markdown for project: {}",
+                    project
+                );
                 match sync_service.sync_to_markdown(&path_buf, &project).await {
                     Ok(_) => println!("✅ Sync to markdown completed successfully."),
                     Err(e) => eprintln!("❌ Sync to markdown failed: {}", e),
@@ -726,23 +751,32 @@ async fn main() -> anyhow::Result<()> {
         }
 
         Some(Commands::Bot) => {
-            let telegram_settings = settings
-                .telegram
-                .ok_or_else(|| anyhow::anyhow!("Telegram settings not configured"))?;
+            #[cfg(feature = "telegram")]
+            {
+                let telegram_settings = settings
+                    .telegram
+                    .ok_or_else(|| anyhow::anyhow!("Telegram settings not configured"))?;
 
-            // Initialize decision engine
-            let engine = init_decision_engine(&settings.cognition).await?;
-            let watch_service = Arc::new(WatchService::new(db.clone(), timeline_service.clone()));
+                // Initialize decision engine
+                let engine = init_decision_engine(&settings.cognition).await?;
+                let watch_service = Arc::new(WatchService::new(db.clone(), timeline_service.clone()));
 
-            let bot_service = TelegramService::new(
-                telegram_settings.bot_token,
-                engine,
-                telegram_settings.allowed_users,
-                watch_service,
-                db.clone(),
-            );
+                let bot_service = TelegramService::new(
+                    telegram_settings.bot_token,
+                    engine,
+                    telegram_settings.allowed_users,
+                    watch_service,
+                    db.clone(),
+                );
 
-            bot_service.start().await?;
+                bot_service.start().await?;
+            }
+            #[cfg(not(feature = "telegram"))]
+            {
+                anyhow::bail!(
+                    "This binary was built without Telegram support. Rebuild with --features telegram."
+                );
+            }
         }
 
         Some(Commands::Nexus {
@@ -794,7 +828,8 @@ async fn main() -> anyhow::Result<()> {
             let task_queue = Arc::new(task_queue);
 
             // Wire Telegram bot to TaskQueue if configured
-            let tg_handle = if let Some(tg_settings) = settings.telegram {
+            #[cfg(feature = "telegram")]
+            let tg_handle = if let Some(tg_settings) = settings.telegram.clone() {
                 let tg_queue = Arc::clone(&task_queue);
                 let tg_cognition = cognition.clone();
                 let tg_watch = Arc::new(WatchService::new(db.clone(), timeline_service.clone()));
@@ -815,6 +850,15 @@ async fn main() -> anyhow::Result<()> {
                 }))
             } else {
                 info!("⚠️  Telegram not configured — skipping bot startup");
+                None
+            };
+            #[cfg(not(feature = "telegram"))]
+            let tg_handle: Option<tokio::task::JoinHandle<()>> = {
+                if settings.telegram.is_some() {
+                    info!(
+                        "⚠️  Telegram settings present, but feature 'telegram' is disabled at compile-time."
+                    );
+                }
                 None
             };
 

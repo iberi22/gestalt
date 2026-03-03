@@ -3,6 +3,11 @@ name = "gestalt_core"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+default = []
+github = ["dep:octocrab"]
+ui-bridge = ["dep:flutter_rust_bridge"]
+
 [dependencies]
 # Async Runtime
 tokio = { version = "1.49.0", features = ["full"] }
@@ -18,7 +23,7 @@ reqwest = { version = "0.12.28", features = ["json", "stream", "multipart"] }
 oauth2 = "4.4.2"
 
 # Interop
-flutter_rust_bridge = "=2.11.1"
+flutter_rust_bridge = { version = "=2.11.1", optional = true }
 
 # Error Handling
 thiserror = "1.0.69"
@@ -30,7 +35,7 @@ tracing-subscriber = "0.3.19"
 
 # Git
 git2 = "0.20.4"
-octocrab = "0.38.0"
+octocrab = { version = "0.38.0", optional = true }
 
 # OAuth2 helpers
 dirs = "5.0.1"
@@ -49,10 +54,6 @@ ignore = "0.4.25"
 config = "0.15.19"
 directories = "6.0.0"
 tempfile = "3.24.0"
-candle-core = "0.8.4"
-candle-nn = "0.8.4"
-candle-transformers = "0.8.4"
-tokenizers = "0.20.4"
 
 # Database
 surrealdb = { version = "2.6.1", features = ["kv-mem"] }

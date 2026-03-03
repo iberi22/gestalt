@@ -32,6 +32,7 @@ jobs:
       - name: Compare with Baseline
         id: compare
         run: |
+          python -m agent_benchmark sync-rust --file benchmarks/rust_current.json
           python scripts/compare_benchmarks.py > bench_summary.txt
           cat bench_summary.txt
 

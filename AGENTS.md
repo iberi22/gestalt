@@ -3,7 +3,7 @@ title: "Git-Core Protocol - Agent Configuration"
 type: CONFIGURATION
 id: "config-agents"
 created: 2025-12-20
-updated: 2025-12-20
+updated: 2026-03-03
 agent: copilot
 model: gemini-3-pro
 requested_by: system
@@ -12,7 +12,7 @@ summary: |
 keywords: [agents, rules, workflow, configuration]
 tags: ["#configuration", "#agents", "#rules"]
 project: Gestalt
-protocol_version: 3.5.0
+protocol_version: 3.5.1
 ---
 
 # 🤖 AGENTS.md - AI Agent Configuration
@@ -79,4 +79,4 @@ gh pr create --fill
 - If user wants a feature -> Create Issue -> Implement -> PR
 
 ---
-*Aligned with Git-Core Protocol v3.5*
+*Aligned with Git-Core Protocol v3.5.1*

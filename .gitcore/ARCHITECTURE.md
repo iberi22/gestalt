@@ -8,12 +8,12 @@
   - `gestalt_timeline`: Tokio + SurrealDB (Orchestration)
   - `gestalt_cli`: Clap + Rustyline (Interface)
 - **Database:** SurrealDB (Embedded / WebSocket)
-- **Messaging:** Git-Core Protocol v3.5.0 (JSON over Stdio/HTTP)
+- **Messaging:** Git-Core Protocol v3.5.1 (JSON over Stdio/HTTP)
 
 ## Release Track (1.0.0)
 - **Source of truth:** GitHub Issues/PRs
-- **In scope for 1.0.0:** issue #33, issue #31, issue #8
-- **Deferred to 1.1:** issue #19, issue #21, issue #82, issue #83
+- **Implemented and closed for 1.0.0:** issue #33, issue #31, issue #8, issue #19, issue #21, issue #82, issue #83
+- **Open production blockers:** none (as of 2026-03-03)
 - **Primary production gates:** `cargo fmt --all --check`, `cargo test --workspace --all-targets`, benchmark workflow must be non-flaky
 
 ## Key Decisions

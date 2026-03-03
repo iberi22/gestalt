@@ -329,17 +329,16 @@ impl FileWatcher for FileManager {
                 }
 
                 for p in known.keys() {
-                    if !current.contains_key(p) {
-                        if tx
+                    if !current.contains_key(p)
+                        && tx
                             .send(FileWatchEvent {
                                 path: p.clone(),
                                 event_type: FileEventType::Deleted,
                             })
                             .await
                             .is_err()
-                        {
-                            return;
-                        }
+                    {
+                        return;
                     }
                 }
 

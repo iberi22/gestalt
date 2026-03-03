@@ -242,7 +242,7 @@ impl<H: ReplHandler + Default> InteractiveRepl<H> {
 
     /// Process input line
     async fn process_line(&mut self, line: &str) -> Result<Option<String>, ReplError> {
-        let parts: Vec<&str> = line.trim().split_whitespace().collect();
+        let parts: Vec<&str> = line.split_whitespace().collect();
 
         if parts.is_empty() {
             return Ok(None);
@@ -252,9 +252,7 @@ impl<H: ReplHandler + Default> InteractiveRepl<H> {
         let args = &parts[1..];
 
         match command.as_str() {
-            "exit" | "quit" => {
-                return Err(ReplError::Command("exit".to_string()));
-            }
+            "exit" | "quit" => Err(ReplError::Command("exit".to_string())),
 
             "help" => Ok(Some(Self::help_text())),
 
@@ -403,7 +401,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_echo_handler() {
-        let mut handler = EchoHandler::default();
+        let mut handler = EchoHandler;
         let result = handler.handle_input("test").await.unwrap();
         assert_eq!(result, "Echo: test");
     }

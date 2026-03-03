@@ -10,3 +10,4 @@ __pycache__/
 *.py[cod]
 *.class
 benchmarks/*_current.json
+benchmarks/agent_benchmark.sqlite

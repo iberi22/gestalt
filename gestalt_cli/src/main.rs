@@ -587,7 +587,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         Commands::Repl => {
             info!("Starting interactive REPL");
-            let mut repl = InteractiveRepl::with_handler(EchoHandler::default())?;
+            let mut repl = InteractiveRepl::with_handler(EchoHandler)?;
             repl.run().await?;
         }
     }

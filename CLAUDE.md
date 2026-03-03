@@ -58,6 +58,10 @@ cargo test -p gestalt_timeline --test e2e_runtime
 
 # Run integration tests
 cargo test -p gestalt_timeline --test integration
+
+# Benchmark compare + sync Rust metrics to leaderboard DB
+python -m agent_benchmark sync-rust --file benchmarks/rust_current.json
+python scripts/compare_benchmarks.py
 ```
 
 ### Development
@@ -92,6 +96,7 @@ This is a Rust workspace with the following main crates:
 4. **Context Compaction**: Older reasoning steps are automatically summarized using tiktoken for estimation to manage context windows
 
 5. **Virtual File System (VFS)**: Agents operate in a volatile memory-mapped workspace before committing to disk
+6. **Binary-Safe VFS + Watcher**: Runtime supports `read_bytes`/`write_bytes` and `FileWatcher` to observe external file mutations
 
 ### Data Flow
 ```
@@ -113,6 +118,8 @@ Configuration uses TOML files with environment variable overrides. See `gestalt_
 - `.github/copilot-instructions.md` - Git-Core Protocol workflow
 - `RULES.md` - Development rules for AI agents
 - `gestalt_core/src/application/CONFIG.md` - Configuration system
+- `gestalt_timeline/src/services/vfs.rs` - `VirtualFs` + `FileWatcher` traits and `OverlayFs` implementation
+- `gestalt_timeline/src/services/file_manager.rs` - Runtime VFS orchestration and flush semantics
 
 ## Git Workflow
 

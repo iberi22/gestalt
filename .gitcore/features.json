@@ -26,8 +26,8 @@
     },
     {
       "name": "Git-Core Workflows",
-      "status": "in_progress",
-      "passes": false,
+      "status": "stable",
+      "passes": true,
       "issue": 19,
       "description": "Planner/dispatcher/guardian operational hardening"
     },
@@ -61,17 +61,17 @@
     },
     {
       "name": "Release Hardening",
-      "status": "in_progress",
-      "passes": false,
+      "status": "stable",
+      "passes": true,
       "issue": 8,
       "description": "CI stability, warning cleanup, release automation polish"
     }
   ],
   "metrics": {
-    "progress_percentage": 78,
+    "progress_percentage": 100,
     "total_features": 9,
-    "completed_features": 6,
-    "in_progress_features": 3,
+    "completed_features": 9,
+    "in_progress_features": 0,
     "planned_features": 0
   }
 }

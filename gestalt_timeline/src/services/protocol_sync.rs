@@ -232,8 +232,8 @@ impl ProtocolSyncService {
         let mut in_table = false;
         let mut headers = Vec::new();
 
-        for i in 0..lines.len() {
-            let line = lines[i].trim();
+        for line_slot in &mut lines {
+            let line = line_slot.trim();
             if line.starts_with('|') {
                 let parts: Vec<String> = line
                     .split('|')
@@ -299,9 +299,9 @@ impl ProtocolSyncService {
 
                         if s_idx + 1 < new_parts.len() {
                             new_parts[s_idx + 1] = status_str.to_string();
-                            lines[i] = new_parts.join(" | ").trim().to_string();
-                            if !lines[i].starts_with('|') {
-                                lines[i] = format!("| {} |", lines[i]);
+                            *line_slot = new_parts.join(" | ").trim().to_string();
+                            if !line_slot.starts_with('|') {
+                                *line_slot = format!("| {} |", line_slot);
                             }
                         }
                     }

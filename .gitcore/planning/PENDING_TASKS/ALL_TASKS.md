@@ -1,13 +1,18 @@
-# PENDING TASKS - Complete Task List
+# PENDING TASKS - Complete Task List (Historical Snapshot)
 
 Generated: 2026-02-07
-**Status: FASE 7 COMPLETE**
+Updated: 2026-03-03
+**Status: Historical reference only (not active source of truth)**
 
 ---
 
 ## Overview
 
-All pending tasks organized by phase, ready for multi-agent execution.
+This document is preserved for historical context.
+Active planning/tracking lives in:
+- `.gitcore/planning/PLANNING.md`
+- `.gitcore/planning/TASK.md`
+- GitHub Issues/PRs
 
 ## Progress
 

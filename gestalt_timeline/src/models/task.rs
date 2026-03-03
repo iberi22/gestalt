@@ -66,7 +66,7 @@ impl Task {
             created_by: created_by.to_string(),
             executed_by: None,
             duration_ms: None,
-            external_id: external_id,
+            external_id,
         }
     }
 }

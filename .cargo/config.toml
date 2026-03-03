@@ -1,0 +1,6 @@
+[build]
+target-dir = "target"
+
+[alias]
+check-fast = "check -p gestalt_timeline --no-default-features"
+check-full = "check -p gestalt_timeline --features telegram,rag-embeddings"

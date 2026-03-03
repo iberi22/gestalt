@@ -5,14 +5,14 @@ use gestalt_core::application::agent::tools::{ExecuteShellTool, ReadFileTool, Wr
 use gestalt_timeline::cli::{repl, AgentCommands, Cli, Commands};
 use gestalt_timeline::config::Settings;
 use gestalt_timeline::db::SurrealClient;
+#[cfg(feature = "telegram")]
+use gestalt_timeline::services::TelegramService;
 use gestalt_timeline::services::{
     start_server, AgentRuntime, AgentService, AuthService, DispatcherService, IndexService,
     MemoryService, ProjectService, ProtocolSyncService, QueuedTask, TaskQueue, TaskService,
     TaskSource, TimelineService, WatchService,
 };
 use std::path::Path;
-#[cfg(feature = "telegram")]
-use gestalt_timeline::services::TelegramService;
 
 use gestalt_core::context::{detector, scanner};
 use std::sync::Arc;
@@ -197,9 +197,9 @@ async fn main() -> anyhow::Result<()> {
     let embedding_model: Arc<dyn gestalt_core::domain::rag::embeddings::EmbeddingModel> = {
         #[cfg(feature = "rag-embeddings")]
         {
-            let mut model = Arc::new(gestalt_core::domain::rag::embeddings::DummyEmbeddingModel::new(
-                384,
-            )) as Arc<dyn gestalt_core::domain::rag::embeddings::EmbeddingModel>;
+            let mut model =
+                Arc::new(gestalt_core::domain::rag::embeddings::DummyEmbeddingModel::new(384))
+                    as Arc<dyn gestalt_core::domain::rag::embeddings::EmbeddingModel>;
 
             if std::path::Path::new("models/bert/config.json").exists()
                 && std::path::Path::new("models/bert/tokenizer.json").exists()
@@ -225,9 +225,7 @@ async fn main() -> anyhow::Result<()> {
         #[cfg(not(feature = "rag-embeddings"))]
         {
             info!("Feature 'rag-embeddings' disabled. Using DummyEmbeddingModel for RAG.");
-            Arc::new(gestalt_core::domain::rag::embeddings::DummyEmbeddingModel::new(
-                384,
-            ))
+            Arc::new(gestalt_core::domain::rag::embeddings::DummyEmbeddingModel::new(384))
         }
     };
 
@@ -759,7 +757,8 @@ async fn main() -> anyhow::Result<()> {
 
                 // Initialize decision engine
                 let engine = init_decision_engine(&settings.cognition).await?;
-                let watch_service = Arc::new(WatchService::new(db.clone(), timeline_service.clone()));
+                let watch_service =
+                    Arc::new(WatchService::new(db.clone(), timeline_service.clone()));
 
                 let bot_service = TelegramService::new(
                     telegram_settings.bot_token,

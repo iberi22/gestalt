@@ -13,9 +13,9 @@ mod tests;
 
 pub use db::SurrealClient;
 pub use models::{EventType, Project, Task, TimelineEvent};
+#[cfg(feature = "telegram")]
+pub use services::TelegramService;
 pub use services::{
     Agent, AgentRuntime, AgentService, AgentStatus, AgentType, DispatcherService, MemoryService,
     ProjectService, TaskQueue, TaskService, TimelineService, WatchService,
 };
-#[cfg(feature = "telegram")]
-pub use services::TelegramService;

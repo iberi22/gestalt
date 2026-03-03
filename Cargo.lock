@@ -3240,7 +3240,7 @@ dependencies = [
 
 [[package]]
 name = "gestalt_cli"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "async-trait",
  "chrono",
@@ -3264,7 +3264,7 @@ dependencies = [
 
 [[package]]
 name = "gestalt_core"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3300,7 +3300,7 @@ dependencies = [
 
 [[package]]
 name = "gestalt_infra_embeddings"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3314,7 +3314,7 @@ dependencies = [
 
 [[package]]
 name = "gestalt_infra_github"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3327,7 +3327,7 @@ dependencies = [
 
 [[package]]
 name = "gestalt_mcp"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3346,7 +3346,7 @@ dependencies = [
 
 [[package]]
 name = "gestalt_timeline"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3382,7 +3382,7 @@ dependencies = [
 
 [[package]]
 name = "gestalt_ui"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -3399,7 +3399,7 @@ dependencies = [
 
 [[package]]
 name = "gestaltctl"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "clap",
  "reqwest 0.12.28",
@@ -8094,7 +8094,7 @@ dependencies = [
 
 [[package]]
 name = "synapse-agentic"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "async-trait",

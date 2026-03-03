@@ -10,6 +10,12 @@
 - **Database:** SurrealDB (Embedded / WebSocket)
 - **Messaging:** Git-Core Protocol v3.5.0 (JSON over Stdio/HTTP)
 
+## Release Track (1.0.0)
+- **Source of truth:** GitHub Issues/PRs
+- **In scope for 1.0.0:** issue #33, issue #31, issue #8
+- **Deferred to 1.1:** issue #19, issue #21, issue #82, issue #83
+- **Primary production gates:** `cargo fmt --all --check`, `cargo test --workspace --all-targets`, benchmark workflow must be non-flaky
+
 ## Key Decisions
 
 ### 1. Asynchronous Autonomy

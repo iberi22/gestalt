@@ -7,8 +7,8 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use std::process::Command;
 use std::sync::Arc;
+use tokio::process::Command;
 use tokio::sync::Mutex;
 use walkdir::WalkDir;
 
@@ -541,7 +541,7 @@ fn handle_search_code(args: &serde_json::Value) -> serde_json::Value {
     })
 }
 
-fn handle_exec_command(args: &serde_json::Value) -> serde_json::Value {
+async fn handle_exec_command(args: &serde_json::Value) -> serde_json::Value {
     let command = match args.get("command").and_then(|v| v.as_str()) {
         Some(c) => c,
         None => return error_response("Missing command parameter"),
@@ -555,11 +555,13 @@ fn handle_exec_command(args: &serde_json::Value) -> serde_json::Value {
             .args(["/C", command])
             .current_dir(cwd.unwrap_or_else(|| PathBuf::from(".")))
             .output()
+            .await
     } else {
         Command::new("sh")
             .args(["-c", command])
             .current_dir(cwd.unwrap_or_else(|| PathBuf::from(".")))
             .output()
+            .await
     };
 
     match output {
@@ -582,7 +584,7 @@ fn handle_exec_command(args: &serde_json::Value) -> serde_json::Value {
     }
 }
 
-fn handle_git_status(args: &serde_json::Value) -> serde_json::Value {
+async fn handle_git_status(args: &serde_json::Value) -> serde_json::Value {
     let path = args
         .get("path")
         .and_then(|v| v.as_str())
@@ -592,7 +594,8 @@ fn handle_git_status(args: &serde_json::Value) -> serde_json::Value {
     let output = Command::new("git")
         .args(["status", "--porcelain"])
         .current_dir(&path)
-        .output();
+        .output()
+        .await;
 
     match output {
         Ok(out) => {
@@ -608,7 +611,7 @@ fn handle_git_status(args: &serde_json::Value) -> serde_json::Value {
     }
 }
 
-fn handle_git_log(args: &serde_json::Value) -> serde_json::Value {
+async fn handle_git_log(args: &serde_json::Value) -> serde_json::Value {
     let path = args
         .get("path")
         .and_then(|v| v.as_str())
@@ -618,9 +621,10 @@ fn handle_git_log(args: &serde_json::Value) -> serde_json::Value {
     let count = args.get("count").and_then(|v| v.as_u64()).unwrap_or(5) as u32;
 
     let output = Command::new("git")
-        .args(["log", &format!("--oneline -{}", count)])
+        .args(["log", "--oneline", &format!("-{}", count)])
         .current_dir(&path)
-        .output();
+        .output()
+        .await;
 
     match output {
         Ok(out) => {
@@ -781,7 +785,7 @@ fn handle_create_file(args: &serde_json::Value) -> serde_json::Value {
     }
 }
 
-fn handle_web_fetch(args: &serde_json::Value) -> serde_json::Value {
+async fn handle_web_fetch(args: &serde_json::Value) -> serde_json::Value {
     let url = match args.get("url").and_then(|v| v.as_str()) {
         Some(u) => u,
         None => return error_response("Missing url parameter"),
@@ -792,17 +796,20 @@ fn handle_web_fetch(args: &serde_json::Value) -> serde_json::Value {
         .and_then(|v| v.as_u64())
         .unwrap_or(5000) as usize;
 
-    match reqwest::blocking::get(url) {
-        Ok(resp) => {
-            let text = resp.text().unwrap_or_default();
-            let truncated = text.chars().take(max_chars).collect::<String>();
-            serde_json::json!({
-                "content": [{
-                    "type": "text",
-                    "text": truncated
-                }]
-            })
-        }
+    let client = reqwest::Client::new();
+    match client.get(url).send().await {
+        Ok(resp) => match resp.text().await {
+            Ok(text) => {
+                let truncated = text.chars().take(max_chars).collect::<String>();
+                serde_json::json!({
+                    "content": [{
+                        "type": "text",
+                        "text": truncated
+                    }]
+                })
+            }
+            Err(e) => error_response(&format!("Failed to read response body: {}", e)),
+        },
         Err(e) => error_response(&format!("Failed to fetch: {}", e)),
     }
 }
@@ -829,11 +836,12 @@ fn current_time() -> String {
 }
 
 fn handle_task_create(args: &serde_json::Value) -> serde_json::Value {
-    let task_id = args
-        .get("task_id")
-        .and_then(|v| v.as_str())
-        .unwrap_or("default");
-    let command = args.get("command").and_then(|v| v.as_str()).unwrap_or("");
+    let Some(task_id) = args.get("task_id").and_then(|v| v.as_str()) else {
+        return error_response("Missing or invalid required parameter: task_id");
+    };
+    let Some(command) = args.get("command").and_then(|v| v.as_str()) else {
+        return error_response("Missing or invalid required parameter: command");
+    };
 
     serde_json::json!({
         "content": [{
@@ -880,7 +888,7 @@ fn error_response(msg: &str) -> serde_json::Value {
     })
 }
 
-fn handle_tool(name: &str, args: &serde_json::Value) -> serde_json::Value {
+async fn handle_tool(name: &str, args: &serde_json::Value) -> serde_json::Value {
     match name {
         "echo" => handle_echo(args),
         "analyze_project" => handle_analyze_project(args),
@@ -888,13 +896,13 @@ fn handle_tool(name: &str, args: &serde_json::Value) -> serde_json::Value {
         "read_file" => handle_read_file(args),
         "get_context" => handle_get_context(args),
         "search_code" => handle_search_code(args),
-        "exec_command" | "openclaw_exec" => handle_exec_command(args),
-        "git_status" => handle_git_status(args),
-        "git_log" => handle_git_log(args),
+        "exec_command" | "openclaw_exec" => handle_exec_command(args).await,
+        "git_status" => handle_git_status(args).await,
+        "git_log" => handle_git_log(args).await,
         "file_tree" => handle_file_tree(args),
         "grep" => handle_grep(args),
         "create_file" => handle_create_file(args),
-        "web_fetch" => handle_web_fetch(args),
+        "web_fetch" => handle_web_fetch(args).await,
         "system_info" => handle_system_info(args),
         "task_create" => handle_task_create(args),
         "task_status" => handle_task_status(args),
@@ -955,7 +963,7 @@ async fn handle_mcp_request(
                     .get("arguments")
                     .cloned()
                     .unwrap_or(serde_json::Value::Null);
-                handle_tool(name, &args)
+                handle_tool(name, &args).await
             } else {
                 return Json(JsonRpcResponse {
                     jsonrpc: "2.0".to_string(),
@@ -1037,7 +1045,7 @@ async fn process_rpc_request(payload: JsonRpcRequest) -> JsonRpcResponse {
                     .get("arguments")
                     .cloned()
                     .unwrap_or(serde_json::Value::Null);
-                handle_tool(name, &args)
+                handle_tool(name, &args).await
             } else {
                 return JsonRpcResponse {
                     jsonrpc: "2.0".to_string(),

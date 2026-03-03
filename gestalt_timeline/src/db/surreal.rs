@@ -9,7 +9,7 @@ use std::sync::Arc;
 use surrealdb::engine::any::Any;
 use surrealdb::opt::auth::Root;
 use surrealdb::Surreal;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 #[derive(Debug, serde::Deserialize)]
 struct SearchResult {
@@ -153,11 +153,22 @@ impl SurrealClient {
             DEFINE FIELD embedding ON chunks TYPE option<array<float, 384>>;
             DEFINE FIELD metadata ON chunks TYPE option<object>;
             DEFINE INDEX idx_chunk_doc ON chunks FIELDS doc_id;
-            DEFINE INDEX idx_chunk_embedding ON chunks FIELDS embedding TYPE HNSW DIMENSION 384 DISTANCE COSINE;
             "#,
         )
         .await
         .context("Failed to initialize schema")?;
+
+        // Optional vector index: some embedded/older Surreal engines do not support HNSW syntax.
+        if let Err(e) = db
+            .query(
+                r#"
+                DEFINE INDEX idx_chunk_embedding ON chunks FIELDS embedding TYPE HNSW DIMENSION 384 DISTANCE COSINE;
+                "#,
+            )
+            .await
+        {
+            warn!("Skipping optional HNSW index initialization: {}", e);
+        }
 
         debug!("Schema initialized successfully");
         Ok(())

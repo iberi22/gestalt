@@ -95,6 +95,7 @@ impl ReplState {
 
 /// REPL command
 #[derive(Debug)]
+#[allow(dead_code)]
 pub enum ReplCommand {
     Exit,
     Help,
@@ -110,6 +111,7 @@ pub enum ReplCommand {
 /// REPL trait for customization
 #[async_trait]
 pub trait ReplHandler: Send + Sync {
+    #[allow(dead_code)]
     async fn handle_command(&mut self, command: &str, args: &[&str]) -> Result<(), ReplError>;
     async fn handle_input(&mut self, input: &str) -> Result<String, ReplError>;
 }
@@ -275,9 +277,10 @@ impl<H: ReplHandler + Default> InteractiveRepl<H> {
 
             "context" => {
                 let mut state = self.state.lock().await;
-                if let Some(first) = args.first() {
+                if !args.is_empty() {
                     // Set context from JSON
-                    let json: Value = serde_json::from_str(first)?;
+                    let payload = args.join(" ");
+                    let json: Value = serde_json::from_str(&payload)?;
                     state.context = json;
                     Ok(Some("Context updated.".to_string()))
                 } else {

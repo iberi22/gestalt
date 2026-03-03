@@ -29,6 +29,9 @@ jobs:
       - name: Cargo Test Workspace
         run: cargo test --workspace --all-targets
 
+      - name: Cargo Build All Features
+        run: cargo build --workspace --all-features --all-targets
+
   build-backend:
     name: Build Backend (Windows)
     runs-on: windows-latest
@@ -127,39 +130,43 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: neural-link-backend-windows
+          path: release-assets
 
       - name: Download CLI Artifacts
         uses: actions/download-artifact@v4
         with:
-          path: cli-artifacts
+          path: release-assets/cli-artifacts
 
       - name: Download Mobile Artifact
         uses: actions/download-artifact@v4
         with:
           name: neural-link-app-android
+          path: release-assets
 
       - name: Generate Release Tag
         id: tag
-        run: echo "release_tag=v2.0.$(date +'%Y%m%d%H%M')" >> $GITHUB_OUTPUT
+        run: echo "release_tag=v1.0.0" >> $GITHUB_OUTPUT
 
       - name: Prepare CLI Binaries
         run: |
-          cp cli-artifacts/gestalt-cli-windows/gestalt_cli.exe gestalt-cli-windows.exe
-          cp cli-artifacts/gestalt-cli-linux/gestalt_cli gestalt-cli-linux
-          cp cli-artifacts/gestalt-cli-macos/gestalt_cli gestalt-cli-macos
+          cp release-assets/neural-link-backend-windows/gestalt_timeline.exe release-assets/gestalt_timeline.exe
+          cp release-assets/neural-link-app-android/app-release.apk release-assets/app-release.apk
+          cp release-assets/cli-artifacts/gestalt-cli-windows/gestalt_cli.exe release-assets/gestalt-cli-windows.exe
+          cp release-assets/cli-artifacts/gestalt-cli-linux/gestalt_cli release-assets/gestalt-cli-linux
+          cp release-assets/cli-artifacts/gestalt-cli-macos/gestalt_cli release-assets/gestalt-cli-macos
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ steps.tag.outputs.release_tag }}
-          name: Neural-Link Platform ${{ steps.tag.outputs.release_tag }}
+          name: Gestalt ${{ steps.tag.outputs.release_tag }}
           draft: false
           prerelease: false
           files: |
-            gestalt_timeline.exe
-            app-release.apk
-            gestalt-cli-windows.exe
-            gestalt-cli-linux
-            gestalt-cli-macos
+            release-assets/gestalt_timeline.exe
+            release-assets/app-release.apk
+            release-assets/gestalt-cli-windows.exe
+            release-assets/gestalt-cli-linux
+            release-assets/gestalt-cli-macos
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

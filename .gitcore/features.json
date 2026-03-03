@@ -1,60 +1,77 @@
 {
+  "source_of_truth": "github_issues",
+  "release_target": "1.0.0",
+  "last_synced_at": "2026-03-03",
   "features": [
     {
       "name": "Context Engine",
-      "status": "beta",
+      "status": "stable",
       "passes": true,
+      "issue": null,
       "description": "Auto-discovery of project context"
     },
     {
       "name": "Consensus Engine",
       "status": "stable",
       "passes": true,
+      "issue": null,
       "description": "Multi-model synthesis"
     },
     {
       "name": "MiniMax Integration",
       "status": "beta",
       "passes": true,
-      "description": "MiniMax API LLM provider"
+      "issue": null,
+      "description": "MiniMax provider wiring and fallback strategy"
     },
     {
       "name": "Git-Core Workflows",
       "status": "in_progress",
       "passes": false,
-      "description": "Planner, Dispatcher, Guardian agents"
+      "issue": 19,
+      "description": "Planner/dispatcher/guardian operational hardening"
     },
     {
       "name": "Unified Config",
-      "status": "in_progress",
+      "status": "stable",
       "passes": true,
-      "description": "Centralized TOML configuration"
+      "issue": 31,
+      "description": "Centralized TOML + env configuration"
     },
     {
       "name": "Interactive REPL",
-      "status": "in_progress",
+      "status": "stable",
       "passes": true,
-      "description": "Stateful conversation mode"
+      "issue": 31,
+      "description": "Stateful conversation mode with streaming output"
     },
     {
       "name": "MCP Execution",
-      "status": "in_progress",
+      "status": "beta",
       "passes": true,
-      "description": "Execute tools via MCP"
+      "issue": 33,
+      "description": "Tool execution via MCP with async-safe handlers"
     },
     {
       "name": "Compile Graph Optimization",
-      "status": "in_progress",
+      "status": "stable",
       "passes": true,
-      "description": "Heavy dependencies moved to optional infra crates"
+      "issue": 33,
+      "description": "Heavy adapters isolated behind optional infra crates"
+    },
+    {
+      "name": "Release Hardening",
+      "status": "in_progress",
+      "passes": false,
+      "issue": 8,
+      "description": "CI stability, warning cleanup, release automation polish"
     }
   ],
   "metrics": {
-    "progress_percentage": 56,
-    "last_updated": "2026-03-03",
-    "total_features": 8,
-    "completed_features": 2,
-    "in_progress_features": 6,
+    "progress_percentage": 78,
+    "total_features": 9,
+    "completed_features": 6,
+    "in_progress_features": 3,
     "planned_features": 0
   }
 }

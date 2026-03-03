@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot};
 use tokio::time::{Duration, Instant};
-use tracing::{info, warn};
+use tracing::info;
 
 use crate::services::vfs::{FlushError, FlushReport, LockStatus, PendingChange, VirtualFs};
 
@@ -285,6 +285,8 @@ impl FileManagerActor {
             }
             FileCommand::Flush { reply } => {
                 let res = self.perform_flush().await;
+                // Explicit flush resets debounce state to avoid redundant delayed flushes.
+                self.last_modification = None;
                 let _ = reply.send(res);
             }
             FileCommand::GetPendingChanges { reply } => {
@@ -381,6 +383,16 @@ impl FileManagerActor {
         base_version: u64,
         owner: String,
     ) -> Result<FileState> {
+        let current_state = self.do_read_file_state(path.clone()).await?;
+
+        if current_state.version != base_version {
+            bail!(
+                "Invalid base version: {} (current is {})",
+                base_version,
+                current_state.version
+            );
+        }
+
         match self.locks.get(&path) {
             Some(current_owner) if current_owner != &owner => {
                 bail!(
@@ -394,32 +406,10 @@ impl FileManagerActor {
             }
         }
 
-        let current_state = self.do_read_file_state(path.clone()).await?;
-
-        if current_state.version < base_version {
-            bail!(
-                "Invalid base version: {} (current is {})",
-                base_version,
-                current_state.version
-            );
-        }
-
         let patch = UnifiedDiff::parse(&patch_str)?;
 
-        let new_content = if current_state.version == base_version {
-            // Fast-forward: Version matches, apply patch directly.
-            patch.apply(&current_state.content)?
-        } else {
-            // 3-Way Merge: Version has advanced.
-            warn!(
-                "Attempting 3-way merge for '{}' (base v{}, current v{})",
-                path.display(),
-                base_version,
-                current_state.version
-            );
-            // Simple approach for MVP: try to apply.
-            patch.apply(&current_state.content)?
-        };
+        // Strict single-base patching to avoid silent merges and non-determinism.
+        let new_content = patch.apply(&current_state.content)?;
 
         let new_state = FileState {
             content: Arc::new(new_content),
@@ -495,7 +485,7 @@ struct UnifiedDiff {
 #[derive(Debug, Clone)]
 struct Hunk {
     old_range: (usize, usize),
-    new_range: (usize, usize),
+    _new_range: (usize, usize),
     lines: Vec<String>,
 }
 
@@ -514,21 +504,27 @@ impl UnifiedDiff {
                 let old_part = parts[1].trim_start_matches('-');
                 let new_part = parts[2].trim_start_matches('+');
 
-                let parse_range = |s: &str| -> (usize, usize) {
-                    let r: Vec<usize> = s.split(',').map(|v| v.parse().unwrap_or(0)).collect();
+                let parse_range = |s: &str| -> Result<(usize, usize)> {
+                    let r: Vec<usize> = s
+                        .split(',')
+                        .map(|v| {
+                            v.parse::<usize>()
+                                .map_err(|e| anyhow::anyhow!("Invalid hunk range '{}': {}", s, e))
+                        })
+                        .collect::<Result<Vec<_>>>()?;
                     if r.len() == 1 {
-                        (r[0], 1)
+                        Ok((r[0], 1))
                     } else {
-                        (r[0], r[1])
+                        Ok((r[0], r[1]))
                     }
                 };
 
-                let old_range = parse_range(old_part);
-                let new_range = parse_range(new_part);
+                let old_range = parse_range(old_part)?;
+                let new_range = parse_range(new_part)?;
 
                 hunks.push(Hunk {
                     old_range,
-                    new_range,
+                    _new_range: new_range,
                     lines: Vec::new(),
                 });
             } else if !hunks.is_empty() {

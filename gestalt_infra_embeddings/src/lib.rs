@@ -1,4 +1,6 @@
+#[cfg(feature = "bert")]
 use async_trait::async_trait;
+#[cfg(feature = "bert")]
 use gestalt_core::domain::rag::embeddings::EmbeddingModel;
 
 #[cfg(feature = "bert")]
@@ -31,6 +33,9 @@ impl BertEmbeddingModel {
         let config: Config = serde_json::from_str(&std::fs::read_to_string(config_path)?)?;
         let tokenizer = Tokenizer::from_file(tokenizer_path).map_err(anyhow::Error::msg)?;
 
+        // SAFETY: `weights_path` points to immutable safetensors weights owned by the runtime,
+        // `DTYPE` matches the model tensor dtype, and the returned VarBuilder is used read-only.
+        // Callers are responsible for providing valid model artifacts and compatible device setup.
         let vb = unsafe { VarBuilder::from_mmaped_safetensors(&[weights_path], DTYPE, &device)? };
         let model = BertModel::load(vb, &config)?;
 

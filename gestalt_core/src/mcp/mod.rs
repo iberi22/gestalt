@@ -5,17 +5,6 @@
 pub mod client_impl;
 pub mod registry;
 
-pub use client_impl::{
-    McpClient,
-    McpError,
-    ToolCall,
-    ToolInfo,
-    ToolResult,
-    GestaltMcpClient,
-};
+pub use client_impl::{GestaltMcpClient, McpClient, McpError, ToolCall, ToolInfo, ToolResult};
 
-pub use registry::{
-    McpRegistry,
-    ToolContext,
-    DefaultToolContext,
-};
+pub use registry::{DefaultToolContext, McpRegistry, ToolContext};

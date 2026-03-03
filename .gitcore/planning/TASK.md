@@ -1,14 +1,15 @@
 # 📋 TASK.md - Task Management: Gestalt Timeline Orchestrator
 
-_Last update: 2026-02-22_
+_Last update: 2026-03-03_
 
 ---
 
 ## 🎯 Executive Summary and Current Status
 
-**General Status:** ✅ 100% - Project complete, all phases implemented.
+**General Status:** ⚠️ Verification in progress (not production-ready yet).
 
-MVP complete. All phases implemented: base CLI, real-time, multi-agent coordination, AI orchestration, and advanced isolation.
+Implementation exists across all major phases, but production verification is pending:
+critical tests and build health must be green before declaring completion.
 
 **Progress per Component:**
 - [x] 🏗️ Infrastructure (SurrealDB): 100%
@@ -72,13 +73,13 @@ MVP complete. All phases implemented: base CLI, real-time, multi-agent coordinat
 
 ---
 
-## 🚀 Phase 4: AI Integration (AWS Bedrock)
+## 🚀 Phase 4: AI Integration (Provider-Agnostic)
 
-**Objective:** Orchestrate workflows via Claude Sonnet / Gemini.
+**Objective:** Orchestrate workflows via interchangeable LLM providers.
 
 | ID | Task | Priority | Status | Owner |
 |----|-------|-----------|--------|-------------|
-| F4-01 | Add AWS SDK dependencies | HIGH | ✅ Completed | Agent |
+| F4-01 | Integrate provider abstractions and failover | HIGH | ✅ Completed | Agent |
 | F4-02 | Implement LLMService | HIGH | ✅ Completed | Agent |
 | F4-03 | `ai-chat` command | HIGH | ✅ Completed | Agent |
 | F4-04 | `ai-orchestrate` command | HIGH | ✅ Completed | Agent |
@@ -136,6 +137,7 @@ MVP complete. All phases implemented: base CLI, real-time, multi-agent coordinat
 |----|-------|-----------|--------|-------------|
 | TD-01 | Migrate configuration to TOML file | LOW | ✅ Completed | Agent |
 | TD-02 | Add performance metrics | LOW | ✅ Completed | Agent |
+| TD-03 | Reduce compile graph by default features + infra crates | HIGH | 🔄 In Progress | Agent |
 
 ---
 

@@ -24,9 +24,7 @@ pub struct DefaultToolContext {
 
 impl DefaultToolContext {
     pub fn new() -> Self {
-        Self {
-            data: Value::Null,
-        }
+        Self { data: Value::Null }
     }
 
     pub fn with_data(data: Value) -> Self {
@@ -123,12 +121,9 @@ impl McpRegistry {
             .unwrap_or(self.default_timeout);
 
         // Execute with timeout
-        let result = timeout(
-            timeout_duration,
-            self.execute_tool_inner(name, args, ctx),
-        )
-        .await
-        .map_err(|_| McpError::Timeout)?;
+        let result = timeout(timeout_duration, self.execute_tool_inner(name, args, ctx))
+            .await
+            .map_err(|_| McpError::Timeout)?;
 
         result
     }
@@ -159,11 +154,7 @@ impl McpRegistry {
     }
 
     /// Validate arguments against tool schema
-    pub async fn validate_arguments(
-        &self,
-        name: &str,
-        args: &Value,
-    ) -> Result<(), McpError> {
+    pub async fn validate_arguments(&self, name: &str, args: &Value) -> Result<(), McpError> {
         let tools = self.tools.lock().await;
 
         if let Some(tool) = tools.get(name) {
@@ -238,7 +229,12 @@ mod tests {
         registry.register_tool(tool).await;
 
         let result = registry
-            .execute_tool("echo", json!({"input": "hello"}), &DefaultToolContext::new(), None)
+            .execute_tool(
+                "echo",
+                json!({"input": "hello"}),
+                &DefaultToolContext::new(),
+                None,
+            )
             .await
             .unwrap();
 

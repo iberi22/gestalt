@@ -271,8 +271,9 @@ mod runtime_tests {
         runtime.run_loop("Test Goal").await?;
 
         // Verify state was persisted in SurrealDB
-        let state: Option<AgentRuntimeState> =
-            db.select_by_id("agent_runtime_states", "test-agent").await?;
+        let state: Option<AgentRuntimeState> = db
+            .select_by_id("agent_runtime_states", "test-agent")
+            .await?;
         assert!(state.is_some());
         let state = state.unwrap();
         assert_eq!(state.phase, RuntimePhase::Completed);

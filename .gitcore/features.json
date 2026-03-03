@@ -14,8 +14,8 @@
     },
     {
       "name": "MiniMax Integration",
-      "status": "in_progress",
-      "passes": false,
+      "status": "beta",
+      "passes": true,
       "description": "MiniMax API LLM provider"
     },
     {
@@ -26,29 +26,35 @@
     },
     {
       "name": "Unified Config",
-      "status": "planned",
-      "passes": false,
+      "status": "in_progress",
+      "passes": true,
       "description": "Centralized TOML configuration"
     },
     {
       "name": "Interactive REPL",
-      "status": "planned",
-      "passes": false,
+      "status": "in_progress",
+      "passes": true,
       "description": "Stateful conversation mode"
     },
     {
       "name": "MCP Execution",
-      "status": "planned",
-      "passes": false,
+      "status": "in_progress",
+      "passes": true,
       "description": "Execute tools via MCP"
+    },
+    {
+      "name": "Compile Graph Optimization",
+      "status": "in_progress",
+      "passes": true,
+      "description": "Heavy dependencies moved to optional infra crates"
     }
   ],
   "metrics": {
-    "progress_percentage": 45,
-    "last_updated": "2026-02-06",
-    "total_features": 7,
+    "progress_percentage": 56,
+    "last_updated": "2026-03-03",
+    "total_features": 8,
     "completed_features": 2,
-    "in_progress_features": 2,
-    "planned_features": 3
+    "in_progress_features": 6,
+    "planned_features": 0
   }
 }

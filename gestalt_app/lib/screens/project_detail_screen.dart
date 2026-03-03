@@ -15,7 +15,6 @@ class ProjectDetailScreen extends StatefulWidget {
 }
 
 class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
-  final ApiService _api = ApiService();
   List<Task> _tasks = [];
   List<Agent> _agents = [];
   bool _isLoading = true;
@@ -28,7 +27,8 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
   }
 
   Future<void> _fetchAgents() async {
-    final agents = await _api.getAgents();
+    final api = context.read<ApiService>();
+    final agents = await api.getAgents();
     if (mounted) {
       setState(() {
         _agents = agents;

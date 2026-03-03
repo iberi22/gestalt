@@ -2,13 +2,13 @@
 //!
 //! Synchronizes SurrealDB states with local markdown files (e.g. TASK.md).
 
+use crate::db::SurrealClient;
+use crate::models::EventType;
+use crate::models::{Task, TaskStatus};
+use crate::services::TimelineService;
 use anyhow::{Context, Result};
 use std::path::Path;
 use tokio::fs;
-use crate::models::{Task, TaskStatus};
-use crate::db::SurrealClient;
-use crate::services::TimelineService;
-use crate::models::EventType;
 
 pub struct ProtocolSyncService {
     db: SurrealClient,
@@ -21,27 +21,42 @@ impl ProtocolSyncService {
     }
 
     /// Synchronizes tasks from a markdown file into the database.
-    pub async fn sync_from_markdown(&self, path: &Path, project_name: &str, agent_id: &str) -> Result<()> {
-        let content = fs::read_to_string(path).await
+    pub async fn sync_from_markdown(
+        &self,
+        path: &Path,
+        project_name: &str,
+        agent_id: &str,
+    ) -> Result<()> {
+        let content = fs::read_to_string(path)
+            .await
             .with_context(|| format!("Failed to read markdown file: {:?}", path))?;
 
         let tasks = self.parse_tasks_from_markdown(&content);
 
         // Get project ID
         let query = "SELECT * FROM projects WHERE name = $name LIMIT 1";
-        let projects: Vec<crate::models::Project> = self.db.query_with(query, ("name", project_name)).await?;
+        let projects: Vec<crate::models::Project> =
+            self.db.query_with(query, ("name", project_name)).await?;
         let project = projects.into_iter().next().context("Project not found")?;
-        let project_id_str = project.id.as_ref().map(|t| t.to_string()).unwrap_or_default();
+        let project_id_str = project
+            .id
+            .as_ref()
+            .map(|t| t.to_string())
+            .unwrap_or_default();
 
         for mut markdown_task in tasks {
             markdown_task.project_id = project_id_str.clone();
             markdown_task.created_by = agent_id.to_string();
 
             let ext_id = markdown_task.external_id.clone().unwrap_or_default();
-            println!("Syncing markdown task: ID={}, Desc={}", ext_id, markdown_task.description);
+            println!(
+                "Syncing markdown task: ID={}, Desc={}",
+                ext_id, markdown_task.description
+            );
 
             // Check if task already exists by external_id
-            let query = "SELECT * FROM tasks WHERE external_id = $ext_id AND project_id = $proj_id LIMIT 1";
+            let query =
+                "SELECT * FROM tasks WHERE external_id = $ext_id AND project_id = $proj_id LIMIT 1";
             let mut vars = std::collections::HashMap::new();
             vars.insert("ext_id", ext_id.clone());
             vars.insert("proj_id", project_id_str.clone());
@@ -50,33 +65,41 @@ impl ProtocolSyncService {
 
             if let Some(existing_task) = existing.into_iter().next() {
                 // Update existing task if status changed
-                if existing_task.status != markdown_task.status || existing_task.description != markdown_task.description {
+                if existing_task.status != markdown_task.status
+                    || existing_task.description != markdown_task.description
+                {
                     let task_id = existing_task.id.as_ref().unwrap();
                     let task_id_str = match &task_id.id {
                         surrealdb::sql::Id::String(s) => s.clone(),
                         _ => task_id.to_string(),
                     };
 
-                    self.db.update("tasks", &task_id_str, &markdown_task).await?;
+                    self.db
+                        .update("tasks", &task_id_str, &markdown_task)
+                        .await?;
 
-                    self.timeline.emit_task_event(
-                        agent_id,
-                        EventType::TaskUpdated,
-                        &project_id_str,
-                        &task_id_str
-                    ).await?;
+                    self.timeline
+                        .emit_task_event(
+                            agent_id,
+                            EventType::TaskUpdated,
+                            &project_id_str,
+                            &task_id_str,
+                        )
+                        .await?;
                 }
             } else {
                 // Create new task
                 let created: Task = self.db.create("tasks", &markdown_task).await?;
                 let task_id_str = created.id.as_ref().unwrap().to_string();
 
-                self.timeline.emit_task_event(
-                    agent_id,
-                    EventType::TaskCreated,
-                    &project_id_str,
-                    &task_id_str
-                ).await?;
+                self.timeline
+                    .emit_task_event(
+                        agent_id,
+                        EventType::TaskCreated,
+                        &project_id_str,
+                        &task_id_str,
+                    )
+                    .await?;
             }
         }
 
@@ -85,18 +108,27 @@ impl ProtocolSyncService {
 
     /// Synchronizes task statuses from the database back into the markdown file.
     pub async fn sync_to_markdown(&self, path: &Path, project_name: &str) -> Result<()> {
-        let content = fs::read_to_string(path).await
+        let content = fs::read_to_string(path)
+            .await
             .with_context(|| format!("Failed to read markdown file: {:?}", path))?;
 
         // Get project ID
         let query = "SELECT * FROM projects WHERE name = $name LIMIT 1";
-        let projects: Vec<crate::models::Project> = self.db.query_with(query, ("name", project_name)).await?;
+        let projects: Vec<crate::models::Project> =
+            self.db.query_with(query, ("name", project_name)).await?;
         let project = projects.into_iter().next().context("Project not found")?;
-        let project_id_str = project.id.as_ref().map(|t| t.to_string()).unwrap_or_default();
+        let project_id_str = project
+            .id
+            .as_ref()
+            .map(|t| t.to_string())
+            .unwrap_or_default();
 
         // Get all tasks for this project
         let query = "SELECT * FROM tasks WHERE project_id = $proj_id";
-        let db_tasks: Vec<Task> = self.db.query_with(query, ("proj_id", &project_id_str)).await?;
+        let db_tasks: Vec<Task> = self
+            .db
+            .query_with(query, ("proj_id", &project_id_str))
+            .await?;
 
         let updated_content = self.update_markdown_with_tasks(&content, &db_tasks);
 
@@ -121,11 +153,15 @@ impl ProtocolSyncService {
                     .filter(|s| !s.is_empty())
                     .collect();
 
-                if parts.is_empty() { continue; }
+                if parts.is_empty() {
+                    continue;
+                }
 
                 if !in_table {
                     // Possible header
-                    if parts.iter().any(|p| p.to_lowercase() == "id") && parts.iter().any(|p| p.to_lowercase() == "status") {
+                    if parts.iter().any(|p| p.to_lowercase() == "id")
+                        && parts.iter().any(|p| p.to_lowercase() == "status")
+                    {
                         headers = parts;
                         in_table = true;
                     }
@@ -142,16 +178,33 @@ impl ProtocolSyncService {
                 let mut description = String::new();
 
                 for (i, part) in parts.iter().enumerate() {
-                    if i >= headers.len() { break; }
+                    if i >= headers.len() {
+                        break;
+                    }
                     let header = headers[i].to_lowercase();
                     if header == "id" {
                         external_id = Some(part.clone());
                     } else if header == "status" {
                         status = match part.to_lowercase().as_str() {
-                            p if p.contains('✅') || p.contains("completed") || p.contains("done") => TaskStatus::Completed,
-                            p if p.contains('🔄') || p.contains("running") || p.contains("inprogress") => TaskStatus::Running,
+                            p if p.contains('✅')
+                                || p.contains("completed")
+                                || p.contains("done") =>
+                            {
+                                TaskStatus::Completed
+                            }
+                            p if p.contains('🔄')
+                                || p.contains("running")
+                                || p.contains("inprogress") =>
+                            {
+                                TaskStatus::Running
+                            }
                             p if p.contains('❌') || p.contains("failed") => TaskStatus::Failed,
-                            p if p.contains('⏳') || p.contains("pending") || p.contains("todo") => TaskStatus::Pending,
+                            p if p.contains('⏳')
+                                || p.contains("pending")
+                                || p.contains("todo") =>
+                            {
+                                TaskStatus::Pending
+                            }
                             _ => TaskStatus::Pending,
                         };
                     } else if header == "task" || header == "description" {
@@ -188,10 +241,14 @@ impl ProtocolSyncService {
                     .filter(|s| !s.is_empty())
                     .collect();
 
-                if parts.is_empty() { continue; }
+                if parts.is_empty() {
+                    continue;
+                }
 
                 if !in_table {
-                    if parts.iter().any(|p| p.to_lowercase() == "id") && parts.iter().any(|p| p.to_lowercase() == "status") {
+                    if parts.iter().any(|p| p.to_lowercase() == "id")
+                        && parts.iter().any(|p| p.to_lowercase() == "status")
+                    {
                         headers = parts;
                         in_table = true;
                     }
@@ -207,7 +264,9 @@ impl ProtocolSyncService {
                 let mut status_idx = None;
 
                 for (j, part) in parts.iter().enumerate() {
-                    if j >= headers.len() { break; }
+                    if j >= headers.len() {
+                        break;
+                    }
                     let header = headers[j].to_lowercase();
                     if header == "id" {
                         external_id = Some(part.clone());
@@ -217,7 +276,10 @@ impl ProtocolSyncService {
                 }
 
                 if let (Some(ext_id), Some(s_idx)) = (external_id, status_idx) {
-                    if let Some(db_task) = db_tasks.iter().find(|t| t.external_id.as_deref() == Some(&ext_id)) {
+                    if let Some(db_task) = db_tasks
+                        .iter()
+                        .find(|t| t.external_id.as_deref() == Some(&ext_id))
+                    {
                         let status_str = match db_task.status {
                             TaskStatus::Completed => "✅ Completed",
                             TaskStatus::Running => "🔄 Running",
@@ -227,10 +289,8 @@ impl ProtocolSyncService {
                         };
 
                         // Update the status in the row
-                        let mut new_parts: Vec<String> = line
-                            .split('|')
-                            .map(|s| s.trim().to_string())
-                            .collect();
+                        let mut new_parts: Vec<String> =
+                            line.split('|').map(|s| s.trim().to_string()).collect();
 
                         // split('|') on "| ID | Status |" gives ["", " ID ", " Status ", ""]
                         // if headers were ["ID", "Status"], parts were ["ID", "Status"]

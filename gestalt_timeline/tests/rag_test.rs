@@ -42,29 +42,25 @@ async fn init_services() -> Result<(
 
 #[tokio::test]
 async fn test_rag_context_injection() -> Result<()> {
-    let (
-        project_service,
-        task_service,
-        watch_service,
-        agent_service,
-        memory_service,
-        timeline,
-    ) = init_services().await?;
+    let (project_service, task_service, watch_service, agent_service, memory_service, timeline) =
+        init_services().await?;
 
     let agent_id = "rag-test-agent";
 
     // 1. Save a specific memory with provenance
-    memory_service.save(
-        agent_id,
-        "The secret code is 12345",
-        "observation",
-        vec!["secret".to_string()],
-        Some((
-            Some("https://repo.com".to_string()),
-            Some("secrets.txt".to_string()),
-            Some("chunk1".to_string()),
-        )),
-    ).await?;
+    memory_service
+        .save(
+            agent_id,
+            "The secret code is 12345",
+            "observation",
+            vec!["secret".to_string()],
+            Some((
+                Some("https://repo.com".to_string()),
+                Some("secrets.txt".to_string()),
+                Some("chunk1".to_string()),
+            )),
+        )
+        .await?;
 
     let engine = Arc::new(DecisionEngine::new());
     let registry = Arc::new(ToolRegistry::new());
@@ -82,7 +78,9 @@ async fn test_rag_context_injection() -> Result<()> {
     );
 
     // 2. Build context string and verify it contains the secret and provenance
-    let context = memory_service.build_context_string(agent_id, Some("secret"), 2000).await;
+    let context = memory_service
+        .build_context_string(agent_id, Some("secret"), 2000)
+        .await;
 
     assert!(context.contains("The secret code is 12345"));
     assert!(context.contains("[https://repo.com|secrets.txt#chunk1]"));

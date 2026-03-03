@@ -16,7 +16,15 @@ fn test_help_command() {
 #[test]
 fn test_status_offline() {
     let output = Command::new("cargo")
-        .args(["run", "-p", "gestalt_cli", "--", "status", "--url", "http://127.0.0.1:65535"])
+        .args([
+            "run",
+            "-p",
+            "gestalt_cli",
+            "--",
+            "status",
+            "--url",
+            "http://127.0.0.1:65535",
+        ])
         .output()
         .expect("Failed to execute command");
 

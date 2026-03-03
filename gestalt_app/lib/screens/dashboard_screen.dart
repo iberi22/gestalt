@@ -136,7 +136,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ElevatedButton(
             onPressed: () async {
               if (controller.text.isNotEmpty) {
-                final success = await _api.createProject(controller.text);
+                final api = context.read<ApiService>();
+                final success = await api.createProject(controller.text);
                 if (success) {
                   if (mounted) Navigator.pop(context);
                   _fetchStaticData();
@@ -271,7 +272,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
             child: GlassContainer.clearGlass(
               height: double.infinity,
               width: double.infinity,
-              height: double.infinity,
               borderRadius: BorderRadius.circular(24),
               borderWidth: 1,
               borderColor: Colors.white.withOpacity(0.05),

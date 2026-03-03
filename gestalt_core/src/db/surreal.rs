@@ -1,5 +1,6 @@
 //! SurrealDB client implementation
 
+use crate::config::DatabaseSettings;
 use anyhow::{Context, Result};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -8,7 +9,6 @@ use surrealdb::engine::any::Any;
 use surrealdb::opt::auth::Root;
 use surrealdb::Surreal;
 use tracing::info;
-use crate::config::DatabaseSettings;
 
 /// SurrealDB client wrapper.
 #[derive(Clone)]

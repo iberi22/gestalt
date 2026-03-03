@@ -1,5 +1,5 @@
-use std::time::Instant;
 use serde_json::json;
+use std::time::Instant;
 
 fn main() {
     println!("--- Running Gestalt Core Rust Benchmarks ---");

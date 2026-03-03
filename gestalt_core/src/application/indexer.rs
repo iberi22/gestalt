@@ -1,10 +1,10 @@
-use serde::{Deserialize, Serialize};
-use std::path::{Path, PathBuf};
-use sha2::{Sha256, Digest};
-use walkdir::WalkDir;
 use anyhow::Result;
-use tracing::{info, warn};
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+use std::path::{Path, PathBuf};
 use tempfile::tempdir;
+use tracing::{info, warn};
+use walkdir::WalkDir;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RepositoryMetadata {
@@ -58,7 +58,12 @@ impl Default for Indexer {
 }
 
 impl Indexer {
-    pub fn new(allowlist: Vec<String>, max_file_size: u64, chunk_size: usize, chunk_overlap: usize) -> Self {
+    pub fn new(
+        allowlist: Vec<String>,
+        max_file_size: u64,
+        chunk_size: usize,
+        chunk_overlap: usize,
+    ) -> Self {
         Self {
             allowlist,
             max_file_size,
@@ -69,10 +74,17 @@ impl Indexer {
 
     /// Ingest a repository from a URL (local path or remote git URL).
     /// If remote, it clones to a temporary directory.
-    pub async fn ingest(&self, url: &str) -> Result<(RepositoryMetadata, PathBuf, Option<tempfile::TempDir>)> {
+    pub async fn ingest(
+        &self,
+        url: &str,
+    ) -> Result<(RepositoryMetadata, PathBuf, Option<tempfile::TempDir>)> {
         if Path::new(url).exists() {
             let path = PathBuf::from(url).canonicalize()?;
-            let name = path.file_name().unwrap_or_default().to_string_lossy().to_string();
+            let name = path
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_string();
             info!("Ingesting local repository: {} at {:?}", name, path);
             Ok((
                 RepositoryMetadata {
@@ -90,7 +102,12 @@ impl Indexer {
 
             git2::Repository::clone(url, &path)?;
 
-            let name = url.split('/').next_back().unwrap_or("unknown").trim_end_matches(".git").to_string();
+            let name = url
+                .split('/')
+                .next_back()
+                .unwrap_or("unknown")
+                .trim_end_matches(".git")
+                .to_string();
 
             Ok((
                 RepositoryMetadata {
@@ -126,7 +143,12 @@ impl Indexer {
                             if metadata.len() <= self.max_file_size {
                                 files.push(path.to_path_buf());
                             } else {
-                                warn!("Skipping file {:?} (size {} exceeds limit {})", path, metadata.len(), self.max_file_size);
+                                warn!(
+                                    "Skipping file {:?} (size {} exceeds limit {})",
+                                    path,
+                                    metadata.len(),
+                                    self.max_file_size
+                                );
                             }
                         }
                     }
@@ -167,7 +189,9 @@ impl Indexer {
 
             while end_line < lines.len() {
                 let line = lines[end_line];
-                if chunk_content.len() + line.len() + 1 > self.chunk_size && !chunk_content.is_empty() {
+                if chunk_content.len() + line.len() + 1 > self.chunk_size
+                    && !chunk_content.is_empty()
+                {
                     break;
                 }
                 chunk_content.push_str(line);
@@ -236,31 +260,37 @@ impl VectorAdapter for SurrealAdapter {
 
         // 1. Create document record
         let doc_id = format!("{}:{}", repo_id, doc.metadata.path);
-        let _doc: serde_json::Value = self.client.upsert(
-            "documents",
-            &doc_id,
-            &serde_json::json!({
-                "repo_id": repo_id,
-                "path": doc.metadata.path,
-                "checksum": doc.metadata.checksum,
-                "created_at": created_at,
-                "updated_at": created_at,
-            })
-        ).await?;
+        let _doc: serde_json::Value = self
+            .client
+            .upsert(
+                "documents",
+                &doc_id,
+                &serde_json::json!({
+                    "repo_id": repo_id,
+                    "path": doc.metadata.path,
+                    "checksum": doc.metadata.checksum,
+                    "created_at": created_at,
+                    "updated_at": created_at,
+                }),
+            )
+            .await?;
 
         // 2. Create chunk records
         for chunk in doc.chunks {
             let chunk_id = format!("{}:{}", doc_id, chunk.index);
-            let _chunk: serde_json::Value = self.client.upsert(
-                "chunks",
-                &chunk_id,
-                &serde_json::json!({
-                    "doc_id": doc_id,
-                    "content": chunk.content,
-                    "chunk_index": chunk.index,
-                    "created_at": created_at,
-                })
-            ).await?;
+            let _chunk: serde_json::Value = self
+                .client
+                .upsert(
+                    "chunks",
+                    &chunk_id,
+                    &serde_json::json!({
+                        "doc_id": doc_id,
+                        "content": chunk.content,
+                        "chunk_index": chunk.index,
+                        "created_at": created_at,
+                    }),
+                )
+                .await?;
         }
 
         Ok(())
@@ -269,11 +299,17 @@ impl VectorAdapter for SurrealAdapter {
     async fn search(&self, repo_id: &str, query: &str, limit: usize) -> Result<Vec<VectorRecord>> {
         // Simple keyword-based search in SurrealDB as a fallback for pure vector search
         let sql = "SELECT path, content FROM chunks WHERE doc_id CONTAINS $repo_id AND content CONTAINS $query LIMIT $limit";
-        let results: Vec<VectorRecord> = self.client.query_with(sql, serde_json::json!({
-            "repo_id": repo_id,
-            "query": query,
-            "limit": limit,
-        })).await?;
+        let results: Vec<VectorRecord> = self
+            .client
+            .query_with(
+                sql,
+                serde_json::json!({
+                    "repo_id": repo_id,
+                    "query": query,
+                    "limit": limit,
+                }),
+            )
+            .await?;
 
         Ok(results)
     }

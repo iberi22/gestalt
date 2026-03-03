@@ -23,7 +23,10 @@ pub fn render_timeline(ui: &mut egui::Ui, app: &mut GestaltApp) {
     let mut x_grid = rect.left() - (app.scroll_offset % grid_size);
     while x_grid < rect.right() {
         painter.line_segment(
-            [Pos2::new(x_grid, rect.top()), Pos2::new(x_grid, rect.bottom())],
+            [
+                Pos2::new(x_grid, rect.top()),
+                Pos2::new(x_grid, rect.bottom()),
+            ],
             Stroke::new(1.0, Color32::from_white_alpha(10)),
         );
         x_grid += grid_size;
@@ -32,7 +35,10 @@ pub fn render_timeline(ui: &mut egui::Ui, app: &mut GestaltApp) {
     let mut y_grid = rect.top();
     while y_grid < rect.bottom() {
         painter.line_segment(
-            [Pos2::new(rect.left(), y_grid), Pos2::new(rect.right(), y_grid)],
+            [
+                Pos2::new(rect.left(), y_grid),
+                Pos2::new(rect.right(), y_grid),
+            ],
             Stroke::new(1.0, Color32::from_white_alpha(10)),
         );
         y_grid += grid_size;
@@ -60,7 +66,10 @@ pub fn render_timeline(ui: &mut egui::Ui, app: &mut GestaltApp) {
 
         // Subtle bottom border for lane
         painter.line_segment(
-            [Pos2::new(rect.left(), y + lane_height), Pos2::new(rect.right(), y + lane_height)],
+            [
+                Pos2::new(rect.left(), y + lane_height),
+                Pos2::new(rect.right(), y + lane_height),
+            ],
             Stroke::new(1.0, Color32::from_rgb(0, 80, 80)),
         );
     }
@@ -70,11 +79,17 @@ pub fn render_timeline(ui: &mut egui::Ui, app: &mut GestaltApp) {
 
     // Simulate a glowing bus by drawing multiple lines with decreasing opacity/increasing width
     painter.line_segment(
-        [Pos2::new(rect.left(), bus_y), Pos2::new(rect.right(), bus_y)],
+        [
+            Pos2::new(rect.left(), bus_y),
+            Pos2::new(rect.right(), bus_y),
+        ],
         Stroke::new(6.0, Color32::from_rgba_premultiplied(0, 255, 255, 50)),
     );
     painter.line_segment(
-        [Pos2::new(rect.left(), bus_y), Pos2::new(rect.right(), bus_y)],
+        [
+            Pos2::new(rect.left(), bus_y),
+            Pos2::new(rect.right(), bus_y),
+        ],
         Stroke::new(2.0, Color32::from_rgb(0, 255, 255)),
     );
 
@@ -108,10 +123,8 @@ pub fn render_timeline(ui: &mut egui::Ui, app: &mut GestaltApp) {
             let x = rect.right() - (age_secs * time_scale) - app.scroll_offset;
 
             if x > rect.left() && x < rect.right() {
-                let event_rect = Rect::from_min_max(
-                    Pos2::new(x, y + 30.0),
-                    Pos2::new(x + 120.0, y + 80.0),
-                );
+                let event_rect =
+                    Rect::from_min_max(Pos2::new(x, y + 30.0), Pos2::new(x + 120.0, y + 80.0));
 
                 let is_selected = app.selected_event == Some(current_idx);
 
@@ -129,7 +142,10 @@ pub fn render_timeline(ui: &mut egui::Ui, app: &mut GestaltApp) {
 
                 // Draw Signal line dropping to the bus
                 painter.line_segment(
-                    [Pos2::new(event_rect.center().x, event_rect.bottom()), Pos2::new(event_rect.center().x, bus_y)],
+                    [
+                        Pos2::new(event_rect.center().x, event_rect.bottom()),
+                        Pos2::new(event_rect.center().x, bus_y),
+                    ],
                     Stroke::new(1.0, base_color.gamma_multiply(0.5)),
                 );
 
@@ -142,7 +158,7 @@ pub fn render_timeline(ui: &mut egui::Ui, app: &mut GestaltApp) {
                     event_rect,
                     2.0,
                     Stroke::new(1.5, base_color),
-                    egui::StrokeKind::Middle
+                    egui::StrokeKind::Middle,
                 );
 
                 painter.text(
@@ -150,11 +166,16 @@ pub fn render_timeline(ui: &mut egui::Ui, app: &mut GestaltApp) {
                     egui::Align2::CENTER_CENTER,
                     format!("EVT-{:03}", current_idx),
                     egui::FontId::monospace(12.0),
-                    if is_selected { Color32::BLACK } else { Color32::WHITE },
+                    if is_selected {
+                        Color32::BLACK
+                    } else {
+                        Color32::WHITE
+                    },
                 );
 
                 // Interaction
-                let interact_rect = ui.interact(event_rect, ui.id().with(current_idx), egui::Sense::click());
+                let interact_rect =
+                    ui.interact(event_rect, ui.id().with(current_idx), egui::Sense::click());
                 if interact_rect.clicked() {
                     app.selected_event = Some(current_idx);
                 }
@@ -174,7 +195,11 @@ pub fn render_timeline(ui: &mut egui::Ui, app: &mut GestaltApp) {
         let mut open = app.show_command_node;
         egui::Window::new("COMMAND NODE")
             .open(&mut open)
-            .frame(egui::Frame::window(ui.style()).fill(Color32::from_rgba_premultiplied(20, 20, 25, 230)).stroke(Stroke::new(1.0, Color32::from_rgb(0, 255, 255))))
+            .frame(
+                egui::Frame::window(ui.style())
+                    .fill(Color32::from_rgba_premultiplied(20, 20, 25, 230))
+                    .stroke(Stroke::new(1.0, Color32::from_rgb(0, 255, 255))),
+            )
             .title_bar(true)
             .collapsible(true)
             .resizable(true)
@@ -182,15 +207,25 @@ pub fn render_timeline(ui: &mut egui::Ui, app: &mut GestaltApp) {
             .show(ui.ctx(), |ui| {
                 ui.visuals_mut().override_text_color = Some(Color32::WHITE);
 
-                egui::ScrollArea::vertical().max_height(100.0).show(ui, |ui| {
-                    ui.label(egui::RichText::new(">> System Online. Ready for directives.").color(Color32::from_rgb(0, 255, 100)).monospace());
-                    // Console history would go here
-                });
+                egui::ScrollArea::vertical()
+                    .max_height(100.0)
+                    .show(ui, |ui| {
+                        ui.label(
+                            egui::RichText::new(">> System Online. Ready for directives.")
+                                .color(Color32::from_rgb(0, 255, 100))
+                                .monospace(),
+                        );
+                        // Console history would go here
+                    });
 
                 ui.separator();
 
                 ui.horizontal(|ui| {
-                    ui.label(egui::RichText::new(">").color(Color32::from_rgb(0, 255, 255)).monospace());
+                    ui.label(
+                        egui::RichText::new(">")
+                            .color(Color32::from_rgb(0, 255, 255))
+                            .monospace(),
+                    );
 
                     let text_edit = egui::TextEdit::singleline(&mut app.command_input)
                         .desired_width(ui.available_width() - 60.0)
@@ -199,7 +234,9 @@ pub fn render_timeline(ui: &mut egui::Ui, app: &mut GestaltApp) {
 
                     let response = ui.add(text_edit);
 
-                    if ui.button("EXEC").clicked() || (response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter))) {
+                    if ui.button("EXEC").clicked()
+                        || (response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)))
+                    {
                         // Handle command execution here
                         println!("Executing: {}", app.command_input);
                         app.command_input.clear();
@@ -213,14 +250,22 @@ pub fn render_timeline(ui: &mut egui::Ui, app: &mut GestaltApp) {
     // B. Event Inspection Node
     if let Some(idx) = app.selected_event {
         egui::Window::new(format!("INSPECT: EVT-{:03}", idx))
-            .frame(egui::Frame::window(ui.style()).fill(Color32::from_rgba_premultiplied(30, 20, 30, 230)).stroke(Stroke::new(1.0, Color32::from_rgb(255, 0, 255))))
+            .frame(
+                egui::Frame::window(ui.style())
+                    .fill(Color32::from_rgba_premultiplied(30, 20, 30, 230))
+                    .stroke(Stroke::new(1.0, Color32::from_rgb(255, 0, 255))),
+            )
             .title_bar(true)
             .collapsible(false)
             .resizable(true)
             .default_width(300.0)
             .show(ui.ctx(), |ui| {
                 ui.visuals_mut().override_text_color = Some(Color32::WHITE);
-                ui.label(egui::RichText::new("PAYLOAD DETAILS").strong().color(Color32::from_rgb(255, 100, 255)));
+                ui.label(
+                    egui::RichText::new("PAYLOAD DETAILS")
+                        .strong()
+                        .color(Color32::from_rgb(255, 100, 255)),
+                );
                 ui.separator();
 
                 egui::ScrollArea::vertical().show(ui, |ui| {
@@ -234,10 +279,16 @@ pub fn render_timeline(ui: &mut egui::Ui, app: &mut GestaltApp) {
         "Generated response"
     ]
 }"#;
-                    ui.label(egui::RichText::new(mock_json).monospace().color(Color32::from_rgb(200, 200, 255)));
+                    ui.label(
+                        egui::RichText::new(mock_json)
+                            .monospace()
+                            .color(Color32::from_rgb(200, 200, 255)),
+                    );
                 });
 
-                if ui.button("Close Inspect (Esc)").clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                if ui.button("Close Inspect (Esc)").clicked()
+                    || ui.input(|i| i.key_pressed(egui::Key::Escape))
+                {
                     app.selected_event = None;
                 }
             });

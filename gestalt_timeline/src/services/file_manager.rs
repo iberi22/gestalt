@@ -7,12 +7,16 @@ use tokio::sync::{mpsc, oneshot};
 use tokio::time::{Duration, Instant};
 use tracing::info;
 
-use crate::services::vfs::{FlushError, FlushReport, LockStatus, PendingChange, VirtualFs};
+use crate::services::vfs::{
+    FileEventType, FileWatchEvent, FileWatcher, FlushError, FlushReport, LockStatus, PendingChange,
+    VirtualFs,
+};
 
 /// Core FileManager Actor implementation.
 /// Handles in-memory file states and serialized patch application.
 pub struct FileManagerActor {
     files: HashMap<PathBuf, FileState>,
+    binary_files: HashMap<PathBuf, Vec<u8>>,
     dirs: HashSet<PathBuf>,
     locks: HashMap<PathBuf, String>,
     receiver: mpsc::Receiver<FileCommand>,
@@ -35,9 +39,19 @@ pub enum FileCommand {
         path: PathBuf,
         reply: oneshot::Sender<Result<FileState>>,
     },
+    ReadBytes {
+        path: PathBuf,
+        reply: oneshot::Sender<Result<Vec<u8>>>,
+    },
     WriteString {
         path: PathBuf,
         content: String,
+        owner: String,
+        reply: oneshot::Sender<Result<()>>,
+    },
+    WriteBytes {
+        path: PathBuf,
+        data: Vec<u8>,
         owner: String,
         reply: oneshot::Sender<Result<()>>,
     },
@@ -82,6 +96,7 @@ impl FileManager {
         let (sender, receiver) = mpsc::channel(100);
         let actor = FileManagerActor {
             files: HashMap::new(),
+            binary_files: HashMap::new(),
             dirs: HashSet::new(),
             locks: HashMap::new(),
             receiver,
@@ -133,12 +148,36 @@ impl VirtualFs for FileManager {
         rx.await?
     }
 
+    async fn read_bytes(&self, path: &Path) -> Result<Vec<u8>> {
+        let (reply, rx) = oneshot::channel();
+        self.sender
+            .send(FileCommand::ReadBytes {
+                path: path.to_path_buf(),
+                reply,
+            })
+            .await?;
+        rx.await?
+    }
+
     async fn write_string(&self, path: &Path, content: String, owner: &str) -> Result<()> {
         let (reply, rx) = oneshot::channel();
         self.sender
             .send(FileCommand::WriteString {
                 path: path.to_path_buf(),
                 content,
+                owner: owner.to_string(),
+                reply,
+            })
+            .await?;
+        rx.await?
+    }
+
+    async fn write_bytes(&self, path: &Path, data: Vec<u8>, owner: &str) -> Result<()> {
+        let (reply, rx) = oneshot::channel();
+        self.sender
+            .send(FileCommand::WriteBytes {
+                path: path.to_path_buf(),
+                data,
                 owner: owner.to_string(),
                 reply,
             })
@@ -215,6 +254,103 @@ impl VirtualFs for FileManager {
     }
 }
 
+impl FileWatcher for FileManager {
+    fn watch(&self, path: PathBuf, interval: Duration) -> mpsc::Receiver<FileWatchEvent> {
+        let (tx, rx) = mpsc::channel(128);
+        tokio::spawn(async move {
+            let mut known: HashMap<PathBuf, (u64, std::time::SystemTime)> = HashMap::new();
+
+            loop {
+                let mut current: HashMap<PathBuf, (u64, std::time::SystemTime)> = HashMap::new();
+
+                if path.is_file() {
+                    if let Ok(meta) = tokio::fs::metadata(&path).await {
+                        current.insert(
+                            path.clone(),
+                            (
+                                meta.len(),
+                                meta.modified().unwrap_or(std::time::SystemTime::UNIX_EPOCH),
+                            ),
+                        );
+                    }
+                } else if path.is_dir() {
+                    let mut dir = match tokio::fs::read_dir(&path).await {
+                        Ok(d) => d,
+                        Err(_) => {
+                            tokio::time::sleep(interval).await;
+                            continue;
+                        }
+                    };
+                    while let Ok(Some(entry)) = dir.next_entry().await {
+                        let p = entry.path();
+                        if let Ok(meta) = entry.metadata().await {
+                            if meta.is_file() {
+                                current.insert(
+                                    p,
+                                    (
+                                        meta.len(),
+                                        meta.modified()
+                                            .unwrap_or(std::time::SystemTime::UNIX_EPOCH),
+                                    ),
+                                );
+                            }
+                        }
+                    }
+                }
+
+                for (p, state) in &current {
+                    match known.get(p) {
+                        None => {
+                            if tx
+                                .send(FileWatchEvent {
+                                    path: p.clone(),
+                                    event_type: FileEventType::Created,
+                                })
+                                .await
+                                .is_err()
+                            {
+                                return;
+                            }
+                        }
+                        Some(old) if old != state => {
+                            if tx
+                                .send(FileWatchEvent {
+                                    path: p.clone(),
+                                    event_type: FileEventType::Modified,
+                                })
+                                .await
+                                .is_err()
+                            {
+                                return;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+
+                for p in known.keys() {
+                    if !current.contains_key(p) {
+                        if tx
+                            .send(FileWatchEvent {
+                                path: p.clone(),
+                                event_type: FileEventType::Deleted,
+                            })
+                            .await
+                            .is_err()
+                        {
+                            return;
+                        }
+                    }
+                }
+
+                known = current;
+                tokio::time::sleep(interval).await;
+            }
+        });
+        rx
+    }
+}
+
 impl FileManagerActor {
     pub async fn run(mut self) {
         let mut interval = tokio::time::interval(Duration::from_millis(500));
@@ -254,6 +390,10 @@ impl FileManagerActor {
                 let res = self.do_read_file_state(path).await;
                 let _ = reply.send(res);
             }
+            FileCommand::ReadBytes { path, reply } => {
+                let res = self.do_read_bytes(path).await;
+                let _ = reply.send(res);
+            }
             FileCommand::WriteString {
                 path,
                 content,
@@ -261,6 +401,18 @@ impl FileManagerActor {
                 reply,
             } => {
                 let res = self.do_write_string(path, content, owner).await;
+                if res.is_ok() {
+                    self.last_modification = Some(Instant::now());
+                }
+                let _ = reply.send(res);
+            }
+            FileCommand::WriteBytes {
+                path,
+                data,
+                owner,
+                reply,
+            } => {
+                let res = self.do_write_bytes(path, data, owner).await;
                 if res.is_ok() {
                     self.last_modification = Some(Instant::now());
                 }
@@ -300,6 +452,12 @@ impl FileManagerActor {
                         bytes: state.content.len(),
                     });
                 }
+                for (path, data) in &self.binary_files {
+                    pending.push(PendingChange::WriteFile {
+                        path: path.clone(),
+                        bytes: data.len(),
+                    });
+                }
                 let _ = reply.send(pending);
             }
             FileCommand::AcquireLock { path, owner, reply } => {
@@ -322,6 +480,7 @@ impl FileManagerActor {
             }
             FileCommand::Discard => {
                 self.files.clear();
+                self.binary_files.clear();
                 self.dirs.clear();
                 self.locks.clear();
             }
@@ -334,6 +493,15 @@ impl FileManagerActor {
     async fn do_read_file_state(&mut self, path: PathBuf) -> Result<FileState> {
         if let Some(state) = self.files.get(&path) {
             return Ok(state.clone());
+        }
+        if let Some(bytes) = self.binary_files.get(&path) {
+            let content = String::from_utf8(bytes.clone())?;
+            let state = FileState {
+                content: Arc::new(content),
+                version: 0,
+            };
+            self.files.insert(path, state.clone());
+            return Ok(state);
         }
 
         // Load from disk if not in memory
@@ -367,12 +535,42 @@ impl FileManagerActor {
 
         let current_version = self.files.get(&path).map(|s| s.version).unwrap_or(0);
         self.files.insert(
-            path,
+            path.clone(),
             FileState {
                 content: Arc::new(content),
                 version: current_version + 1,
             },
         );
+        self.binary_files.remove(&path);
+        Ok(())
+    }
+
+    async fn do_read_bytes(&mut self, path: PathBuf) -> Result<Vec<u8>> {
+        if let Some(data) = self.binary_files.get(&path) {
+            return Ok(data.clone());
+        }
+        if let Some(state) = self.files.get(&path) {
+            return Ok(state.content.as_bytes().to_vec());
+        }
+        Ok(tokio::fs::read(path).await?)
+    }
+
+    async fn do_write_bytes(&mut self, path: PathBuf, data: Vec<u8>, owner: String) -> Result<()> {
+        match self.locks.get(&path) {
+            Some(current_owner) if current_owner != &owner => {
+                bail!(
+                    "lock conflict for '{}': held by '{}'",
+                    path.display(),
+                    current_owner
+                );
+            }
+            _ => {
+                self.locks.insert(path.clone(), owner);
+            }
+        }
+
+        self.files.remove(&path);
+        self.binary_files.insert(path, data);
         Ok(())
     }
 
@@ -416,7 +614,8 @@ impl FileManagerActor {
             version: current_state.version + 1,
         };
 
-        self.files.insert(path, new_state.clone());
+        self.files.insert(path.clone(), new_state.clone());
+        self.binary_files.remove(&path);
         Ok(new_state)
     }
 
@@ -458,6 +657,28 @@ impl FileManagerActor {
             }
         }
 
+        for (path, data) in &self.binary_files {
+            if let Some(parent) = path.parent() {
+                if let Err(err) = tokio::fs::create_dir_all(parent).await {
+                    report.errors.push(FlushError {
+                        path: path.clone(),
+                        operation: "create_dir_all_parent",
+                        error: err.to_string(),
+                    });
+                    continue;
+                }
+            }
+            if let Err(err) = tokio::fs::write(path, data).await {
+                report.errors.push(FlushError {
+                    path: path.clone(),
+                    operation: "write",
+                    error: err.to_string(),
+                });
+            } else {
+                report.written_files.push(path.clone());
+            }
+        }
+
         if !report.written_files.is_empty() || !report.created_dirs.is_empty() {
             self.global_version += 1;
         }
@@ -470,6 +691,7 @@ impl FileManagerActor {
         let written_files = report.written_files.clone();
         for written in written_files {
             self.files.remove(&written);
+            self.binary_files.remove(&written);
             self.locks.remove(&written);
         }
 
@@ -567,7 +789,7 @@ impl UnifiedDiff {
 
 #[cfg(test)]
 mod tests {
-    use super::{FileManager, LockStatus, VirtualFs};
+    use super::{FileEventType, FileManager, FileWatcher, LockStatus, VirtualFs};
     use anyhow::Result;
     use tempfile::tempdir;
     use tokio::time::Duration;
@@ -720,6 +942,55 @@ mod tests {
             .await?;
         assert_eq!(s2.version, 2);
 
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_write_and_read_bytes_roundtrip() -> Result<()> {
+        let tmp = tempdir()?;
+        let file_path = tmp.path().join("blob.bin");
+
+        let (manager, actor) = FileManager::new();
+        tokio::spawn(actor.run());
+
+        let data = vec![1_u8, 2, 3, 4, 255];
+        manager
+            .write_bytes(&file_path, data.clone(), "agent-a")
+            .await?;
+        let read = manager.read_bytes(&file_path).await?;
+        assert_eq!(read, data);
+
+        let report = manager.flush().await?;
+        assert!(report.errors.is_empty());
+        assert_eq!(tokio::fs::read(&file_path).await?, data);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_watcher_detects_created_file() -> Result<()> {
+        let tmp = tempdir()?;
+        let dir = tmp.path().to_path_buf();
+        let file = dir.join("new.txt");
+
+        let (manager, actor) = FileManager::new();
+        tokio::spawn(actor.run());
+        let mut rx = manager.watch(dir.clone(), Duration::from_millis(50));
+
+        tokio::time::sleep(Duration::from_millis(80)).await;
+        tokio::fs::write(&file, "hello").await?;
+
+        let mut seen = false;
+        for _ in 0..20 {
+            if let Ok(Some(evt)) = tokio::time::timeout(Duration::from_millis(150), rx.recv()).await
+            {
+                if evt.path == file && evt.event_type == FileEventType::Created {
+                    seen = true;
+                    break;
+                }
+            }
+        }
+
+        assert!(seen);
         Ok(())
     }
 }

@@ -4,7 +4,9 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use async_trait::async_trait;
+use tokio::sync::mpsc;
 use tokio::sync::Mutex;
+use tokio::time::Duration;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PendingChange {
@@ -39,10 +41,25 @@ impl FlushReport {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FileEventType {
+    Created,
+    Modified,
+    Deleted,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FileWatchEvent {
+    pub path: PathBuf,
+    pub event_type: FileEventType,
+}
+
 #[async_trait]
 pub trait VirtualFs: Send + Sync {
     async fn read_to_string(&self, path: &Path) -> Result<String>;
+    async fn read_bytes(&self, path: &Path) -> Result<Vec<u8>>;
     async fn write_string(&self, path: &Path, content: String, owner: &str) -> Result<()>;
+    async fn write_bytes(&self, path: &Path, data: Vec<u8>, owner: &str) -> Result<()>;
     async fn create_dir_all(&self, path: &Path) -> Result<()>;
     async fn flush(&self) -> Result<FlushReport>;
     async fn pending_changes(&self) -> Vec<PendingChange>;
@@ -52,9 +69,14 @@ pub trait VirtualFs: Send + Sync {
     async fn version(&self) -> u64;
 }
 
+pub trait FileWatcher: Send + Sync {
+    fn watch(&self, path: PathBuf, interval: Duration) -> mpsc::Receiver<FileWatchEvent>;
+}
+
 #[derive(Debug, Default)]
 struct OverlayState {
-    files: HashMap<PathBuf, String>,
+    text_files: HashMap<PathBuf, String>,
+    binary_files: HashMap<PathBuf, Vec<u8>>,
     dirs: HashSet<PathBuf>,
     locks: HashMap<PathBuf, String>,
     version: u64,
@@ -75,11 +97,26 @@ impl OverlayFs {
 impl VirtualFs for OverlayFs {
     async fn read_to_string(&self, path: &Path) -> Result<String> {
         let state = self.state.lock().await;
-        if let Some(content) = state.files.get(path) {
+        if let Some(content) = state.text_files.get(path) {
             return Ok(content.clone());
+        }
+        if let Some(bytes) = state.binary_files.get(path) {
+            return Ok(String::from_utf8(bytes.clone())?);
         }
         drop(state);
         Ok(tokio::fs::read_to_string(path).await?)
+    }
+
+    async fn read_bytes(&self, path: &Path) -> Result<Vec<u8>> {
+        let state = self.state.lock().await;
+        if let Some(content) = state.binary_files.get(path) {
+            return Ok(content.clone());
+        }
+        if let Some(content) = state.text_files.get(path) {
+            return Ok(content.as_bytes().to_vec());
+        }
+        drop(state);
+        Ok(tokio::fs::read(path).await?)
     }
 
     async fn write_string(&self, path: &Path, content: String, owner: &str) -> Result<()> {
@@ -96,7 +133,27 @@ impl VirtualFs for OverlayFs {
                 state.locks.insert(path.to_path_buf(), owner.to_string());
             }
         }
-        state.files.insert(path.to_path_buf(), content);
+        state.binary_files.remove(path);
+        state.text_files.insert(path.to_path_buf(), content);
+        Ok(())
+    }
+
+    async fn write_bytes(&self, path: &Path, data: Vec<u8>, owner: &str) -> Result<()> {
+        let mut state = self.state.lock().await;
+        match state.locks.get(path) {
+            Some(current_owner) if current_owner != owner => {
+                anyhow::bail!(
+                    "lock conflict for '{}': held by '{}'",
+                    path.display(),
+                    current_owner
+                );
+            }
+            _ => {
+                state.locks.insert(path.to_path_buf(), owner.to_string());
+            }
+        }
+        state.text_files.remove(path);
+        state.binary_files.insert(path.to_path_buf(), data);
         Ok(())
     }
 
@@ -107,12 +164,17 @@ impl VirtualFs for OverlayFs {
     }
 
     async fn flush(&self) -> Result<FlushReport> {
-        let (pending_dirs, pending_files) = {
+        let (pending_dirs, pending_files, pending_bytes) = {
             let state = self.state.lock().await;
             (
                 state.dirs.iter().cloned().collect::<Vec<_>>(),
                 state
-                    .files
+                    .text_files
+                    .iter()
+                    .map(|(path, content)| (path.clone(), content.clone()))
+                    .collect::<Vec<_>>(),
+                state
+                    .binary_files
                     .iter()
                     .map(|(path, content)| (path.clone(), content.clone()))
                     .collect::<Vec<_>>(),
@@ -155,12 +217,35 @@ impl VirtualFs for OverlayFs {
             }
         }
 
+        for (path, content) in &pending_bytes {
+            if let Some(parent) = path.parent() {
+                if let Err(err) = tokio::fs::create_dir_all(parent).await {
+                    report.errors.push(FlushError {
+                        path: path.clone(),
+                        operation: "create_dir_all_parent",
+                        error: err.to_string(),
+                    });
+                    continue;
+                }
+            }
+            if let Err(err) = tokio::fs::write(path, content).await {
+                report.errors.push(FlushError {
+                    path: path.clone(),
+                    operation: "write",
+                    error: err.to_string(),
+                });
+            } else {
+                report.written_files.push(path.clone());
+            }
+        }
+
         let mut state = self.state.lock().await;
         for created in &report.created_dirs {
             state.dirs.remove(created);
         }
         for written in &report.written_files {
-            state.files.remove(written);
+            state.text_files.remove(written);
+            state.binary_files.remove(written);
             state.locks.remove(written);
         }
 
@@ -173,7 +258,8 @@ impl VirtualFs for OverlayFs {
 
     async fn pending_changes(&self) -> Vec<PendingChange> {
         let state = self.state.lock().await;
-        let mut pending = Vec::with_capacity(state.dirs.len() + state.files.len());
+        let total_files = state.text_files.len() + state.binary_files.len();
+        let mut pending = Vec::with_capacity(state.dirs.len() + total_files);
 
         let mut dirs = state.dirs.iter().cloned().collect::<Vec<_>>();
         dirs.sort();
@@ -182,10 +268,16 @@ impl VirtualFs for OverlayFs {
         }
 
         let mut files = state
-            .files
+            .text_files
             .iter()
             .map(|(path, content)| (path.clone(), content.len()))
             .collect::<Vec<_>>();
+        files.extend(
+            state
+                .binary_files
+                .iter()
+                .map(|(path, content)| (path.clone(), content.len())),
+        );
         files.sort_by(|a, b| a.0.cmp(&b.0));
         for (path, bytes) in files {
             pending.push(PendingChange::WriteFile { path, bytes });
@@ -218,7 +310,8 @@ impl VirtualFs for OverlayFs {
 
     async fn discard(&self) {
         let mut state = self.state.lock().await;
-        state.files.clear();
+        state.text_files.clear();
+        state.binary_files.clear();
         state.dirs.clear();
         state.locks.clear();
     }
@@ -229,11 +322,101 @@ impl VirtualFs for OverlayFs {
     }
 }
 
+impl FileWatcher for OverlayFs {
+    fn watch(&self, path: PathBuf, interval: Duration) -> mpsc::Receiver<FileWatchEvent> {
+        let (tx, rx) = mpsc::channel(128);
+        tokio::spawn(async move {
+            let mut known: HashMap<PathBuf, (u64, std::time::SystemTime)> = HashMap::new();
+
+            loop {
+                let mut current: HashMap<PathBuf, (u64, std::time::SystemTime)> = HashMap::new();
+
+                if path.is_file() {
+                    if let Ok(meta) = tokio::fs::metadata(&path).await {
+                        let size = meta.len();
+                        let modified = meta.modified().unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+                        current.insert(path.clone(), (size, modified));
+                    }
+                } else if path.is_dir() {
+                    let mut dir = match tokio::fs::read_dir(&path).await {
+                        Ok(d) => d,
+                        Err(_) => {
+                            tokio::time::sleep(interval).await;
+                            continue;
+                        }
+                    };
+                    while let Ok(Some(entry)) = dir.next_entry().await {
+                        let p = entry.path();
+                        if let Ok(meta) = entry.metadata().await {
+                            if meta.is_file() {
+                                let size = meta.len();
+                                let modified =
+                                    meta.modified().unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+                                current.insert(p, (size, modified));
+                            }
+                        }
+                    }
+                }
+
+                for (p, state) in &current {
+                    match known.get(p) {
+                        None => {
+                            if tx
+                                .send(FileWatchEvent {
+                                    path: p.clone(),
+                                    event_type: FileEventType::Created,
+                                })
+                                .await
+                                .is_err()
+                            {
+                                return;
+                            }
+                        }
+                        Some(old) if old != state => {
+                            if tx
+                                .send(FileWatchEvent {
+                                    path: p.clone(),
+                                    event_type: FileEventType::Modified,
+                                })
+                                .await
+                                .is_err()
+                            {
+                                return;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+
+                for p in known.keys() {
+                    if !current.contains_key(p) {
+                        if tx
+                            .send(FileWatchEvent {
+                                path: p.clone(),
+                                event_type: FileEventType::Deleted,
+                            })
+                            .await
+                            .is_err()
+                        {
+                            return;
+                        }
+                    }
+                }
+
+                known = current;
+                tokio::time::sleep(interval).await;
+            }
+        });
+        rx
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{LockStatus, OverlayFs, PendingChange, VirtualFs};
+    use super::{FileEventType, FileWatcher, LockStatus, OverlayFs, PendingChange, VirtualFs};
     use anyhow::Result;
     use tempfile::tempdir;
+    use tokio::time::Duration;
 
     #[tokio::test]
     async fn write_then_read_returns_overlay_value_without_disk_mutation() -> Result<()> {
@@ -340,6 +523,49 @@ mod tests {
         vfs.release_locks("agent-a").await;
         vfs.write_string(&file, "value".to_string(), "agent-b")
             .await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn write_and_read_bytes_roundtrip() -> Result<()> {
+        let tmp = tempdir()?;
+        let file = tmp.path().join("blob.bin");
+        let vfs = OverlayFs::new();
+
+        let data = vec![0_u8, 1, 2, 3, 255];
+        vfs.write_bytes(&file, data.clone(), "agent-a").await?;
+        let read = vfs.read_bytes(&file).await?;
+        assert_eq!(read, data);
+
+        let report = vfs.flush().await?;
+        assert!(report.errors.is_empty());
+        assert_eq!(tokio::fs::read(&file).await?, data);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn watcher_detects_created_file() -> Result<()> {
+        let tmp = tempdir()?;
+        let dir = tmp.path().to_path_buf();
+        let file = dir.join("watch.txt");
+        let vfs = OverlayFs::new();
+        let mut rx = vfs.watch(dir.clone(), Duration::from_millis(50));
+
+        tokio::time::sleep(Duration::from_millis(80)).await;
+        tokio::fs::write(&file, "hello").await?;
+
+        let mut seen = false;
+        for _ in 0..20 {
+            if let Ok(Some(evt)) = tokio::time::timeout(Duration::from_millis(150), rx.recv()).await
+            {
+                if evt.path == file && evt.event_type == FileEventType::Created {
+                    seen = true;
+                    break;
+                }
+            }
+        }
+
+        assert!(seen);
         Ok(())
     }
 }

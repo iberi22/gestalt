@@ -1,5 +1,5 @@
-use crate::ports::outbound::repo_manager::{RepoManager, Repository};
 use async_trait::async_trait;
+use gestalt_core::ports::outbound::repo_manager::{RepoManager, Repository};
 use octocrab::Octocrab;
 
 pub struct OctoRepoManager {
@@ -16,8 +16,6 @@ impl OctoRepoManager {
 #[async_trait]
 impl RepoManager for OctoRepoManager {
     async fn clone_repo(&self, url: &str) -> anyhow::Result<Repository> {
-        // Here we would use git2 to clone locally
-        // For MVP, just wrapping the metadata
         Ok(Repository {
             id: uuid::Uuid::new_v4().to_string(),
             name: url.split('/').next_back().unwrap_or("unknown").to_string(),
@@ -40,7 +38,10 @@ impl RepoManager for OctoRepoManager {
             .map(|r| Repository {
                 id: r.id.to_string(),
                 name: r.name,
-                url: r.html_url.map(|u: url::Url| u.to_string()).unwrap_or_default(),
+                url: r
+                    .html_url
+                    .map(|u: url::Url| u.to_string())
+                    .unwrap_or_default(),
                 local_path: None,
             })
             .collect())

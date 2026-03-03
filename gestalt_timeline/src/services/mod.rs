@@ -40,5 +40,8 @@ pub use task_queue::{QueuedTask, TaskQueue, TaskSource};
 #[cfg(feature = "telegram")]
 pub use telegram::TelegramService;
 pub use timeline::TimelineService;
-pub use vfs::{FlushError, FlushReport, LockStatus, OverlayFs, PendingChange, VirtualFs};
+pub use vfs::{
+    FileEventType, FileWatchEvent, FileWatcher, FlushError, FlushReport, LockStatus, OverlayFs,
+    PendingChange, VirtualFs,
+};
 pub use watch::WatchService;

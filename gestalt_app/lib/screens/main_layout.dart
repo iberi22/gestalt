@@ -48,7 +48,7 @@ class _MainLayoutState extends State<MainLayout> {
                 height: double.infinity,
                 borderWidth: 0,
                 blur: 20,
-                color: Colors.white.withOpacity(0.05),
+                color: Colors.white.withValues(alpha: 0.05),
                 child: Column(
                   children: [
                     const SizedBox(height: 60),
@@ -97,10 +97,10 @@ class _MainLayoutState extends State<MainLayout> {
           duration: 300.ms,
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           decoration: BoxDecoration(
-            color: isSelected ? Colors.purpleAccent.withOpacity(0.2) : Colors.transparent,
+            color: isSelected ? Colors.purpleAccent.withValues(alpha: 0.2) : Colors.transparent,
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
-              color: isSelected ? Colors.purpleAccent.withOpacity(0.5) : Colors.transparent,
+              color: isSelected ? Colors.purpleAccent.withValues(alpha: 0.5) : Colors.transparent,
             ),
           ),
           child: Row(

@@ -234,7 +234,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             width: double.infinity,
             borderRadius: BorderRadius.circular(16),
             borderWidth: 1,
-            borderColor: Colors.white.withOpacity(0.1),
+            borderColor: Colors.white.withValues(alpha: 0.1),
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20),
               child: Row(
@@ -274,7 +274,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               width: double.infinity,
               borderRadius: BorderRadius.circular(24),
               borderWidth: 1,
-              borderColor: Colors.white.withOpacity(0.05),
+              borderColor: Colors.white.withValues(alpha: 0.05),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -316,7 +316,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       width: double.infinity,
       borderRadius: BorderRadius.circular(20),
       borderWidth: 1,
-      borderColor: color.withOpacity(0.2),
+      borderColor: color.withValues(alpha: 0.2),
       child: Padding(
         padding: const EdgeInsets.all(20.0),
         child: Row(
@@ -324,7 +324,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: color.withOpacity(0.1),
+                color: color.withValues(alpha: 0.1),
                 shape: BoxShape.circle,
               ),
               child: Icon(icon, color: color, size: 28),

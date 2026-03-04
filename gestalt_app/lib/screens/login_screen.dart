@@ -52,7 +52,7 @@ class _LoginScreenState extends State<LoginScreen> {
               height: 450,
               borderRadius: BorderRadius.circular(24),
               borderWidth: 1,
-              borderColor: Colors.white.withOpacity(0.1),
+              borderColor: Colors.white.withValues(alpha: 0.1),
               child: Padding(
                 padding: const EdgeInsets.all(32.0),
                 child: Column(
@@ -77,7 +77,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         labelText: 'Backend URL',
                         labelStyle: const TextStyle(color: Colors.white70),
                         enabledBorder: OutlineInputBorder(
-                          borderSide: BorderSide(color: Colors.white.withOpacity(0.3)),
+                          borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.3)),
                           borderRadius: BorderRadius.circular(12),
                         ),
                         focusedBorder: OutlineInputBorder(
@@ -95,7 +95,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         labelText: 'API Token',
                         labelStyle: const TextStyle(color: Colors.white70),
                         enabledBorder: OutlineInputBorder(
-                          borderSide: BorderSide(color: Colors.white.withOpacity(0.3)),
+                          borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.3)),
                           borderRadius: BorderRadius.circular(12),
                         ),
                         focusedBorder: OutlineInputBorder(

@@ -433,55 +433,41 @@ warning • Dead code • gestalt_app/rust_builder/cargokit/build_tool/lib/src/o
   error • The method 'verify' isn't defined for the type 'VerifyBinaries' • gestalt_app/rust_builder/cargokit/build_tool/lib/src/verify_binaries.dart:71:16 • undefined_method
 warning • Unused import: 'package:gestalt_app/screens/main_layout.dart' • integration_test/app_test.dart:5:8 • unused_import
    info • The private field _events could be 'final' • lib/agent_view.dart:18:17 • prefer_final_fields
-   info • Use 'const' with the constructor to improve performance • lib/agent_view.dart:174:19 • prefer_const_constructors
-   info • Use 'const' literals as arguments to constructors of '@immutable' classes • lib/agent_view.dart:176:20 • prefer_const_literals_to_create_immutables
-   info • Use 'const' with the constructor to improve performance • lib/agent_view.dart:177:11 • prefer_const_constructors
-warning • Duplicate import • lib/screens/dashboard_screen.dart:4:8 • duplicate_import
-warning • Unused import: '../widgets/project_card.dart' • lib/screens/dashboard_screen.dart:10:8 • unused_import
-   info • The private field _logs could be 'final' • lib/screens/dashboard_screen.dart:28:17 • prefer_final_fields
-   info • 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss • lib/screens/dashboard_screen.dart:192:39 • deprecated_member_use
-  error • The named parameter 'height' is required, but there's no corresponding argument • lib/screens/dashboard_screen.dart:227:20 • missing_required_argument
-   info • 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss • lib/screens/dashboard_screen.dart:231:41 • deprecated_member_use
-   info • Use 'const' with the constructor to improve performance • lib/screens/dashboard_screen.dart:235:19 • prefer_const_constructors
-   info • Use 'const' with the constructor to improve performance • lib/screens/dashboard_screen.dart:237:28 • prefer_const_constructors
-   info • Use 'const' literals as arguments to constructors of '@immutable' classes • lib/screens/dashboard_screen.dart:238:33 • prefer_const_literals_to_create_immutables
-  error • The named parameter 'width' is required, but there's no corresponding argument • lib/screens/dashboard_screen.dart:262:12 • missing_required_argument
-   info • 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss • lib/screens/dashboard_screen.dart:266:26 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss • lib/screens/dashboard_screen.dart:274:30 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss • lib/screens/main_layout.dart:49:37 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss • lib/screens/main_layout.dart:97:53 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss • lib/screens/main_layout.dart:100:55 • deprecated_member_use
-   info • Don't use 'BuildContext's across async gaps, guarded by an unrelated 'mounted' check • lib/screens/project_detail_screen.dart:56:48 • use_build_context_synchronously
-   info • Don't use 'BuildContext's across async gaps • lib/screens/project_detail_screen.dart:79:29 • use_build_context_synchronously
-   info • Don't use 'BuildContext's across async gaps • lib/screens/project_detail_screen.dart:82:29 • use_build_context_synchronously
-warning • Dead code • lib/screens/project_detail_screen.dart:115:57 • dead_code
-warning • The left operand can't be null, so the right operand is never executed • lib/screens/project_detail_screen.dart:115:60 • dead_null_aware_expression
-   info • Use 'const' with the constructor to improve performance • lib/screens/project_detail_screen.dart:116:63 • prefer_const_constructors
-   info • Don't use 'BuildContext's across async gaps, guarded by an unrelated 'mounted' check • lib/screens/project_list_screen.dart:51:48 • use_build_context_synchronously
-   info • Don't invoke 'print' in production code • lib/services/api_service.dart:41:7 • avoid_print
-   info • Don't invoke 'print' in production code • lib/services/api_service.dart:54:7 • avoid_print
-   info • Don't invoke 'print' in production code • lib/services/api_service.dart:66:7 • avoid_print
-   info • Don't invoke 'print' in production code • lib/services/api_service.dart:79:7 • avoid_print
-   info • Don't invoke 'print' in production code • lib/services/api_service.dart:92:7 • avoid_print
-   info • Don't invoke 'print' in production code • lib/services/api_service.dart:107:7 • avoid_print
-   info • Don't invoke 'print' in production code • lib/services/api_service.dart:117:7 • avoid_print
-   info • Don't invoke 'print' in production code • lib/services/api_service.dart:133:7 • avoid_print
-   info • Don't invoke 'print' in production code • lib/services/api_service.dart:151:7 • avoid_print
-   info • Don't invoke 'print' in production code • lib/services/api_service.dart:161:7 • avoid_print
-   info • Don't invoke 'print' in production code • lib/services/api_service.dart:171:7 • avoid_print
-   info • Don't invoke 'print' in production code • lib/services/api_service.dart:181:7 • avoid_print
-   info • Don't invoke 'print' in production code • lib/services/api_service.dart:195:7 • avoid_print
-   info • Don't invoke 'print' in production code • lib/services/api_service.dart:209:7 • avoid_print
-   info • Don't invoke 'print' in production code • lib/services/api_service.dart:222:7 • avoid_print
-   info • Don't invoke 'print' in production code • lib/services/api_service.dart:237:7 • avoid_print
-   info • 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss • lib/theme/neo_glass_theme.dart:26:27 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss • lib/theme/neo_glass_theme.dart:28:46 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss • lib/widgets/agent_status_pill.dart:31:22 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss • lib/widgets/agent_status_pill.dart:33:41 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss • lib/widgets/agent_status_pill.dart:52:28 • deprecated_member_use
+   info • Use 'const' with the constructor to improve performance • lib/agent_view.dart:177:19 • prefer_const_constructors
+   info • Use 'const' literals as arguments to constructors of '@immutable' classes • lib/agent_view.dart:179:20 • prefer_const_literals_to_create_immutables
+   info • Use 'const' with the constructor to improve performance • lib/agent_view.dart:180:11 • prefer_const_constructors
+   info • The private field _logs could be 'final' • lib/screens/dashboard_screen.dart:26:17 • prefer_final_fields
+   info • Don't use 'BuildContext's across async gaps, guarded by an unrelated 'mounted' check • lib/screens/dashboard_screen.dart:142:46 • use_build_context_synchronously
+   info • Use 'const' with the constructor to improve performance • lib/screens/dashboard_screen.dart:281:19 • prefer_const_constructors
+   info • Use 'const' with the constructor to improve performance • lib/screens/dashboard_screen.dart:283:28 • prefer_const_constructors
+   info • Use 'const' literals as arguments to constructors of '@immutable' classes • lib/screens/dashboard_screen.dart:284:33 • prefer_const_literals_to_create_immutables
+   info • 'value' is deprecated and shouldn't be used. Use initialValue instead. This will set the initial value for the form field. This feature was deprecated after v3.33.0-1.0.pre • lib/screens/project_detail_screen.dart:74:17 • deprecated_member_use
+   info • Don't use 'BuildContext's across async gaps, guarded by an unrelated 'mounted' check • lib/screens/project_detail_screen.dart:109:48 • use_build_context_synchronously
+   info • Don't use 'BuildContext's across async gaps • lib/screens/project_detail_screen.dart:136:29 • use_build_context_synchronously
+   info • Don't use 'BuildContext's across async gaps • lib/screens/project_detail_screen.dart:139:29 • use_build_context_synchronously
+warning • Dead code • lib/screens/project_detail_screen.dart:172:57 • dead_code
+warning • The left operand can't be null, so the right operand is never executed • lib/screens/project_detail_screen.dart:172:60 • dead_null_aware_expression
+   info • Use 'const' with the constructor to improve performance • lib/screens/project_detail_screen.dart:173:63 • prefer_const_constructors
+   info • Don't use 'BuildContext's across async gaps, guarded by an unrelated 'mounted' check • lib/screens/project_list_screen.dart:53:48 • use_build_context_synchronously
+   info • Don't use 'BuildContext's across async gaps • lib/screens/project_list_screen.dart:83:19 • use_build_context_synchronously
+warning • The value of the local variable 'skipCargoSpam' isn't used • lib/screens/terminal_screen.dart:97:14 • unused_local_variable
+   info • Don't invoke 'print' in production code • lib/services/api_service.dart:48:7 • avoid_print
+   info • Don't invoke 'print' in production code • lib/services/api_service.dart:61:7 • avoid_print
+   info • Don't invoke 'print' in production code • lib/services/api_service.dart:73:7 • avoid_print
+   info • Don't invoke 'print' in production code • lib/services/api_service.dart:86:7 • avoid_print
+   info • Don't invoke 'print' in production code • lib/services/api_service.dart:99:7 • avoid_print
+   info • Don't invoke 'print' in production code • lib/services/api_service.dart:114:7 • avoid_print
+   info • Don't invoke 'print' in production code • lib/services/api_service.dart:124:7 • avoid_print
+   info • Don't invoke 'print' in production code • lib/services/api_service.dart:144:7 • avoid_print
+   info • Don't invoke 'print' in production code • lib/services/api_service.dart:162:7 • avoid_print
+   info • Don't invoke 'print' in production code • lib/services/api_service.dart:172:7 • avoid_print
+   info • Don't invoke 'print' in production code • lib/services/api_service.dart:182:7 • avoid_print
+   info • Don't invoke 'print' in production code • lib/services/api_service.dart:192:7 • avoid_print
+   info • Don't invoke 'print' in production code • lib/services/api_service.dart:206:7 • avoid_print
+   info • Don't invoke 'print' in production code • lib/services/api_service.dart:220:7 • avoid_print
+   info • Don't invoke 'print' in production code • lib/services/api_service.dart:233:7 • avoid_print
+   info • Don't invoke 'print' in production code • lib/services/api_service.dart:248:7 • avoid_print
    info • Use 'const' with the constructor to improve performance • lib/widgets/project_card.dart:43:19 • prefer_const_constructors
-   info • 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss • lib/widgets/project_card.dart:49:46 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss • lib/widgets/project_card.dart:51:65 • deprecated_member_use
 warning • Unused import: 'package:flutter/material.dart' • test/widget_test.dart:8:8 • unused_import
 
-466 issues found. (ran in 5.3s)
+452 issues found. (ran in 2.0s)

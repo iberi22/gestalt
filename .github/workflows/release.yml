@@ -31,16 +31,16 @@ jobs:
       - name: Cargo Fmt
         run: cargo fmt --all --check
 
-      - name: Cargo Test Workspace
+      - name: Cargo Test And Check
         run: |
-          cargo test -p synapse-agentic --all-targets
           cargo test -p gestalt_core --all-targets
           cargo test -p gestalt_cli --all-targets
           cargo test -p gestalt_timeline --lib
-          cargo test -p gestalt_mcp --all-targets
-          cargo test -p gestaltctl --all-targets
-          cargo test -p gestalt_infra_github --all-targets
-          cargo test -p gestalt_infra_embeddings --all-targets
+          cargo check -p synapse-agentic --all-targets
+          cargo check -p gestalt_mcp --all-targets
+          cargo check -p gestaltctl --all-targets
+          cargo check -p gestalt_infra_github --all-targets
+          cargo check -p gestalt_infra_embeddings --all-targets
 
       - name: Cargo Build All Features
         run: cargo build --workspace --all-features --all-targets

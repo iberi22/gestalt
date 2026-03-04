@@ -21,6 +21,7 @@ jobs:
       contents: read
     env:
       GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
     
     steps:
       - name: Analyze Issue

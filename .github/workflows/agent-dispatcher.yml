@@ -1,4 +1,4 @@
-# Git-Core Agent Dispatcher v3.5.0
+# Git-Core Agent Dispatcher v3.5.1
 # Routes issues to best-fit executor agents
 
 name: "Agent Dispatcher"
@@ -19,6 +19,8 @@ jobs:
     permissions:
       issues: write
       contents: read
+    env:
+      GH_TOKEN: ${{ github.token }}
     
     steps:
       - name: Analyze Issue

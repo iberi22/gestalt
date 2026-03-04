@@ -148,8 +148,8 @@ class _TerminalScreenState extends State<TerminalScreen> {
               borderRadius: BorderRadius.circular(16),
               blur: 15,
               borderWidth: 1,
-              borderColor: Colors.white.withOpacity(0.1),
-              color: Colors.black.withOpacity(0.5),
+              borderColor: Colors.white.withValues(alpha: 0.1),
+              color: Colors.black.withValues(alpha: 0.5),
               child: Padding(
                 padding: const EdgeInsets.all(16.0),
                 child: Column(
@@ -185,7 +185,7 @@ class _TerminalScreenState extends State<TerminalScreen> {
                     const SizedBox(height: 8),
                     Container(
                       decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.05),
+                        color: Colors.white.withValues(alpha: 0.05),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -203,7 +203,7 @@ class _TerminalScreenState extends State<TerminalScreen> {
                               ),
                               decoration: InputDecoration(
                                 hintText: "Enter command...",
-                                hintStyle: TextStyle(color: Colors.white.withOpacity(0.3)),
+                                hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.3)),
                                 border: InputBorder.none,
                                 isDense: true,
                               ),

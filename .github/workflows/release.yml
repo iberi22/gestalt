@@ -145,7 +145,13 @@ jobs:
 
       - name: Generate Release Tag
         id: tag
-        run: echo "release_tag=v1.0.0" >> $GITHUB_OUTPUT
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            TAG_NAME="${{ github.ref_name }}"
+          else
+            TAG_NAME="v1.0.0-${{ github.sha }}"
+          fi
+          echo "release_tag=$TAG_NAME" >> $GITHUB_OUTPUT
 
       - name: Prepare CLI Binaries
         run: |

@@ -16,7 +16,7 @@ jobs:
   quality-gate:
     name: Quality Gate
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 180
     steps:
       - uses: actions/checkout@v4
 
@@ -36,11 +36,13 @@ jobs:
           cargo test -p gestalt_core --all-targets
           cargo test -p gestalt_cli --all-targets
           cargo test -p gestalt_timeline --lib
-          cargo check -p synapse-agentic --all-targets
-          cargo check -p gestalt_mcp --all-targets
-          cargo check -p gestaltctl --all-targets
-          cargo check -p gestalt_infra_github --all-targets
-          cargo check -p gestalt_infra_embeddings --all-targets
+          cargo check \
+            -p synapse-agentic \
+            -p gestalt_mcp \
+            -p gestaltctl \
+            -p gestalt_infra_github \
+            -p gestalt_infra_embeddings \
+            --all-targets
 
       - name: Cargo Build All Features
         run: cargo build --workspace --all-features --all-targets

@@ -206,7 +206,7 @@ mod ulid_tests {
 
 #[cfg(test)]
 mod runtime_tests {
-    use crate::config::DatabaseSettings;
+
     use crate::db::SurrealClient;
     use crate::models::{AgentRuntimeState, RuntimePhase};
     use crate::services::{
@@ -232,51 +232,54 @@ mod runtime_tests {
         }
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn test_autonomous_loop_runs_and_stops() -> anyhow::Result<()> {
-        let db_config = DatabaseSettings {
-            url: "mem://".to_string(),
-            namespace: "test_ns".to_string(),
-            database: "test_db".to_string(),
-            user: "root".to_string(),
-            pass: "root".to_string(),
-        };
-        let db = SurrealClient::connect(&db_config).await?;
+        // Explicit timeout to fail fast instead of hanging CI for hours.
+        tokio::time::timeout(std::time::Duration::from_secs(30), async {
+            let db = SurrealClient::connect_mem().await?;
 
-        let timeline = TimelineService::new(db.clone());
-        let project = ProjectService::new(db.clone(), timeline.clone());
-        let task = TaskService::new(db.clone(), timeline.clone());
-        let watch = WatchService::new(db.clone(), timeline.clone());
-        let agent = AgentService::new(db.clone(), timeline.clone());
-        let memory = MemoryService::new(db.clone());
+            let timeline = TimelineService::new(db.clone());
+            let project = ProjectService::new(db.clone(), timeline.clone());
+            let task = TaskService::new(db.clone(), timeline.clone());
+            let watch = WatchService::new(db.clone(), timeline.clone());
+            let agent = AgentService::new(db.clone(), timeline.clone());
+            let memory = MemoryService::new(db.clone());
 
-        let engine = Arc::new(DecisionEngine::builder().with_provider(MockLlm).build());
+            let engine = Arc::new(DecisionEngine::builder().with_provider(MockLlm).build());
 
-        let registry = Arc::new(ToolRegistry::new());
+            let registry = Arc::new(ToolRegistry::new());
 
-        let runtime = AgentRuntime::new(
-            "test-agent".to_string(),
-            engine,
-            registry,
-            project,
-            task,
-            timeline,
-            watch,
-            agent,
-            memory,
-        );
+            let runtime = AgentRuntime::new(
+                "test-agent".to_string(),
+                engine,
+                registry,
+                project,
+                task,
+                timeline,
+                watch,
+                agent,
+                memory,
+            )
+            .with_hard_step_cap(1);
 
-        // Run the loop.
-        runtime.run_loop("Test Goal").await?;
+            // Run the loop.
+            runtime.run_loop("Test Goal").await?;
 
-        // Verify state was persisted in SurrealDB
-        let state: Option<AgentRuntimeState> = db
-            .select_by_id("agent_runtime_states", "test-agent")
-            .await?;
-        assert!(state.is_some());
-        let state = state.unwrap();
-        assert_eq!(state.phase, RuntimePhase::Completed);
-        assert_eq!(state.goal, "Test Goal");
+            // Verify state was persisted in SurrealDB
+            let state: Option<AgentRuntimeState> = db
+                .select_by_id("agent_runtime_states", "test-agent")
+                .await?;
+            assert!(state.is_some());
+            let state = state.unwrap();
+            assert_eq!(state.phase, RuntimePhase::Completed);
+            assert_eq!(state.goal, "Test Goal");
+
+            Ok::<(), anyhow::Error>(())
+        })
+        .await
+        .map_err(|_| {
+            anyhow::anyhow!("test_autonomous_loop_runs_and_stops timed out after 30s")
+        })??;
 
         Ok(())
     }

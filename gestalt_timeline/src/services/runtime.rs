@@ -214,6 +214,12 @@ impl AgentRuntime {
         self
     }
 
+    /// Override the loop hard cap for deterministic executions (e.g. tests).
+    pub fn with_hard_step_cap(mut self, hard_step_cap: usize) -> Self {
+        self.hard_step_cap = Some(hard_step_cap);
+        self
+    }
+
     /// Run the autonomous loop for a specific goal.
     pub async fn run_loop(&self, goal: &str) -> Result<()> {
         info!("Starting Autonomous Loop for Agent: {}", self.agent_id);

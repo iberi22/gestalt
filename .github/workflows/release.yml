@@ -35,7 +35,7 @@ jobs:
         run: |
           cargo test -p gestalt_core --all-targets
           cargo test -p gestalt_cli --all-targets
-          cargo test -p gestalt_timeline --lib
+          cargo test -p gestalt_timeline --lib -- --test-threads=1
           cargo check \
             -p synapse-agentic \
             -p gestalt_mcp \

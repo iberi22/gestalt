@@ -4,6 +4,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot};
+use tokio::task::JoinSet;
 use tokio::time::{Duration, Instant};
 use tracing::info;
 
@@ -621,60 +622,83 @@ impl FileManagerActor {
     async fn perform_flush(&mut self) -> Result<FlushReport> {
         info!("Flushing VFS state to physical SSD.");
         let mut report = FlushReport::default();
+        let mut set = JoinSet::new();
 
-        for dir in &self.dirs {
-            if let Err(err) = tokio::fs::create_dir_all(dir).await {
-                report.errors.push(FlushError {
-                    path: dir.clone(),
-                    operation: "create_dir_all",
-                    error: err.to_string(),
-                });
-            } else {
-                report.created_dirs.push(dir.clone());
-            }
+        enum FlushOp {
+            Dir(PathBuf),
+            File(PathBuf),
+            Error(FlushError),
         }
 
-        for (path, state) in &self.files {
-            if let Some(parent) = path.parent() {
-                if let Err(err) = tokio::fs::create_dir_all(parent).await {
-                    report.errors.push(FlushError {
-                        path: path.clone(),
-                        operation: "create_dir_all_parent",
+        for dir in self.dirs.iter().cloned() {
+            set.spawn(async move {
+                if let Err(err) = tokio::fs::create_dir_all(&dir).await {
+                    FlushOp::Error(FlushError {
+                        path: dir,
+                        operation: "create_dir_all",
                         error: err.to_string(),
-                    });
-                    continue;
+                    })
+                } else {
+                    FlushOp::Dir(dir)
                 }
-            }
-            if let Err(err) = tokio::fs::write(path, state.content.as_str()).await {
-                report.errors.push(FlushError {
-                    path: path.clone(),
-                    operation: "write",
-                    error: err.to_string(),
-                });
-            } else {
-                report.written_files.push(path.clone());
-            }
+            });
         }
 
-        for (path, data) in &self.binary_files {
-            if let Some(parent) = path.parent() {
-                if let Err(err) = tokio::fs::create_dir_all(parent).await {
-                    report.errors.push(FlushError {
-                        path: path.clone(),
-                        operation: "create_dir_all_parent",
-                        error: err.to_string(),
-                    });
-                    continue;
+        for (path, state) in self.files.iter() {
+            let path = path.clone();
+            let content = state.content.clone();
+            set.spawn(async move {
+                if let Some(parent) = path.parent() {
+                    if let Err(err) = tokio::fs::create_dir_all(parent).await {
+                        return FlushOp::Error(FlushError {
+                            path,
+                            operation: "create_dir_all_parent",
+                            error: err.to_string(),
+                        });
+                    }
                 }
-            }
-            if let Err(err) = tokio::fs::write(path, data).await {
-                report.errors.push(FlushError {
-                    path: path.clone(),
-                    operation: "write",
-                    error: err.to_string(),
-                });
-            } else {
-                report.written_files.push(path.clone());
+                if let Err(err) = tokio::fs::write(&path, content.as_str()).await {
+                    FlushOp::Error(FlushError {
+                        path,
+                        operation: "write",
+                        error: err.to_string(),
+                    })
+                } else {
+                    FlushOp::File(path)
+                }
+            });
+        }
+
+        for (path, data) in self.binary_files.iter() {
+            let path = path.clone();
+            let data = data.clone();
+            set.spawn(async move {
+                if let Some(parent) = path.parent() {
+                    if let Err(err) = tokio::fs::create_dir_all(parent).await {
+                        return FlushOp::Error(FlushError {
+                            path,
+                            operation: "create_dir_all_parent",
+                            error: err.to_string(),
+                        });
+                    }
+                }
+                if let Err(err) = tokio::fs::write(&path, data).await {
+                    FlushOp::Error(FlushError {
+                        path,
+                        operation: "write",
+                        error: err.to_string(),
+                    })
+                } else {
+                    FlushOp::File(path)
+                }
+            });
+        }
+
+        while let Some(res) = set.join_next().await {
+            match res? {
+                FlushOp::Dir(p) => report.created_dirs.push(p),
+                FlushOp::File(p) => report.written_files.push(p),
+                FlushOp::Error(e) => report.errors.push(e),
             }
         }
 

@@ -815,13 +815,18 @@ async fn handle_web_fetch(args: &serde_json::Value) -> serde_json::Value {
 }
 
 fn handle_system_info(_args: &serde_json::Value) -> serde_json::Value {
+    let cwd = std::env::current_dir()
+        .ok()
+        .and_then(|p| p.file_name().map(|s| s.to_string_lossy().to_string()))
+        .unwrap_or_else(|| "unknown".to_string());
+
     serde_json::json!({
         "content": [{
             "type": "text",
             "text": serde_json::json!({
                 "os": std::env::consts::OS,
                 "arch": std::env::consts::ARCH,
-                "cwd": std::env::current_dir().map(|p| p.to_string_lossy().to_string()).unwrap_or_default()
+                "cwd": cwd
             })
         }]
     })
@@ -1097,5 +1102,37 @@ mod tests {
         assert!(tools
             .iter()
             .any(|t| t.get("name").unwrap() == "analyze_project"));
+    }
+
+    #[test]
+    fn test_system_info_redaction() {
+        let result = handle_system_info(&serde_json::Value::Null);
+        let text = result
+            .get("content")
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .first()
+            .unwrap()
+            .get("text")
+            .unwrap();
+
+        let cwd = text.get("cwd").unwrap().as_str().unwrap();
+        let os = text.get("os").unwrap().as_str().unwrap();
+        let arch = text.get("arch").unwrap().as_str().unwrap();
+
+        assert!(!cwd.is_empty());
+        assert!(!os.is_empty());
+        assert!(!arch.is_empty());
+
+        // Ensure it's just the basename, not a full path
+        // On Unix, full path starts with /
+        // On Windows, full path starts with Drive letter like C:\
+        if cfg!(unix) {
+            assert!(!cwd.contains('/'));
+        } else if cfg!(windows) {
+            assert!(!cwd.contains('\\'));
+            assert!(!cwd.contains(':'));
+        }
     }
 }

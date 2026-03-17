@@ -235,3 +235,134 @@ impl AgentService {
         Ok(None)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::services::TimelineService;
+
+    async fn setup() -> (AgentService, SurrealClient) {
+        let db = SurrealClient::connect_mem().await.unwrap();
+        let timeline = TimelineService::new(db.clone());
+        let service = AgentService::new(db.clone(), timeline);
+        (service, db)
+    }
+
+    #[tokio::test]
+    async fn test_get_agent_not_found() -> Result<()> {
+        let (service, _) = setup().await;
+        let agent = service.get_agent("non-existent").await?;
+        assert!(agent.is_none());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_connect_and_get_agent() -> Result<()> {
+        let (service, _) = setup().await;
+        let agent_id = "test-agent";
+
+        let created = service.connect(agent_id, Some("Test Agent")).await?;
+        assert_eq!(created.id, agent_id);
+        assert_eq!(created.name, "Test Agent");
+        assert_eq!(created.status, AgentStatus::Online);
+
+        let retrieved = service.get_agent(agent_id).await?.unwrap();
+        assert_eq!(retrieved.id, agent_id);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_connect_existing_agent() -> Result<()> {
+        let (service, _) = setup().await;
+        let agent_id = "test-agent";
+
+        // Connect first time
+        let first = service.connect(agent_id, None).await?;
+        let first_seen = first.last_seen;
+
+        // Wait a bit to ensure timestamp would change
+        tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+
+        // Connect second time
+        let second = service.connect(agent_id, None).await?;
+
+        assert_eq!(second.id, agent_id);
+        assert_eq!(second.status, AgentStatus::Online);
+        assert!(second.last_seen > first_seen);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_disconnect() -> Result<()> {
+        let (service, _) = setup().await;
+        let agent_id = "test-agent";
+
+        service.connect(agent_id, None).await?;
+        let disconnected = service.disconnect(agent_id).await?.unwrap();
+
+        assert_eq!(disconnected.status, AgentStatus::Offline);
+
+        let retrieved = service.get_agent(agent_id).await?.unwrap();
+        assert_eq!(retrieved.status, AgentStatus::Offline);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_list_agents() -> Result<()> {
+        let (service, _) = setup().await;
+
+        service.connect("agent-1", None).await?;
+        service.connect("agent-2", None).await?;
+
+        let agents = service.list_agents().await?;
+        assert_eq!(agents.len(), 2);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_list_online_agents() -> Result<()> {
+        let (service, _) = setup().await;
+
+        service.connect("agent-1", None).await?;
+        service.connect("agent-2", None).await?;
+        service.disconnect("agent-1").await?;
+
+        let online = service.list_online_agents().await?;
+        assert_eq!(online.len(), 1);
+        assert_eq!(online[0].id, "agent-2");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_heartbeat() -> Result<()> {
+        let (service, _) = setup().await;
+        let agent_id = "test-agent";
+
+        let agent = service.connect(agent_id, None).await?;
+        let initial_seen = agent.last_seen;
+        assert_eq!(agent.command_count, 0);
+
+        tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+        service.heartbeat(agent_id).await?;
+
+        let updated = service.get_agent(agent_id).await?.unwrap();
+        assert_eq!(updated.command_count, 1);
+        assert!(updated.last_seen > initial_seen);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_set_status() -> Result<()> {
+        let (service, _) = setup().await;
+        let agent_id = "test-agent";
+
+        service.connect(agent_id, None).await?;
+        let updated = service.set_status(agent_id, AgentStatus::Busy).await?.unwrap();
+
+        assert_eq!(updated.status, AgentStatus::Busy);
+
+        let retrieved = service.get_agent(agent_id).await?.unwrap();
+        assert_eq!(retrieved.status, AgentStatus::Busy);
+        Ok(())
+    }
+}

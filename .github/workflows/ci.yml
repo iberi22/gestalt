@@ -9,11 +9,15 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+  security-events: write
+
 jobs:
   rust-checks:
     name: Rust Checks
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
 
@@ -24,15 +28,27 @@ jobs:
 
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "gestalt-rust"
+          cache-on-failure: true
 
       - name: Cargo Fmt
         run: cargo fmt --all --check
 
-      - name: Cargo Test And Check
+      - name: Cargo Clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Cargo Test (Core)
+        run: cargo test -p gestalt_core --all-targets
+
+      - name: Cargo Test (CLI)
+        run: cargo test -p gestalt_cli --all-targets
+
+      - name: Cargo Test (Timeline)
+        run: cargo test -p gestalt_timeline --lib
+
+      - name: Cargo Check (Other packages)
         run: |
-          cargo test -p gestalt_core --all-targets
-          cargo test -p gestalt_cli --all-targets
-          cargo test -p gestalt_timeline --lib -- --test-threads=1
           cargo check \
             -p synapse-agentic \
             -p gestalt_mcp \
@@ -40,3 +56,15 @@ jobs:
             -p gestalt_infra_github \
             -p gestalt_infra_embeddings \
             --all-targets
+
+  security-audit:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install cargo-audit
+        run: cargo install cargo-audit
+
+      - name: Run security audit
+        run: cargo audit || true

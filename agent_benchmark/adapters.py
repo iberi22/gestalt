@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import shlex
 import subprocess
+import time
 from dataclasses import dataclass
 from typing import Optional
 
@@ -13,6 +14,7 @@ class AdapterResult:
     stderr: str
     exit_code: int
     simulated: bool
+    execution_time_ms: int = 0
 
 
 def estimate_tokens(text: str) -> int:
@@ -33,15 +35,18 @@ def run_agent(
 ) -> AdapterResult:
     template = command_template or _env_command(agent)
 
+    started = time.perf_counter()
     if not template:
         simulated_text = (
             f"[simulated:{agent}] Completed task based on prompt length={len(prompt)}"
         )
+        elapsed_ms = int((time.perf_counter() - started) * 1000)
         return AdapterResult(
             stdout=simulated_text,
             stderr="",
             exit_code=0,
             simulated=True,
+            execution_time_ms=elapsed_ms,
         )
 
     command_str = template.replace("{prompt}", prompt.replace('"', '\\"'))
@@ -53,10 +58,12 @@ def run_agent(
         timeout=timeout_sec,
         check=False,
     )
+    elapsed_ms = int((time.perf_counter() - started) * 1000)
     return AdapterResult(
-        stdout=proc.stdout.strip(),
-        stderr=proc.stderr.strip(),
+        stdout=proc.stdout,
+        stderr=proc.stderr,
         exit_code=proc.returncode,
         simulated=False,
+        execution_time_ms=elapsed_ms,
     )
 

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import time
 from dataclasses import dataclass
 from typing import Optional
 
@@ -49,14 +48,13 @@ def _readability_score(output: str) -> float:
 
 
 def run_task(task: BenchmarkTask, agent: str, options: RunOptions) -> BenchmarkRun:
-    started = time.perf_counter()
     result = run_agent(
         agent=agent,
         prompt=task.prompt,
         command_template=options.command_template,
         timeout_sec=options.timeout_sec,
     )
-    elapsed_ms = int((time.perf_counter() - started) * 1000)
+    elapsed_ms = result.execution_time_ms
 
     joined_text = f"{task.prompt}\n{result.stdout}\n{result.stderr}"
     tokens_used = estimate_tokens(joined_text)

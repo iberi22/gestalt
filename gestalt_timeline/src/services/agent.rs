@@ -86,10 +86,7 @@ impl<'de> serde::Deserialize<'de> for AgentType {
             other => {
                 if let Some(rest) = other.strip_prefix("custom:") {
                     Ok(AgentType::Custom(rest.to_string()))
-                } else if other.starts_with("custom:") {
-                    Ok(AgentType::Custom(other["custom:".len()..].to_string()))
                 } else {
-                    // Try to handle legacy format
                     Ok(AgentType::Custom(other.to_string()))
                 }
             }

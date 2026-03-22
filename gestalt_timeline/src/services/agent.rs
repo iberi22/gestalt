@@ -357,7 +357,10 @@ mod tests {
         let agent_id = "test-agent";
 
         service.connect(agent_id, None).await?;
-        let updated = service.set_status(agent_id, AgentStatus::Busy).await?.unwrap();
+        let updated = service
+            .set_status(agent_id, AgentStatus::Busy)
+            .await?
+            .unwrap();
 
         assert_eq!(updated.status, AgentStatus::Busy);
 

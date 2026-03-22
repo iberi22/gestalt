@@ -106,11 +106,12 @@ impl SurrealClient {
             DEFINE INDEX idx_external_id ON tasks FIELDS external_id;
 
             DEFINE TABLE agents SCHEMAFULL;
+            DEFINE FIELD id ON agents TYPE string;
             DEFINE FIELD name ON agents TYPE string;
             DEFINE FIELD agent_type ON agents TYPE string;
             DEFINE FIELD status ON agents TYPE string;
-            DEFINE FIELD connected_at ON agents TYPE datetime;
-            DEFINE FIELD last_seen ON agents TYPE datetime;
+            DEFINE FIELD connected_at ON agents TYPE any;
+            DEFINE FIELD last_seen ON agents TYPE any;
             DEFINE FIELD command_count ON agents TYPE int;
             DEFINE FIELD system_prompt ON agents TYPE option<string>;
             DEFINE FIELD model_id ON agents TYPE option<string>;

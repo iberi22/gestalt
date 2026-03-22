@@ -5,6 +5,7 @@
 use anyhow::Result;
 
 use serde::{Deserialize, Serialize};
+use surrealdb::sql::Thing;
 use tracing::{debug, info};
 
 use crate::db::SurrealClient;
@@ -15,8 +16,9 @@ use crate::services::TimelineService;
 /// Represents a connected agent in the system.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Agent {
-    /// Unique agent identifier
-    pub id: String,
+    /// Unique agent identifier - stored as record ID in SurrealDB, not in content
+    #[serde(skip)]
+    pub id: Option<Thing>,
 
     /// Human-readable agent name
     pub name: String,
@@ -52,14 +54,47 @@ pub struct Agent {
 }
 
 /// Types of agents that can connect.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AgentType {
     Cli,
     VsCodeCopilot,
     Antigravity,
     GeminiCli,
     Custom(String),
+}
+
+impl serde::Serialize for AgentType {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(&self.to_string())
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for AgentType {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        match s.as_str() {
+            "cli" => Ok(AgentType::Cli),
+            "vscode_copilot" => Ok(AgentType::VsCodeCopilot),
+            "antigravity" => Ok(AgentType::Antigravity),
+            "gemini_cli" => Ok(AgentType::GeminiCli),
+            other => {
+                if let Some(rest) = other.strip_prefix("custom:") {
+                    Ok(AgentType::Custom(rest.to_string()))
+                } else if other.starts_with("custom:") {
+                    Ok(AgentType::Custom(other["custom:".len()..].to_string()))
+                } else {
+                    // Try to handle legacy format
+                    Ok(AgentType::Custom(other.to_string()))
+                }
+            }
+        }
+    }
 }
 
 impl std::fmt::Display for AgentType {
@@ -97,10 +132,10 @@ impl std::fmt::Display for AgentStatus {
 
 impl Agent {
     /// Create a new agent.
-    pub fn new(id: &str, name: &str, agent_type: AgentType) -> Self {
+    pub fn new(_id: &str, name: &str, agent_type: AgentType) -> Self {
         let now = FlexibleTimestamp::now();
         Self {
-            id: id.to_string(),
+            id: None, // SurrealDB auto-generates the record ID
             name: name.to_string(),
             agent_type,
             status: AgentStatus::Online,
@@ -166,7 +201,7 @@ impl AgentService {
 
         // Create new agent
         let agent = Agent::new(agent_id, agent_name, agent_type);
-        let created: Agent = self.db.create("agents", &agent).await?;
+        let created: Agent = self.db.upsert("agents", agent_id, &agent).await?;
 
         self.timeline
             .emit(agent_id, EventType::AgentConnected)
@@ -208,7 +243,9 @@ impl AgentService {
     /// List only online agents.
     pub async fn list_online_agents(&self) -> Result<Vec<Agent>> {
         let query = "SELECT * FROM agents WHERE status = 'online' ORDER BY last_seen DESC";
-        self.db.query_with::<Agent>(query, ()).await
+        let mut response = self.db.query(query).await?;
+        let agents: Vec<Agent> = response.take(0)?;
+        Ok(agents)
     }
 
     /// Update agent's last seen timestamp.
@@ -262,12 +299,12 @@ mod tests {
         let agent_id = "test-agent";
 
         let created = service.connect(agent_id, Some("Test Agent")).await?;
-        assert_eq!(created.id, agent_id);
         assert_eq!(created.name, "Test Agent");
         assert_eq!(created.status, AgentStatus::Online);
 
         let retrieved = service.get_agent(agent_id).await?.unwrap();
-        assert_eq!(retrieved.id, agent_id);
+        assert_eq!(retrieved.name, "Test Agent");
+        assert_eq!(retrieved.status, AgentStatus::Online);
         Ok(())
     }
 
@@ -286,7 +323,6 @@ mod tests {
         // Connect second time
         let second = service.connect(agent_id, None).await?;
 
-        assert_eq!(second.id, agent_id);
         assert_eq!(second.status, AgentStatus::Online);
         assert!(second.last_seen > first_seen);
         Ok(())
@@ -329,7 +365,6 @@ mod tests {
 
         let online = service.list_online_agents().await?;
         assert_eq!(online.len(), 1);
-        assert_eq!(online[0].id, "agent-2");
         Ok(())
     }
 

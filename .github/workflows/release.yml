@@ -174,7 +174,7 @@ jobs:
 
       - name: Prepare CLI Binaries
         run: |
-          cp release-assets/neural-link-backend-windows/gestalt.exe release-assets/gestalt_timeline.exe
+          cp release-assets/gestalt.exe release-assets/gestalt_timeline.exe
           cp release-assets/neural-link-app-android/app-release.apk release-assets/app-release.apk
           cp release-assets/cli-artifacts/gestalt-cli-windows/gestalt_cli.exe release-assets/gestalt-cli-windows.exe
           cp release-assets/cli-artifacts/gestalt-cli-linux/gestalt_cli release-assets/gestalt-cli-linux

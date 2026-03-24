@@ -142,21 +142,9 @@ jobs:
     needs: [quality-gate, build-backend, build-cli, build-mobile]
     runs-on: ubuntu-latest
     steps:
-      - name: Download Backend Artifact
+      - name: Download All Artifacts
         uses: actions/download-artifact@v4
         with:
-          name: neural-link-backend-windows
-          path: release-assets
-
-      - name: Download CLI Artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: release-assets/cli-artifacts
-
-      - name: Download Mobile Artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: neural-link-app-android
           path: release-assets
 
       - name: Generate Release Tag
@@ -171,11 +159,11 @@ jobs:
 
       - name: Prepare CLI Binaries
         run: |
-          cp release-assets/gestalt.exe release-assets/gestalt_timeline.exe
+          cp release-assets/neural-link-backend-windows/gestalt.exe release-assets/gestalt_timeline.exe
           cp release-assets/neural-link-app-android/app-release.apk release-assets/app-release.apk
-          cp release-assets/cli-artifacts/gestalt-cli-windows/gestalt_cli.exe release-assets/gestalt-cli-windows.exe
-          cp release-assets/cli-artifacts/gestalt-cli-linux/gestalt_cli release-assets/gestalt-cli-linux
-          cp release-assets/cli-artifacts/gestalt-cli-macos/gestalt_cli release-assets/gestalt-cli-macos
+          cp release-assets/gestalt-cli-windows/gestalt_cli.exe release-assets/gestalt-cli-windows.exe
+          cp release-assets/gestalt-cli-linux/gestalt_cli release-assets/gestalt-cli-linux
+          cp release-assets/gestalt-cli-macos/gestalt_cli release-assets/gestalt-cli-macos
 
       - name: Create Release
         uses: softprops/action-gh-release@v1

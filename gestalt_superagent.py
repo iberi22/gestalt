@@ -20,7 +20,7 @@ GESTALT_MCP_URL = os.getenv("GESTALT_MCP_URL", "http://127.0.0.1:3000")
 # Web Search Configuration - API keys from environment
 BRAVE_API_KEY = os.getenv("BRAVE_API_KEY", "")
 TAVILY_API_KEY = os.getenv("TAVILY_API_KEY", "")
-BRAVE_API_KEY = BRAVE_API_KEY or "A56wg6D0M6jNorJCqKzBi3W10bIZbF-d"  # Default from config if available
+# NOTE: API keys must be set via environment variables. See .env.example
 
 
 class WebSearch:

@@ -11,3 +11,10 @@ __pycache__/
 *.class
 benchmarks/*_current.json
 benchmarks/agent_benchmark.sqlite
+
+# Environment variables (NEVER commit these!)
+.env
+.env.local
+.env.production
+*.pem
+*.key

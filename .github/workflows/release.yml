@@ -12,6 +12,9 @@ concurrency:
 permissions:
   contents: write
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   quality-gate:
     name: Quality Gate
@@ -102,7 +105,6 @@ jobs:
         with:
           name: ${{ matrix.artifact_name }}
           path: ${{ matrix.binary_path }}
-          flatten: true
 
   build-mobile:
     name: Build Mobile (Android)

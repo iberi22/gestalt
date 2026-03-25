@@ -102,6 +102,7 @@ jobs:
         with:
           name: ${{ matrix.artifact_name }}
           path: ${{ matrix.binary_path }}
+          flatten: true
 
   build-mobile:
     name: Build Mobile (Android)
@@ -163,9 +164,9 @@ jobs:
           cp release-assets/neural-link-app-android/app-release.apk release-assets/app-release.apk
           cp release-assets/gestalt-cli-windows/gestalt_cli.exe release-assets/gestalt-cli-windows.exe
           mkdir -p release-assets/gestalt-cli-linux
-          cp release-assets/gestalt-cli-linux/target/release/gestalt_cli release-assets/gestalt-cli-linux/gestalt_cli
+          cp release-assets/gestalt-cli-linux/gestalt_cli release-assets/gestalt-cli-linux/gestalt_cli
           mkdir -p release-assets/gestalt-cli-macos
-          cp release-assets/gestalt-cli-macos/target/release/gestalt_cli release-assets/gestalt-cli-macos/gestalt_cli
+          cp release-assets/gestalt-cli-macos/gestalt_cli release-assets/gestalt-cli-macos/gestalt_cli
 
       - name: Create Release
         uses: softprops/action-gh-release@v1

@@ -166,9 +166,9 @@ jobs:
           cp release-assets/neural-link-app-android/app-release.apk release-assets/app-release.apk
           cp release-assets/gestalt-cli-windows/gestalt_cli.exe release-assets/gestalt-cli-windows.exe
           mkdir -p release-assets/gestalt-cli-linux
-          cp release-assets/gestalt-cli-linux/gestalt_cli release-assets/gestalt-cli-linux/gestalt_cli
+          cp release-assets/gestalt-cli-linux/gestalt_cli release-assets/gestalt-cli-linux/gestalt_cli 2>/dev/null || true
           mkdir -p release-assets/gestalt-cli-macos
-          cp release-assets/gestalt-cli-macos/gestalt_cli release-assets/gestalt-cli-macos/gestalt_cli
+          cp release-assets/gestalt-cli-macos/gestalt_cli release-assets/gestalt-cli-macos/gestalt_cli 2>/dev/null || true
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
@@ -181,7 +181,7 @@ jobs:
             release-assets/gestalt_timeline.exe
             release-assets/app-release.apk
             release-assets/gestalt-cli-windows.exe
-            release-assets/gestalt-cli-linux
-            release-assets/gestalt-cli-macos
+            release-assets/gestalt-cli-linux/gestalt_cli
+            release-assets/gestalt-cli-macos/gestalt_cli
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

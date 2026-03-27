@@ -86,12 +86,15 @@ jobs:
           - os: windows-latest
             artifact_name: gestalt-cli-windows
             binary_path: target/release/gestalt_cli.exe
+            rename_binary: gestalt-cli-windows.exe
           - os: ubuntu-latest
             artifact_name: gestalt-cli-linux
             binary_path: target/release/gestalt_cli
+            rename_binary: gestalt-cli-linux
           - os: macos-latest
             artifact_name: gestalt-cli-macos
             binary_path: target/release/gestalt_cli
+            rename_binary: gestalt-cli-macos
     steps:
       - uses: actions/checkout@v4
       - name: Install Rust Toolchain
@@ -105,6 +108,7 @@ jobs:
         with:
           name: ${{ matrix.artifact_name }}
           path: ${{ matrix.binary_path }}
+          rename: ${{ matrix.rename_binary }}
 
   build-mobile:
     name: Build Mobile (Android)
@@ -167,13 +171,13 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: gestalt-cli-linux
-          path: release-assets/gestalt-cli-linux
+          path: release-assets
 
       - name: Download macOS CLI
         uses: actions/download-artifact@v4
         with:
           name: gestalt-cli-macos
-          path: release-assets/gestalt-cli-macos
+          path: release-assets
 
       - name: Generate Release Tag
         id: tag
@@ -189,7 +193,6 @@ jobs:
         run: |
           cp release-assets/gestalt.exe release-assets/gestalt_timeline.exe
           cp release-assets/app-release.apk release-assets/app-release.apk
-          cp release-assets/gestalt_cli.exe release-assets/gestalt-cli-windows.exe
 
       - name: Create Release
         uses: softprops/action-gh-release@v1

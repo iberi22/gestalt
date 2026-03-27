@@ -148,3 +148,23 @@ sequenceDiagram
     TL-->>CLI: task_id
     CLI-->>Agent: ✅ Task created: task_123
 ```
+
+## ⚠️ Known Issues
+
+See [docs/KNOWN_ISSUES.md](../docs/KNOWN_ISSUES.md) for:
+
+- **RUSTSEC-2026-0049**: rustls-pemfile unmaintained (transitive dep)
+- **RUSTSEC-2026-0002**: lru IterMut soundness issue (transitive dep)
+- **MCP Tools Gap**: gestalt_mcp tools not wired to gestalt_core ToolRegistry
+- **Mock LLM Providers**: API keys read but HTTP calls not implemented yet
+
+## 🔑 Environment Variables
+
+| Variable | Description | Required |
+|----------|-------------|----------|
+| `GEMINI_API_KEY` | Google AI Studio API key | For Gemini provider |
+| `MINIMAX_API_KEY` | MiniMax API key | For MiniMax provider |
+| `MINIMAX_GROUP_ID` | MiniMax group ID | Optional |
+| `SURREAL_URL` | SurrealDB WebSocket URL | Default: embedded |
+| `SURREAL_USER` | SurrealDB username | Default: root |
+| `SURREAL_PASS` | SurrealDB password | Default: root |

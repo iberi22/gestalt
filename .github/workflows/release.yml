@@ -145,10 +145,35 @@ jobs:
     needs: [quality-gate, build-backend, build-cli, build-mobile]
     runs-on: ubuntu-latest
     steps:
-      - name: Download All Artifacts
+      - name: Download Windows Backend
         uses: actions/download-artifact@v4
         with:
+          name: neural-link-backend-windows
           path: release-assets
+
+      - name: Download Android App
+        uses: actions/download-artifact@v4
+        with:
+          name: neural-link-app-android
+          path: release-assets
+
+      - name: Download Windows CLI
+        uses: actions/download-artifact@v4
+        with:
+          name: gestalt-cli-windows
+          path: release-assets
+
+      - name: Download Linux CLI
+        uses: actions/download-artifact@v4
+        with:
+          name: gestalt-cli-linux
+          path: release-assets/gestalt-cli-linux
+
+      - name: Download macOS CLI
+        uses: actions/download-artifact@v4
+        with:
+          name: gestalt-cli-macos
+          path: release-assets/gestalt-cli-macos
 
       - name: Generate Release Tag
         id: tag
@@ -160,15 +185,11 @@ jobs:
           fi
           echo "release_tag=$TAG_NAME" >> $GITHUB_OUTPUT
 
-      - name: Prepare CLI Binaries
+      - name: Prepare Release Binaries
         run: |
-          cp release-assets/neural-link-backend-windows/gestalt.exe release-assets/gestalt_timeline.exe
-          cp release-assets/neural-link-app-android/app-release.apk release-assets/app-release.apk
-          cp release-assets/gestalt-cli-windows/gestalt_cli.exe release-assets/gestalt-cli-windows.exe
-          mkdir -p release-assets/gestalt-cli-linux
-          cp release-assets/gestalt-cli-linux/gestalt_cli release-assets/gestalt-cli-linux/gestalt_cli
-          mkdir -p release-assets/gestalt-cli-macos
-          cp release-assets/gestalt-cli-macos/gestalt_cli release-assets/gestalt-cli-macos/gestalt_cli
+          cp release-assets/gestalt.exe release-assets/gestalt_timeline.exe
+          cp release-assets/app-release.apk release-assets/app-release.apk
+          cp release-assets/gestalt_cli.exe release-assets/gestalt-cli-windows.exe
 
       - name: Create Release
         uses: softprops/action-gh-release@v1

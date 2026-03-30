@@ -140,7 +140,11 @@ pub mod prelude {
     }
     impl MinimaxProvider {
         pub fn new(api_key: String, group_id: String, model: String) -> Self {
-            Self { api_key, group_id, model }
+            Self {
+                api_key,
+                group_id,
+                model,
+            }
         }
     }
     #[async_trait]

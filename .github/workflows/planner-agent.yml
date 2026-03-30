@@ -35,7 +35,11 @@ jobs:
       - name: Read Architecture
         id: architecture
         run: |
-          echo "ARCHITECTURE_CONTENT=$(cat .gitcore/ARCHITECTURE.md | head -100)" >> $GITHUB_OUTPUT
+          {
+            echo 'ARCHITECTURE_CONTENT<<EOF'
+            cat .gitcore/ARCHITECTURE.md | head -100
+            echo 'EOF'
+          } >> $GITHUB_OUTPUT
 
       - name: Generate Issues
         run: |

@@ -103,12 +103,16 @@ jobs:
         uses: Swatinem/rust-cache@v2
       - name: Build CLI
         run: cargo build --release -p gestalt_cli
+      - name: Rename CLI Binary
+        run: |
+          mv ${{ matrix.binary_path }} ${{ matrix.binary_path }}.tmp
+          mv ${{ matrix.binary_path }}.tmp target/release/${{ matrix.rename_binary }}
+        shell: bash
       - name: Upload CLI Artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact_name }}
-          path: ${{ matrix.binary_path }}
-          rename: ${{ matrix.rename_binary }}
+          path: target/release/${{ matrix.rename_binary }}
 
   build-mobile:
     name: Build Mobile (Android)

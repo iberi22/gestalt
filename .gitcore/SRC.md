@@ -1,243 +1,141 @@
-# SRC - Source Code Reference
+# SRC.md - Source Code Reference
 
-## Overview
-
-This document provides a comprehensive reference to the Cortex source code structure. It serves as the **Source Recipe** for all engineering and development tasks.
-
----
+**Project:** Gestalt-Rust
+**Generated:** 2026-03-30
+**Repository:** https://github.com/iberi22/gestalt-rust
+**Location:** `.gitcore/` (per GitCore Protocol)
 
 ## Directory Structure
 
 ```
-cortex/src/
-├── a2a/              # Agent-to-Agent protocol implementation
-├── agents/           # Agent definitions and behaviors
-├── checkpoint/       # State checkpointing and recovery
-├── coordination/     # Multi-agent coordination logic
-├── memory/           # Memory systems (vector, graph, episodic)
-├── scheduler/        # Task scheduling and queue management
-├── secrets/          # Secret management and encryption
-├── security/         # Security primitives
-├── server/           # HTTP/gRPC server implementation
-├── tasks/            # Task definitions and execution
-├── tools/            # Tool definitions and integrations
-├── ui/               # User interface components
-├── lib.rs            # Library root
-├── main.rs           # Binary entry point
-├── main_egui.rs     # Egui UI binary
-└── web.rs            # Web server binary
+Gestalt-Rust/
+├── .gitcore/        # Agent documentation (per GitCore Protocol)
+├── agent_benchmark
+├── benchmarks
+├── config
+├── docs
+├── gestalt.db
+├── gestaltctl
+├── gestalt_app
+├── gestalt_cli
+├── gestalt_core
+├── gestalt_infra_embeddings
+├── gestalt_infra_github
+├── gestalt_mcp
+├── gestalt_terminal
+├── gestalt_timeline
+├── gestalt_ui
+├── scripts
+├── skills
+├── synapse-agentic
+├── target
+├── __pycache__
 ```
 
----
+## Modules
 
-## Core Modules
+### agent_benchmark
+- Status: TODO
+- Purpose: TODO
 
-### a2a/ - Agent-to-Agent Protocol
+### benchmarks
+- Status: TODO
+- Purpose: TODO
 
-**Purpose:** Protocol for communication between agents.
+### config
+- Status: TODO
+- Purpose: TODO
 
-**Key Files:**
-- `mod.rs` - Module definition
-- `server.rs` - A2A server implementation
-- `client.rs` - A2A client
-- `protocol.rs` - Protocol definitions
-- `types.rs` - Type definitions
+### docs
+- Status: TODO
+- Purpose: TODO
 
-**Usage:**
-```rust
-use cortex::a2a::{A2AServer, A2AClient};
-```
+### gestalt.db
+- Status: TODO
+- Purpose: TODO
 
----
+### gestaltctl
+- Status: TODO
+- Purpose: TODO
 
-### agents/ - Agent Definitions
+### gestalt_app
+- Status: TODO
+- Purpose: TODO
 
-**Purpose:** Agent behaviors, traits, and implementations.
+### gestalt_cli
+- Status: TODO
+- Purpose: TODO
 
-**Key Files:**
-- `mod.rs` - Agent trait definitions
-- `executor.rs` - Agent execution logic
-- `swarm.rs` - Agent swarm management
-- `memory.rs` - Agent memory integration
+### gestalt_core
+- Status: TODO
+- Purpose: TODO
 
-**Usage:**
-```rust
-use cortex::agents::{Agent, Swarm};
-```
+### gestalt_infra_embeddings
+- Status: TODO
+- Purpose: TODO
 
----
+### gestalt_infra_github
+- Status: TODO
+- Purpose: TODO
 
-### memory/ - Memory Systems
+### gestalt_mcp
+- Status: TODO
+- Purpose: TODO
 
-**Purpose:** Vector search, graph storage, episodic memory.
+### gestalt_terminal
+- Status: TODO
+- Purpose: TODO
 
-**Key Files:**
-- `mod.rs` - Memory trait definitions
-- `vector.rs` - Vector store implementation
-- `graph.rs` - Belief graph
-- `episodic.rs` - Episodic memory
-- `surreal.rs` - SurrealDB integration
-- `hybrid.rs` - Hybrid search (BM25 + Vector)
+### gestalt_timeline
+- Status: TODO
+- Purpose: TODO
 
-**Usage:**
-```rust
-use cortex::memory::{Memory, VectorStore, BeliefGraph};
-```
+### gestalt_ui
+- Status: TODO
+- Purpose: TODO
 
----
+### scripts
+- Status: TODO
+- Purpose: TODO
 
-### server/ - HTTP Server
+### skills
+- Status: TODO
+- Purpose: TODO
 
-**Purpose:** REST and gRPC server for Cortex.
+### synapse-agentic
+- Status: TODO
+- Purpose: TODO
 
-**Key Files:**
-- `mod.rs` - Server setup
-- `routes.rs` - HTTP routes
-- `websocket.rs` - WebSocket support
-- `mcp.rs` - Model Context Protocol server
+### target
+- Status: TODO
+- Purpose: TODO
 
-**Usage:**
-```rust
-use cortex::server::Server;
-```
+### __pycache__
+- Status: TODO
+- Purpose: TODO
 
----
 
-### tasks/ - Task Management
-
-**Purpose:** Task definitions, execution, and tracking.
-
-**Key Files:**
-- `mod.rs` - Task trait
-- `queue.rs` - Task queue
-- `executor.rs` - Task executor
-- `scheduler.rs` - Task scheduler
-
----
-
-### coordination/ - Multi-Agent Coordination
-
-**Purpose:** Coordination between multiple agents.
-
-**Key Files:**
-- `mod.rs` - Coordination logic
-- `messages.rs` - Coordination messages
-- `leader.rs` - Leader election
-- `consensus.rs` - Consensus algorithms
-
----
-
-## Important Types
-
-### Agent Trait
-
-```rust
-pub trait Agent {
-    fn id(&self) -> String;
-    fn name(&self) -> String;
-    async fn run(&mut self, context: &Context) -> Result<Response, Error>;
-    fn reset(&mut self);
-}
-```
-
-### Memory Trait
-
-```rust
-pub trait Memory {
-    async fn store(&self, entry: MemoryEntry) -> Result<String, Error>;
-    async fn search(&self, query: &str, limit: usize) -> Result<Vec<MemoryEntry>, Error>;
-    async fn delete(&self, id: &str) -> Result<(), Error>;
-}
-```
-
-### Task Trait
-
-```rust
-pub trait Task: Send + Sync {
-    fn id(&self) -> String;
-    fn execute(&self) -> impl Future<Output = Result<TaskResult, Error>>;
-}
-```
-
----
-
-## Build & Run
-
-### Build
+## Build Commands
 
 ```bash
-# Debug build
-cargo build
+# Install dependencies
+npm install
 
-# Release build
-cargo build --release
+# Build
+npm run build
 
-# With all features
-cargo build --all-features
+# Lint
+npm run lint
+
+# Test
+npm test
 ```
 
-### Run
+## Entry Points
 
-```bash
-# Default server
-cargo run --bin cortex
-
-# With custom config
-cargo run --bin cortex -- --config config.yaml
-```
+- Main: TODO
+- CLI: TODO (if applicable)
 
 ---
-
-## Testing
-
-```bash
-# Run all tests
-cargo test
-
-# Run specific module tests
-cargo test --lib memory
-
-# Run with coverage
-cargo tarpaulin --out html
-```
-
----
-
-## Dependencies
-
-### Key Crates
-
-| Crate | Version | Purpose |
-|-------|---------|---------|
-| surrealdb | ^1.0 | Vector + Graph DB |
-| tokio | ^1.0 | Async runtime |
-| tantivy | ^0.22 | BM25 search |
-| serde | ^1.0 | Serialization |
-| axum | ^0.7 | HTTP server |
-| tower | ^0.4 | Middleware |
-
----
-
-## CLI Reference
-
-```bash
-# Start server
-cortex server start
-
-# Run agent
-cortex agent run <agent_id>
-
-# Memory operations
-cortex memory search <query>
-cortex memory store <content>
-
-# Task operations
-cortex task list
-cortex task execute <task_id>
-```
-
----
-
-*Document version: 1.0*
-*Last updated: 2026-03-15*
-*Part of GitCore Protocol*
+*Auto-generated by GitCore Auto-Maintainer*
+* All docs stored in .gitcore/ per GitCore Protocol v3*

@@ -35,11 +35,9 @@ jobs:
       - name: Read Architecture
         id: architecture
         run: |
-          {
-            echo 'ARCHITECTURE_CONTENT<<EOF'
-            cat .gitcore/ARCHITECTURE.md | head -100
-            echo 'EOF'
-          } >> $GITHUB_OUTPUT
+          # Read architecture file content for planning purposes
+          cat .gitcore/ARCHITECTURE.md | head -100 > /tmp/architecture.txt
+          echo "Architecture file content saved ($(/usr/bin/wc -l < /tmp/architecture.txt) lines)"
 
       - name: Generate Issues
         run: |

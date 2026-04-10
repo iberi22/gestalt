@@ -207,9 +207,9 @@ jobs:
           prerelease: false
           files: |
             release-assets/gestalt_timeline.exe
-            release-assets/app-release.apk
-            release-assets/gestalt-cli-windows.exe
-            release-assets/gestalt-cli-linux
-            release-assets/gestalt-cli-macos
+            release-assets/neural-link-app-android/app-release.apk
+            release-assets/gestalt-cli-windows/gestalt-cli-windows.exe
+            release-assets/gestalt-cli-linux/gestalt-cli-linux
+            release-assets/gestalt-cli-macos/gestalt-cli-macos
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

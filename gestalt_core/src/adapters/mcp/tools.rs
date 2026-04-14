@@ -9,7 +9,7 @@
 
 use async_trait::async_trait;
 use gestalt_mcp::{
-    current_time, error_response, handle_analyze_project, handle_create_file,
+    handle_analyze_project, handle_create_file,
     handle_echo, handle_exec_command, handle_file_tree, handle_get_context, handle_git_log,
     handle_git_status, handle_grep, handle_list_files, handle_read_file, handle_search_code,
     handle_system_info, handle_task_create, handle_task_list, handle_task_status,
@@ -21,13 +21,13 @@ use synapse_agentic::prelude::*;
 // ============ Tool Implementations ============
 
 macro_rules! sync_tool_wrapper {
-    ($name:ident, $handler:ident, $description:expr, $parameters:expr) => {
+    ($name:ident, $handler:ident, $mcp_name:expr, $description:expr, $parameters:expr) => {
         pub struct $name;
 
         #[async_trait]
         impl Tool for $name {
             fn name(&self) -> &str {
-                stringify!($name).strip_suffix("Tool").unwrap_or(stringify!($name))
+                $mcp_name
             }
             fn description(&self) -> &str {
                 $description
@@ -41,7 +41,6 @@ macro_rules! sync_tool_wrapper {
                 _ctx: &dyn ToolContext,
                 args: Value,
             ) -> anyhow::Result<Value> {
-                // Run sync handler in blocking thread to avoid blocking async runtime
                 let result = tokio::task::spawn_blocking(move || $handler(&args))
                     .await
                     .map_err(|e| anyhow::anyhow!("Task join error: {}", e))?;
@@ -52,13 +51,13 @@ macro_rules! sync_tool_wrapper {
 }
 
 macro_rules! async_tool_wrapper {
-    ($name:ident, $handler:ident, $description:expr, $parameters:expr) => {
+    ($name:ident, $handler:ident, $mcp_name:expr, $description:expr, $parameters:expr) => {
         pub struct $name;
 
         #[async_trait]
         impl Tool for $name {
             fn name(&self) -> &str {
-                stringify!($name).strip_suffix("Tool").unwrap_or(stringify!($name))
+                $mcp_name
             }
             fn description(&self) -> &str {
                 $description
@@ -83,6 +82,7 @@ macro_rules! async_tool_wrapper {
 sync_tool_wrapper!(
     EchoTool,
     handle_echo,
+    "echo",
     "Echoes back the input message.",
     json!({
         "type": "object",
@@ -96,6 +96,7 @@ sync_tool_wrapper!(
 sync_tool_wrapper!(
     AnalyzeProjectTool,
     handle_analyze_project,
+    "analyze_project",
     "Analyze project structure and return summary with language counts and main files.",
     json!({
         "type": "object",
@@ -108,6 +109,7 @@ sync_tool_wrapper!(
 sync_tool_wrapper!(
     ListFilesTool,
     handle_list_files,
+    "list_files",
     "List files in directory with type info.",
     json!({
         "type": "object",
@@ -122,6 +124,7 @@ sync_tool_wrapper!(
 sync_tool_wrapper!(
     ReadFileToolMcp,
     handle_read_file,
+    "read_file",
     "Read file contents from the filesystem.",
     json!({
         "type": "object",
@@ -136,6 +139,7 @@ sync_tool_wrapper!(
 sync_tool_wrapper!(
     GetContextTool,
     handle_get_context,
+    "get_context",
     "Get AI context about project (file tree, configs, README).",
     json!({
         "type": "object",
@@ -148,6 +152,7 @@ sync_tool_wrapper!(
 sync_tool_wrapper!(
     SearchCodeToolMcp,
     handle_search_code,
+    "search_code",
     "Search for pattern in code files.",
     json!({
         "type": "object",
@@ -163,6 +168,7 @@ sync_tool_wrapper!(
 sync_tool_wrapper!(
     FileTreeTool,
     handle_file_tree,
+    "file_tree",
     "Get directory tree structure with depth control.",
     json!({
         "type": "object",
@@ -177,6 +183,7 @@ sync_tool_wrapper!(
 sync_tool_wrapper!(
     GrepTool,
     handle_grep,
+    "grep",
     "Grep-like search in files with context lines.",
     json!({
         "type": "object",
@@ -193,6 +200,7 @@ sync_tool_wrapper!(
 sync_tool_wrapper!(
     CreateFileTool,
     handle_create_file,
+    "create_file",
     "Create or overwrite a file.",
     json!({
         "type": "object",
@@ -207,6 +215,7 @@ sync_tool_wrapper!(
 sync_tool_wrapper!(
     SystemInfoTool,
     handle_system_info,
+    "system_info",
     "Get system information (OS, architecture, current directory).",
     json!({
         "type": "object",
@@ -217,6 +226,7 @@ sync_tool_wrapper!(
 sync_tool_wrapper!(
     TaskCreateTool,
     handle_task_create,
+    "task_create",
     "Create a persistent task in the agentic bridge.",
     json!({
         "type": "object",
@@ -231,6 +241,7 @@ sync_tool_wrapper!(
 sync_tool_wrapper!(
     TaskStatusTool,
     handle_task_status,
+    "task_status",
     "Get status of a task.",
     json!({
         "type": "object",
@@ -244,6 +255,7 @@ sync_tool_wrapper!(
 sync_tool_wrapper!(
     TaskListTool,
     handle_task_list,
+    "task_list",
     "List all active tasks.",
     json!({
         "type": "object",
@@ -255,6 +267,7 @@ sync_tool_wrapper!(
 async_tool_wrapper!(
     ExecCommandTool,
     handle_exec_command,
+    "exec_command",
     "Execute shell command and return output.",
     json!({
         "type": "object",
@@ -270,6 +283,7 @@ async_tool_wrapper!(
 async_tool_wrapper!(
     GitStatusToolMcp,
     handle_git_status,
+    "git_status",
     "Get git status of repository in porcelain format.",
     json!({
         "type": "object",
@@ -282,6 +296,7 @@ async_tool_wrapper!(
 async_tool_wrapper!(
     GitLogToolMcp,
     handle_git_log,
+    "git_log",
     "Get recent git commits in one-line format.",
     json!({
         "type": "object",
@@ -295,6 +310,7 @@ async_tool_wrapper!(
 async_tool_wrapper!(
     WebFetchTool,
     handle_web_fetch,
+    "web_fetch",
     "Fetch URL content (simple HTTP GET).",
     json!({
         "type": "object",

@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 gestalt_core = { path = "../gestalt_core" }
 synapse-agentic = { path = "../synapse-agentic" }
+gestalt_timeline = { path = "../gestalt_timeline" }
 tokio = { version = "1.37", features = ["full"] }
 clap = { version = "4.5", features = ["derive"] }
 tracing = "0.1"
@@ -14,8 +15,10 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 config = "0.15"
 thiserror = "1.0"
+anyhow = "1.0"
 rustyline = "17.0.2"
 async-trait = "0.1"
 chrono = { version = "0.4", features = ["serde"] }
+ulid = "1.1"
 home = "0.5"
 reqwest = { version = "0.12", features = ["blocking", "json"] }

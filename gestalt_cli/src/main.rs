@@ -256,7 +256,7 @@ async fn run_swarm_task(
     agent_id: &str,
     task_id: &str,
     task_desc: &str,
-    workspace: &PathBuf,
+    workspace: &Path,
 ) -> Result<(), String> {
     // Write task manifest to isolated VFS
     let manifest_path = workspace.join("task_manifest.json");

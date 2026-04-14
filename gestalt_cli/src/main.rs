@@ -8,14 +8,19 @@ mod repl;
 use crate::config::CliConfig;
 use crate::repl::{EchoHandler, InteractiveRepl};
 use clap::{Parser, Subcommand};
+use gestalt_timeline::services::vfs::OverlayFs;
+use gestalt_timeline::services::VirtualFs;
 use serde_json::json;
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
+use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use tokio::task::JoinSet;
 use tracing::{error, info, warn};
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
+use ulid::Ulid;
 
 /// Simple task storage
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -175,6 +180,17 @@ enum Commands {
 
     /// Start interactive REPL
     Repl,
+
+    /// Run multiple tasks in parallel using OverlayFs isolation
+    Swarm {
+        /// Task description (can be specified multiple times)
+        #[arg(long, value_name = "DESCRIPTION")]
+        task: Vec<String>,
+
+        /// Workspace directory for swarm operations
+        #[arg(long, default_value = ".swarm")]
+        workspace: String,
+    },
 }
 
 fn current_time() -> String {
@@ -232,6 +248,97 @@ fn call_mcp(
         .map_err(|e| e.to_string())?;
 
     response.json().map_err(|e| e.to_string())
+}
+
+/// Execute a single swarm task using OverlayFs for file isolation.
+async fn run_swarm_task(
+    vfs: Arc<OverlayFs>,
+    agent_id: &str,
+    task_id: &str,
+    task_desc: &str,
+    workspace: &PathBuf,
+) -> Result<(), String> {
+    // Write task manifest to isolated VFS
+    let manifest_path = workspace.join("task_manifest.json");
+    let manifest = serde_json::json!({
+        "task_id": task_id,
+        "agent_id": agent_id,
+        "description": task_desc,
+        "started_at": chrono::Utc::now().to_rfc3339(),
+    });
+
+    let manifest_str = serde_json::to_string_pretty(&manifest)
+        .map_err(|e| e.to_string())?;
+    vfs.write_string(&manifest_path, manifest_str, agent_id)
+        .await
+        .map_err(|e: anyhow::Error| e.to_string())?;
+
+    // Write agent notes via OverlayFs
+    let notes_path = workspace.join("notes.md");
+    let notes = format!(
+        "# Agent {} - Task {}\n\n## Description\n{}\n\n## Progress\n- Started: {}\n",
+        agent_id,
+        task_id,
+        task_desc,
+        chrono::Utc::now().to_rfc3339()
+    );
+    vfs.write_string(&notes_path, notes, agent_id)
+        .await
+        .map_err(|e: anyhow::Error| e.to_string())?;
+
+    // Simulate work by executing via MCP tools if server is available
+    let mcp_url = "http://127.0.0.1:3000";
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(30))
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    // Try to call analyze_project tool via MCP
+    let args = json!({
+        "path": workspace.to_string_lossy().to_string()
+    });
+
+    let payload = json!({
+        "jsonrpc": "2.0",
+        "method": "tools/call",
+        "params": {
+            "name": "analyze_project",
+            "arguments": args
+        },
+        "id": 1
+    });
+
+    let response = client
+        .post(format!("{}/mcp", mcp_url))
+        .json(&payload)
+        .send()
+        .await;
+
+    if let Ok(resp) = response {
+        if resp.status().is_success() {
+            let _analysis: Result<serde_json::Value, _> = resp.json().await;
+            info!(
+                "[{}] MCP tool executed successfully for agent {}",
+                task_id, agent_id
+            );
+        }
+    }
+
+    // Update notes with completion
+    let completion_notes = format!(
+        "\n## Completed\n- Finished: {}\n- Status: SUCCESS\n",
+        chrono::Utc::now().to_rfc3339()
+    );
+    let current_notes: String = vfs
+        .read_to_string(&notes_path)
+        .await
+        .map_err(|e: anyhow::Error| e.to_string())?;
+    let updated_notes = format!("{}{}", current_notes.trim_end(), completion_notes);
+    vfs.write_string(&notes_path, updated_notes, agent_id)
+        .await
+        .map_err(|e: anyhow::Error| e.to_string())?;
+
+    Ok(())
 }
 
 #[tokio::main]
@@ -589,6 +696,156 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             info!("Starting interactive REPL");
             let mut repl = InteractiveRepl::with_handler(EchoHandler)?;
             repl.run().await?;
+        }
+
+        Commands::Swarm { task, workspace } => {
+            if task.is_empty() {
+                println!("❌ No tasks provided. Use --task \"description\" for each task.");
+                std::process::exit(1);
+            }
+
+            info!("Starting Swarm with {} task(s) in workspace '{}'", task.len(), workspace);
+            println!("🐝 Swarm initiating with {} task(s)...", task.len());
+
+            // Initialize OverlayFs for agent isolation
+            let vfs = Arc::new(OverlayFs::new());
+            let workspace_path = PathBuf::from(&workspace);
+
+            // Create workspace directory
+            if let Err(e) = std::fs::create_dir_all(&workspace_path) {
+                error!("Failed to create workspace: {}", e);
+                eprintln!("❌ Failed to create workspace '{}': {}", workspace, e);
+                std::process::exit(1);
+            }
+
+            // Initialize timeline events
+            let swarm_id = Ulid::new().to_string();
+            let start_time = chrono::Utc::now();
+
+            println!("📍 Swarm ID: {}", &swarm_id[..8]);
+            println!("📁 Workspace: {}", workspace);
+            println!();
+
+            // Spawn all tasks
+            let mut join_set = JoinSet::new();
+            let vfs_clone = vfs.clone();
+
+            for (idx, task_desc) in task.iter().enumerate() {
+                let task_id = format!("{}-task-{}", &swarm_id[..8], idx);
+                let vfs_for_task = vfs_clone.clone();
+                let workspace_for_task = workspace_path.join(format!("agent_{}", idx));
+                let task_desc = task_desc.clone();
+
+                // Log task start (using tracing - TimelineService integration point)
+                info!("[{}] Task START: {}", task_id, task_desc);
+                println!("  🚀 [{}] Starting: {}", task_id, task_desc);
+
+                join_set.spawn(async move {
+                    let agent_id = format!("agent_{}", idx);
+
+                    // Create isolated agent workspace
+                    if let Err(e) = std::fs::create_dir_all(&workspace_for_task) {
+                        error!("[{}] Failed to create agent dir: {}", task_id, e);
+                        return (task_id, task_desc, Err(e.to_string()));
+                    }
+
+                    // Simulate agent work using gestalt_mcp tools via VFS
+                    let result = run_swarm_task(
+                        vfs_for_task.clone(),
+                        &agent_id,
+                        &task_id,
+                        &task_desc,
+                        &workspace_for_task,
+                    )
+                    .await;
+
+                    // Log task completion
+                    match &result {
+                        Ok(_) => {
+                            info!("[{}] Task COMPLETE: {}", task_id, task_desc);
+                            println!("  ✅ [{}] Done: {}", task_id, task_desc);
+                        }
+                        Err(e) => {
+                            info!("[{}] Task FAILED: {} - {}", task_id, task_desc, e);
+                            println!("  ❌ [{}] Failed: {} ({})", task_id, task_desc, e);
+                        }
+                    }
+
+                    (task_id, task_desc, result)
+                });
+            }
+
+            // Wait for all tasks to complete
+            let mut results = Vec::new();
+            while let Some(res) = join_set.join_next().await {
+                match res {
+                    Ok((task_id, task_desc, result)) => {
+                        results.push((task_id, task_desc, result));
+                    }
+                    Err(e) => {
+                        error!("Task panicked: {:?}", e);
+                    }
+                }
+            }
+
+            // Sort results by task_id for consistent output
+            results.sort_by(|a, b| a.0.cmp(&b.0));
+
+            println!();
+            println!("📊 Swarm Results:");
+            let successes = results.iter().filter(|r| r.2.is_ok()).count();
+            let failures = results.len() - successes;
+            for (task_id, task_desc, result) in &results {
+                match result {
+                    Ok(_) => println!("  ✅ {}: OK - {}", task_id, task_desc),
+                    Err(e) => println!("  ❌ {}: FAIL - {} ({})", task_id, task_desc, e),
+                }
+            }
+
+            println!();
+            println!("💾 Flushing OverlayFs to disk...");
+
+            // Flush OverlayFs to disk
+            match vfs.flush().await {
+                Ok(report) => {
+                    if report.errors.is_empty() {
+                        println!("  ✅ Flush complete: {} files, {} dirs written",
+                            report.written_files.len(),
+                            report.created_dirs.len()
+                        );
+                        for f in &report.written_files {
+                            println!("     📄 {}", f.display());
+                        }
+                        for d in &report.created_dirs {
+                            println!("     📁 {}", d.display());
+                        }
+                    } else {
+                        println!("  ⚠️  Flush completed with {} errors:", report.errors.len());
+                        for e in &report.errors {
+                            println!("     ❌ {}: {} - {}", e.path.display(), e.operation, e.error);
+                        }
+                    }
+                }
+                Err(e) => {
+                    error!("Flush failed: {}", e);
+                    println!("  ❌ Flush failed: {}", e);
+                }
+            }
+
+            let end_time = chrono::Utc::now();
+            let duration = end_time.signed_duration_since(start_time);
+            println!();
+            println!("🐝 Swarm complete in {}s ({} tasks: {} ✅ / {} ❌)",
+                duration.num_seconds(),
+                results.len(),
+                successes,
+                failures
+            );
+
+            // Exit with error if any tasks failed
+            if failures > 0 {
+                std::process::exit(1);
+            }
         }
     }
 

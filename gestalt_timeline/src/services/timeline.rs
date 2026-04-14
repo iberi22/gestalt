@@ -90,6 +90,7 @@ impl CortexSync {
     }
 
     /// Check if Cortex is available
+    #[allow(dead_code)]
     async fn is_available(&self) -> bool {
         let response = self
             .client
@@ -152,6 +153,7 @@ impl TimelineService {
     }
 
     /// Check if Cortex sync is available and enabled
+    #[allow(dead_code)]
     async fn is_cortex_sync_available(&self) -> bool {
         if !self.sync_enabled {
             return false;

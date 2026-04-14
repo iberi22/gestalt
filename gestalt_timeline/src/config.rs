@@ -5,6 +5,7 @@ use std::env;
 #[derive(Debug, Deserialize, Clone)]
 pub struct Settings {
     pub database: DatabaseSettings,
+    pub cortex: CortexSettings,
     pub cognition: CognitionSettings,
     pub agent: AgentSettings,
     pub telegram: Option<TelegramSettings>,
@@ -38,6 +39,13 @@ pub struct TelegramSettings {
     pub allowed_users: Option<Vec<String>>,
 }
 
+#[derive(Debug, Deserialize, Clone)]
+pub struct CortexSettings {
+    pub url: String,
+    pub token: String,
+    pub enabled: bool,
+}
+
 impl Settings {
     pub fn new() -> Result<Self, ConfigError> {
         let run_mode = env::var("RUN_MODE").unwrap_or_else(|_| "development".into());
@@ -49,6 +57,9 @@ impl Settings {
             .set_default("database.pass", "root")?
             .set_default("database.namespace", "gestalt")?
             .set_default("database.database", "timeline")?
+            .set_default("cortex.url", "http://localhost:8003")?
+            .set_default("cortex.token", "dev-token")?
+            .set_default("cortex.enabled", true)?
             .set_default("cognition.provider", "minimax")?
             .set_default("cognition.model_id", "MiniMax-M2.1")?
             .set_default("agent.id", "cli_default")?

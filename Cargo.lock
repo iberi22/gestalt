@@ -3244,6 +3244,7 @@ dependencies = [
  "criterion",
  "dirs",
  "flutter_rust_bridge",
+ "gestalt_mcp",
  "git2",
  "ignore",
  "mcp-protocol-sdk",

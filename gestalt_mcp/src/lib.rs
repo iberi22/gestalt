@@ -60,7 +60,7 @@ pub struct JsonRpcError {
 
 // ============ TOOLS ============
 
-fn get_tools() -> Vec<serde_json::Value> {
+pub fn get_tools() -> Vec<serde_json::Value> {
     vec![
         serde_json::json!({
             "name": "echo",
@@ -256,9 +256,9 @@ fn get_tools() -> Vec<serde_json::Value> {
     ]
 }
 
-// ============ TOOL HANDLERS ============
+// ============ TOOL HANDLERS (Public API for library use) ============
 
-fn handle_echo(args: &serde_json::Value) -> serde_json::Value {
+pub fn handle_echo(args: &serde_json::Value) -> serde_json::Value {
     let message = args
         .get("message")
         .and_then(|v| v.as_str())
@@ -268,7 +268,7 @@ fn handle_echo(args: &serde_json::Value) -> serde_json::Value {
     })
 }
 
-fn handle_analyze_project(args: &serde_json::Value) -> serde_json::Value {
+pub fn handle_analyze_project(args: &serde_json::Value) -> serde_json::Value {
     let path = args
         .get("path")
         .and_then(|v| v.as_str())
@@ -326,7 +326,7 @@ fn handle_analyze_project(args: &serde_json::Value) -> serde_json::Value {
     })
 }
 
-fn handle_list_files(args: &serde_json::Value) -> serde_json::Value {
+pub fn handle_list_files(args: &serde_json::Value) -> serde_json::Value {
     let path = args
         .get("path")
         .and_then(|v| v.as_str())
@@ -378,7 +378,7 @@ fn handle_list_files(args: &serde_json::Value) -> serde_json::Value {
     })
 }
 
-fn handle_read_file(args: &serde_json::Value) -> serde_json::Value {
+pub fn handle_read_file(args: &serde_json::Value) -> serde_json::Value {
     let path = match args.get("path").and_then(|v| v.as_str()) {
         Some(p) => PathBuf::from(p),
         None => return error_response("Missing path parameter"),
@@ -400,7 +400,7 @@ fn handle_read_file(args: &serde_json::Value) -> serde_json::Value {
     }
 }
 
-fn handle_get_context(args: &serde_json::Value) -> serde_json::Value {
+pub fn handle_get_context(args: &serde_json::Value) -> serde_json::Value {
     let path = args
         .get("path")
         .and_then(|v| v.as_str())
@@ -474,7 +474,7 @@ fn handle_get_context(args: &serde_json::Value) -> serde_json::Value {
     })
 }
 
-fn handle_search_code(args: &serde_json::Value) -> serde_json::Value {
+pub fn handle_search_code(args: &serde_json::Value) -> serde_json::Value {
     let pattern = match args.get("pattern").and_then(|v| v.as_str()) {
         Some(p) => p,
         None => return error_response("Missing pattern parameter"),
@@ -541,7 +541,7 @@ fn handle_search_code(args: &serde_json::Value) -> serde_json::Value {
     })
 }
 
-async fn handle_exec_command(args: &serde_json::Value) -> serde_json::Value {
+pub async fn handle_exec_command(args: &serde_json::Value) -> serde_json::Value {
     let command = match args.get("command").and_then(|v| v.as_str()) {
         Some(c) => c,
         None => return error_response("Missing command parameter"),
@@ -584,7 +584,7 @@ async fn handle_exec_command(args: &serde_json::Value) -> serde_json::Value {
     }
 }
 
-async fn handle_git_status(args: &serde_json::Value) -> serde_json::Value {
+pub async fn handle_git_status(args: &serde_json::Value) -> serde_json::Value {
     let path = args
         .get("path")
         .and_then(|v| v.as_str())
@@ -611,7 +611,7 @@ async fn handle_git_status(args: &serde_json::Value) -> serde_json::Value {
     }
 }
 
-async fn handle_git_log(args: &serde_json::Value) -> serde_json::Value {
+pub async fn handle_git_log(args: &serde_json::Value) -> serde_json::Value {
     let path = args
         .get("path")
         .and_then(|v| v.as_str())
@@ -640,7 +640,7 @@ async fn handle_git_log(args: &serde_json::Value) -> serde_json::Value {
     }
 }
 
-fn handle_file_tree(args: &serde_json::Value) -> serde_json::Value {
+pub fn handle_file_tree(args: &serde_json::Value) -> serde_json::Value {
     let path = args
         .get("path")
         .and_then(|v| v.as_str())
@@ -687,7 +687,7 @@ fn handle_file_tree(args: &serde_json::Value) -> serde_json::Value {
     })
 }
 
-fn handle_grep(args: &serde_json::Value) -> serde_json::Value {
+pub fn handle_grep(args: &serde_json::Value) -> serde_json::Value {
     let pattern = match args.get("pattern").and_then(|v| v.as_str()) {
         Some(p) => p,
         None => return error_response("Missing pattern parameter"),
@@ -766,7 +766,7 @@ fn handle_grep(args: &serde_json::Value) -> serde_json::Value {
     })
 }
 
-fn handle_create_file(args: &serde_json::Value) -> serde_json::Value {
+pub fn handle_create_file(args: &serde_json::Value) -> serde_json::Value {
     let path = match args.get("path").and_then(|v| v.as_str()) {
         Some(p) => PathBuf::from(p),
         None => return error_response("Missing path parameter"),
@@ -785,7 +785,7 @@ fn handle_create_file(args: &serde_json::Value) -> serde_json::Value {
     }
 }
 
-async fn handle_web_fetch(args: &serde_json::Value) -> serde_json::Value {
+pub async fn handle_web_fetch(args: &serde_json::Value) -> serde_json::Value {
     let url = match args.get("url").and_then(|v| v.as_str()) {
         Some(u) => u,
         None => return error_response("Missing url parameter"),
@@ -814,7 +814,7 @@ async fn handle_web_fetch(args: &serde_json::Value) -> serde_json::Value {
     }
 }
 
-fn handle_system_info(_args: &serde_json::Value) -> serde_json::Value {
+pub fn handle_system_info(_args: &serde_json::Value) -> serde_json::Value {
     let cwd = std::env::current_dir()
         .ok()
         .and_then(|p| p.file_name().map(|s| s.to_string_lossy().to_string()))
@@ -832,7 +832,7 @@ fn handle_system_info(_args: &serde_json::Value) -> serde_json::Value {
     })
 }
 
-fn current_time() -> String {
+pub fn current_time() -> String {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
@@ -840,7 +840,7 @@ fn current_time() -> String {
     format!("{}", now)
 }
 
-fn handle_task_create(args: &serde_json::Value) -> serde_json::Value {
+pub fn handle_task_create(args: &serde_json::Value) -> serde_json::Value {
     let Some(task_id) = args.get("task_id").and_then(|v| v.as_str()) else {
         return error_response("Missing or invalid required parameter: task_id");
     };
@@ -861,7 +861,7 @@ fn handle_task_create(args: &serde_json::Value) -> serde_json::Value {
     })
 }
 
-fn handle_task_status(args: &serde_json::Value) -> serde_json::Value {
+pub fn handle_task_status(args: &serde_json::Value) -> serde_json::Value {
     let task_id = args.get("task_id").and_then(|v| v.as_str()).unwrap_or("");
 
     serde_json::json!({
@@ -875,7 +875,7 @@ fn handle_task_status(args: &serde_json::Value) -> serde_json::Value {
     })
 }
 
-fn handle_task_list(_args: &serde_json::Value) -> serde_json::Value {
+pub fn handle_task_list(_args: &serde_json::Value) -> serde_json::Value {
     serde_json::json!({
         "content": [{
             "type": "text",
@@ -887,13 +887,13 @@ fn handle_task_list(_args: &serde_json::Value) -> serde_json::Value {
     })
 }
 
-fn error_response(msg: &str) -> serde_json::Value {
+pub fn error_response(msg: &str) -> serde_json::Value {
     serde_json::json!({
         "content": [{ "type": "text", "text": msg }]
     })
 }
 
-async fn handle_tool(name: &str, args: &serde_json::Value) -> serde_json::Value {
+pub async fn handle_tool(name: &str, args: &serde_json::Value) -> serde_json::Value {
     match name {
         "echo" => handle_echo(args),
         "analyze_project" => handle_analyze_project(args),

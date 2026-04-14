@@ -1,16 +1,41 @@
-//! Memory Service - Persistent memory for agents using SurrealDB.
+//! Memory Service - Persistent memory for agents using SurrealDB + Cortex.
 //!
 //! Provides short-term (session) and long-term (persistent) memory storage
-//! with basic content-based search. Sprint 3 will add pgvector embeddings.
+//! with basic content-based search. Uses Cortex as primary backend with
+//! SurrealDB fallback for graceful degradation.
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use chrono::Utc;
+use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::RwLock;
-use tracing::info;
+use tracing::{debug, info, warn};
 
 use crate::db::SurrealClient;
+
+/// Cortex API response for memory search
+#[derive(Debug, Deserialize)]
+struct CortexSearchResponse {
+    results: Vec<CortexMemory>,
+}
+
+/// A memory stored in Cortex
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct CortexMemory {
+    path: String,
+    content: String,
+    kind: String,
+    #[serde(default)]
+    metadata: serde_json::Value,
+}
+
+/// Cortex health response
+#[derive(Debug, Deserialize)]
+struct CortexHealthResponse {
+    status: String,
+}
 
 /// A fragment of memory stored by an agent.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -74,31 +99,182 @@ impl MemoryFragment {
         self.importance = importance.clamp(0.0, 1.0);
         self
     }
+
+    /// Convert to Cortex memory format
+    fn to_cortex_memory(&self) -> CortexMemory {
+        let mut metadata = serde_json::json!({
+            "agent_id": self.agent_id.clone(),
+            "context": self.context.clone(),
+            "tags": self.tags.clone(),
+            "importance": self.importance,
+            "created_at": self.created_at.to_rfc3339(),
+        });
+
+        if let (Some(repo), Some(path), Some(chunk)) =
+            (&self.repo_url, &self.file_path, &self.chunk_id)
+        {
+            metadata["repo_url"] = serde_json::json!(repo);
+            metadata["file_path"] = serde_json::json!(path);
+            metadata["chunk_id"] = serde_json::json!(chunk);
+        }
+
+        CortexMemory {
+            path: format!(
+                "memory/{}/{}/{}",
+                self.agent_id,
+                self.context,
+                self.created_at.timestamp()
+            ),
+            content: self.content.clone(),
+            kind: self.context.clone(),
+            metadata,
+        }
+    }
 }
 
 /// The MemoryService manages saving and retrieving agent memories.
 ///
 /// # Design Notes
-/// - Sprint 2 (current): SurrealDB-backed, keyword/tag search
-/// - Sprint 3 (planned): Add pgvector embeddings for semantic similarity search
+/// - Primary: Cortex HTTP API for distributed memory
+/// - Fallback: SurrealDB for local-only operation
+/// - Short-term: In-memory cache for recent fragments
 #[derive(Clone)]
 pub struct MemoryService {
     db: SurrealClient,
+    cortex_client: Option<CortexClient>,
     /// In-memory cache of the most recent N fragments per agent (short-term memory)
     short_term: Arc<RwLock<std::collections::VecDeque<MemoryFragment>>>,
     short_term_capacity: usize,
 }
 
+/// Cortex HTTP client for memory operations
+#[derive(Clone)]
+struct CortexClient {
+    client: Client,
+    url: String,
+    token: String,
+}
+
+impl CortexClient {
+    fn new(url: String, token: String) -> Self {
+        let client = Client::builder()
+            .timeout(Duration::from_secs(10))
+            .build()
+            .expect("Failed to build HTTP client");
+        Self { client, url, token }
+    }
+
+    /// Check if Cortex is healthy
+    async fn health_check(&self) -> Result<bool> {
+        let response = self
+            .client
+            .get(format!("{}/health", self.url))
+            .header("X-Cortex-Token", &self.token)
+            .send()
+            .await?;
+
+        if response.status().is_success() {
+            let health: CortexHealthResponse = response.json().await?;
+            Ok(health.status == "ok" || health.status == "healthy")
+        } else {
+            Ok(false)
+        }
+    }
+
+    /// Add a memory to Cortex
+    async fn add_memory(&self, memory: &CortexMemory) -> Result<()> {
+        let response = self
+            .client
+            .post(format!("{}/memory/add", self.url))
+            .header("X-Cortex-Token", &self.token)
+            .json(memory)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            return Err(anyhow!("Cortex add_memory failed: {} - {}", status, body));
+        }
+
+        Ok(())
+    }
+
+    /// Search memories in Cortex
+    async fn search(&self, query: &str, limit: usize) -> Result<Vec<CortexMemory>> {
+        let response = self
+            .client
+            .post(format!("{}/memory/search", self.url))
+            .header("X-Cortex-Token", &self.token)
+            .json(&serde_json::json!({
+                "query": query,
+                "limit": limit
+            }))
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            return Err(anyhow!("Cortex search failed: {} - {}", status, body));
+        }
+
+        let search_result: CortexSearchResponse = response.json().await?;
+        Ok(search_result.results)
+    }
+}
+
 impl MemoryService {
-    pub fn new(db: SurrealClient) -> Self {
+    /// Create a new MemoryService with Cortex integration.
+    ///
+    /// # Arguments
+    /// * `db` - SurrealDB client for fallback storage
+    /// * `cortex_url` - Cortex API URL (e.g., "http://localhost:8003")
+    /// * `cortex_token` - Cortex authentication token
+    pub fn new(db: SurrealClient, cortex_url: Option<String>, cortex_token: Option<String>) -> Self {
+        let cortex_client = match (cortex_url, cortex_token) {
+            (Some(url), Some(token)) => {
+                Some(CortexClient::new(url, token))
+            }
+            _ => {
+                // Try environment variables
+                let url = std::env::var("CORTEX_URL").ok().unwrap_or_else(|| "http://localhost:8003".to_string());
+                let token = std::env::var("CORTEX_TOKEN").ok().unwrap_or_else(|| "dev-token".to_string());
+                if url.is_empty() {
+                    None
+                } else {
+                    Some(CortexClient::new(url, token))
+                }
+            }
+        };
+
         Self {
             db,
+            cortex_client,
             short_term: Arc::new(RwLock::new(std::collections::VecDeque::new())),
             short_term_capacity: 50,
         }
     }
 
-    /// Save a memory fragment to both short-term cache and SurrealDB.
+    /// Create with explicit Cortex settings (from config)
+    pub fn with_cortex(db: SurrealClient, cortex_url: &str, cortex_token: &str) -> Self {
+        Self::new(db, Some(cortex_url.to_string()), Some(cortex_token.to_string()))
+    }
+
+    /// Check if Cortex is available
+    async fn is_cortex_available(&self) -> bool {
+        if let Some(ref client) = self.cortex_client {
+            if let Err(e) = client.health_check().await {
+                debug!("Cortex health check failed: {}", e);
+                return false;
+            }
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Save a memory fragment to short-term cache, Cortex (if available), and SurrealDB (fallback).
     pub async fn save(
         &self,
         agent_id: &str,
@@ -112,10 +288,40 @@ impl MemoryService {
             fragment = fragment.with_provenance(repo, path, chunk);
         }
 
-        // Persist to SurrealDB
+        // Try Cortex first
+        let cortex_available = self.is_cortex_available().await;
+        if cortex_available {
+            if let Some(ref client) = self.cortex_client {
+                let cortex_mem = fragment.to_cortex_memory();
+                match client.add_memory(&cortex_mem).await {
+                    Ok(_) => {
+                        info!(
+                            "🧠 Memory saved to Cortex [agent={}] context='{}' tags={:?}",
+                            fragment.agent_id, fragment.context, fragment.tags
+                        );
+                        // Still save to SurrealDB for backup
+                        let saved = self.save_to_surreal(&fragment).await?;
+                        return Ok(saved);
+                    }
+                    Err(e) => {
+                        warn!("Failed to save to Cortex, falling back to SurrealDB: {}", e);
+                    }
+                }
+            }
+        } else {
+            debug!("Cortex not available, using SurrealDB directly");
+        }
+
+        // Fall back to SurrealDB
+        let saved = self.save_to_surreal(&fragment).await?;
+        Ok(saved)
+    }
+
+    /// Save directly to SurrealDB (used as fallback)
+    async fn save_to_surreal(&self, fragment: &MemoryFragment) -> Result<MemoryFragment> {
         let saved = self
             .db
-            .create("memories", &fragment)
+            .create("memories", fragment)
             .await
             .map_err(|e| anyhow::anyhow!("Failed to save memory: {}", e))?;
 
@@ -127,7 +333,7 @@ impl MemoryService {
         }
 
         info!(
-            "🧠 Memory saved [agent={}] context='{}' tags={:?}",
+            "💾 Memory saved to SurrealDB [agent={}] context='{}' tags={:?}",
             saved.agent_id, saved.context, saved.tags
         );
 
@@ -167,6 +373,67 @@ impl MemoryService {
 
         if !cached.is_empty() {
             return Ok(cached);
+        }
+
+        // Try Cortex if available
+        if let Some(ref client) = self.cortex_client {
+            if self.is_cortex_available().await {
+                match client.search(query, limit).await {
+                    Ok(results) => {
+                        let fragments: Vec<MemoryFragment> = results
+                            .into_iter()
+                            .filter_map(|r| {
+                                let metadata = r.metadata;
+                                let agent_id = metadata
+                                    .get("agent_id")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("")
+                                    .to_string();
+                                let agent_match = agent_id.is_none()
+                                    || agent_id
+                                        .as_ref()
+                                        .is_none_or(|a| Some(a) == agent_id);
+
+                                if !agent_match {
+                                    return None;
+                                }
+
+                                Some(MemoryFragment {
+                                    id: None,
+                                    agent_id,
+                                    content: r.content,
+                                    context: r.kind,
+                                    tags: metadata
+                                        .get("tags")
+                                        .and_then(|v| serde_json::from_value(v.clone()).ok())
+                                        .unwrap_or_default(),
+                                    created_at: metadata
+                                        .get("created_at")
+                                        .and_then(|v| v.as_str())
+                                        .and_then(|v| chrono::DateTime::parse_from_rfc3339(v).ok())
+                                        .map(|dt| dt.with_timezone(&Utc))
+                                        .unwrap_or_else(Utc::now),
+                                    importance: metadata
+                                        .get("importance")
+                                        .and_then(|v| v.as_f64())
+                                        .unwrap_or(0.5) as f32,
+                                    repo_url: metadata.get("repo_url").and_then(|v| v.as_str().map(String::from)),
+                                    file_path: metadata.get("file_path").and_then(|v| v.as_str().map(String::from)),
+                                    chunk_id: metadata.get("chunk_id").and_then(|v| v.as_str().map(String::from)),
+                                })
+                            })
+                            .collect();
+
+                        if !fragments.is_empty() {
+                            info!("🔍 Found {} memories in Cortex", fragments.len());
+                            return Ok(fragments);
+                        }
+                    }
+                    Err(e) => {
+                        warn!("Cortex search failed, falling back to SurrealDB: {}", e);
+                    }
+                }
+            }
         }
 
         // Fall back to SurrealDB query
@@ -229,12 +496,17 @@ impl MemoryService {
                 (None, Some(p), None) => format!(" [{}]", p),
                 _ => String::new(),
             };
+            let content_preview = if f.content.len() > 300 {
+                format!("{}...", &f.content[..300])
+            } else {
+                f.content.clone()
+            };
             let line = format!(
                 "- [{}] ({}){}: {}\n",
                 f.context,
                 f.created_at.format("%Y-%m-%d %H:%M"),
                 provenance_marker,
-                &f.content[..f.content.len().min(300)]
+                content_preview
             );
             if ctx.len() + line.len() > max_chars {
                 break;

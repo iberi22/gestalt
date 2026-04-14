@@ -36,13 +36,17 @@ impl CortexSync {
         Self { client, url, token }
     }
 
+    fn timestamp_to_unix(ts: &crate::models::timestamp::FlexibleTimestamp) -> i64 {
+        ts.0.timestamp()
+    }
+
     /// Sync a timeline event to Cortex as a memory
     async fn sync_event(&self, event: &TimelineEvent) -> Result<()> {
         let path = format!(
             "timeline/{}/{}/{}",
             event.agent_id,
             event.event_type,
-            event.timestamp.unix_timestamp()
+            Self::timestamp_to_unix(&event.timestamp)
         );
 
         let content = format!(
@@ -109,10 +113,11 @@ impl TimelineService {
     /// Create a new TimelineService.
     pub fn new(db: SurrealClient) -> Self {
         let cortex_sync = Self::create_cortex_sync();
+        let sync_enabled = cortex_sync.is_some();
         Self {
             db,
             cortex_sync,
-            sync_enabled: cortex_sync.is_some(),
+            sync_enabled,
         }
     }
 
@@ -167,7 +172,7 @@ impl TimelineService {
         if let Some(ref sync) = self.cortex_sync {
             match sync.sync_event(event).await {
                 Ok(_) => {
-                    debug!("Synced event to Cortex: {:?}", event.event_type);
+                    info!("Syncing event to Cortex: {:?}", event.event_type);
                 }
                 Err(e) => {
                     warn!("Failed to sync event to Cortex: {}", e);

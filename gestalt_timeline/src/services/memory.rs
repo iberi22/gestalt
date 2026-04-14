@@ -229,23 +229,16 @@ impl MemoryService {
     ///
     /// # Arguments
     /// * `db` - SurrealDB client for fallback storage
-    /// * `cortex_url` - Cortex API URL (e.g., "http://localhost:8003")
-    /// * `cortex_token` - Cortex authentication token
-    pub fn new(db: SurrealClient, cortex_url: Option<String>, cortex_token: Option<String>) -> Self {
-        let cortex_client = match (cortex_url, cortex_token) {
-            (Some(url), Some(token)) => {
-                Some(CortexClient::new(url, token))
-            }
-            _ => {
-                // Try environment variables
-                let url = std::env::var("CORTEX_URL").ok().unwrap_or_else(|| "http://localhost:8003".to_string());
-                let token = std::env::var("CORTEX_TOKEN").ok().unwrap_or_else(|| "dev-token".to_string());
-                if url.is_empty() {
-                    None
-                } else {
-                    Some(CortexClient::new(url, token))
-                }
-            }
+    ///
+    /// Cortex URL and token are read from CORTEX_URL and CORTEX_TOKEN env vars.
+    pub fn new(db: SurrealClient) -> Self {
+        let url = std::env::var("CORTEX_URL").ok().unwrap_or_else(|| "http://localhost:8003".to_string());
+        let token = std::env::var("CORTEX_TOKEN").ok().unwrap_or_else(|| "dev-token".to_string());
+
+        let cortex_client = if url.is_empty() {
+            None
+        } else {
+            Some(CortexClient::new(url, token))
         };
 
         Self {
@@ -258,7 +251,17 @@ impl MemoryService {
 
     /// Create with explicit Cortex settings (from config)
     pub fn with_cortex(db: SurrealClient, cortex_url: &str, cortex_token: &str) -> Self {
-        Self::new(db, Some(cortex_url.to_string()), Some(cortex_token.to_string()))
+        let cortex_client = if cortex_url.is_empty() {
+            None
+        } else {
+            Some(CortexClient::new(cortex_url.to_string(), cortex_token.to_string()))
+        };
+        Self {
+            db,
+            cortex_client,
+            short_term: Arc::new(RwLock::new(std::collections::VecDeque::new())),
+            short_term_capacity: 50,
+        }
     }
 
     /// Check if Cortex is available
@@ -384,15 +387,16 @@ impl MemoryService {
                             .into_iter()
                             .filter_map(|r| {
                                 let metadata = r.metadata;
-                                let agent_id = metadata
+                                let cortex_agent_id = metadata
                                     .get("agent_id")
                                     .and_then(|v| v.as_str())
                                     .unwrap_or("")
                                     .to_string();
-                                let agent_match = agent_id.is_none()
-                                    || agent_id
-                                        .as_ref()
-                                        .is_none_or(|a| Some(a) == agent_id);
+
+                                // Check if agent matches filter (if provided)
+                                let agent_match = agent_id
+                                    .map(|filter| filter == cortex_agent_id)
+                                    .unwrap_or(true);
 
                                 if !agent_match {
                                     return None;
@@ -400,7 +404,7 @@ impl MemoryService {
 
                                 Some(MemoryFragment {
                                     id: None,
-                                    agent_id,
+                                    agent_id: cortex_agent_id,
                                     content: r.content,
                                     context: r.kind,
                                     tags: metadata

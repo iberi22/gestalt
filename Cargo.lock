@@ -3271,6 +3271,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "gestalt_swarm"
+version = "1.0.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "gestalt_core",
+ "serde",
+ "serde_json",
+ "synapse-agentic",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "gestalt_timeline"
 version = "1.0.0"
 dependencies = [

@@ -83,11 +83,7 @@ impl CortexSync {
         if !response.status().is_success() {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
-            return Err(anyhow::anyhow!(
-                "Cortex sync failed: {} - {}",
-                status,
-                body
-            ));
+            return Err(anyhow::anyhow!("Cortex sync failed: {} - {}", status, body));
         }
 
         Ok(())
@@ -123,8 +119,12 @@ impl TimelineService {
 
     /// Create Cortex sync client from env vars or config
     fn create_cortex_sync() -> Option<CortexSync> {
-        let url = std::env::var("CORTEX_URL").ok().unwrap_or_else(|| "http://localhost:8003".to_string());
-        let token = std::env::var("CORTEX_TOKEN").ok().unwrap_or_else(|| "dev-token".to_string());
+        let url = std::env::var("CORTEX_URL")
+            .ok()
+            .unwrap_or_else(|| "http://localhost:8003".to_string());
+        let token = std::env::var("CORTEX_TOKEN")
+            .ok()
+            .unwrap_or_else(|| "dev-token".to_string());
 
         if url.is_empty() {
             return None;
@@ -199,7 +199,10 @@ impl TimelineService {
 
     /// Record an event without syncing to Cortex (for bulk operations)
     pub async fn record_event_local(&self, event: TimelineEvent) -> Result<TimelineEvent> {
-        debug!("Recording timeline event (local only): {:?}", event.event_type);
+        debug!(
+            "Recording timeline event (local only): {:?}",
+            event.event_type
+        );
         self.db.create("timeline_events", &event).await
     }
 

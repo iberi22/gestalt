@@ -232,8 +232,12 @@ impl MemoryService {
     ///
     /// Cortex URL and token are read from CORTEX_URL and CORTEX_TOKEN env vars.
     pub fn new(db: SurrealClient) -> Self {
-        let url = std::env::var("CORTEX_URL").ok().unwrap_or_else(|| "http://localhost:8003".to_string());
-        let token = std::env::var("CORTEX_TOKEN").ok().unwrap_or_else(|| "dev-token".to_string());
+        let url = std::env::var("CORTEX_URL")
+            .ok()
+            .unwrap_or_else(|| "http://localhost:8003".to_string());
+        let token = std::env::var("CORTEX_TOKEN")
+            .ok()
+            .unwrap_or_else(|| "dev-token".to_string());
 
         let cortex_client = if url.is_empty() {
             None
@@ -254,7 +258,10 @@ impl MemoryService {
         let cortex_client = if cortex_url.is_empty() {
             None
         } else {
-            Some(CortexClient::new(cortex_url.to_string(), cortex_token.to_string()))
+            Some(CortexClient::new(
+                cortex_url.to_string(),
+                cortex_token.to_string(),
+            ))
         };
         Self {
             db,
@@ -420,10 +427,17 @@ impl MemoryService {
                                     importance: metadata
                                         .get("importance")
                                         .and_then(|v| v.as_f64())
-                                        .unwrap_or(0.5) as f32,
-                                    repo_url: metadata.get("repo_url").and_then(|v| v.as_str().map(String::from)),
-                                    file_path: metadata.get("file_path").and_then(|v| v.as_str().map(String::from)),
-                                    chunk_id: metadata.get("chunk_id").and_then(|v| v.as_str().map(String::from)),
+                                        .unwrap_or(0.5)
+                                        as f32,
+                                    repo_url: metadata
+                                        .get("repo_url")
+                                        .and_then(|v| v.as_str().map(String::from)),
+                                    file_path: metadata
+                                        .get("file_path")
+                                        .and_then(|v| v.as_str().map(String::from)),
+                                    chunk_id: metadata
+                                        .get("chunk_id")
+                                        .and_then(|v| v.as_str().map(String::from)),
                                 })
                             })
                             .collect();

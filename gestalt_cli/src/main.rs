@@ -267,8 +267,7 @@ async fn run_swarm_task(
         "started_at": chrono::Utc::now().to_rfc3339(),
     });
 
-    let manifest_str = serde_json::to_string_pretty(&manifest)
-        .map_err(|e| e.to_string())?;
+    let manifest_str = serde_json::to_string_pretty(&manifest).map_err(|e| e.to_string())?;
     vfs.write_string(&manifest_path, manifest_str, agent_id)
         .await
         .map_err(|e: anyhow::Error| e.to_string())?;
@@ -704,7 +703,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 std::process::exit(1);
             }
 
-            info!("Starting Swarm with {} task(s) in workspace '{}'", task.len(), workspace);
+            info!(
+                "Starting Swarm with {} task(s) in workspace '{}'",
+                task.len(),
+                workspace
+            );
             println!("🐝 Swarm initiating with {} task(s)...", task.len());
 
             // Initialize OverlayFs for agent isolation
@@ -809,7 +812,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             match vfs.flush().await {
                 Ok(report) => {
                     if report.errors.is_empty() {
-                        println!("  ✅ Flush complete: {} files, {} dirs written",
+                        println!(
+                            "  ✅ Flush complete: {} files, {} dirs written",
                             report.written_files.len(),
                             report.created_dirs.len()
                         );
@@ -822,7 +826,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     } else {
                         println!("  ⚠️  Flush completed with {} errors:", report.errors.len());
                         for e in &report.errors {
-                            println!("     ❌ {}: {} - {}", e.path.display(), e.operation, e.error);
+                            println!(
+                                "     ❌ {}: {} - {}",
+                                e.path.display(),
+                                e.operation,
+                                e.error
+                            );
                         }
                     }
                 }
@@ -835,7 +844,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let end_time = chrono::Utc::now();
             let duration = end_time.signed_duration_since(start_time);
             println!();
-            println!("🐝 Swarm complete in {}s ({} tasks: {} ✅ / {} ❌)",
+            println!(
+                "🐝 Swarm complete in {}s ({} tasks: {} ✅ / {} ❌)",
                 duration.num_seconds(),
                 results.len(),
                 successes,

@@ -9,11 +9,10 @@
 
 use async_trait::async_trait;
 use gestalt_mcp::{
-    handle_analyze_project, handle_create_file,
-    handle_echo, handle_exec_command, handle_file_tree, handle_get_context, handle_git_log,
-    handle_git_status, handle_grep, handle_list_files, handle_read_file, handle_search_code,
-    handle_system_info, handle_task_create, handle_task_list, handle_task_status,
-    handle_web_fetch,
+    handle_analyze_project, handle_create_file, handle_echo, handle_exec_command, handle_file_tree,
+    handle_get_context, handle_git_log, handle_git_status, handle_grep, handle_list_files,
+    handle_read_file, handle_search_code, handle_system_info, handle_task_create, handle_task_list,
+    handle_task_status, handle_web_fetch,
 };
 use serde_json::{json, Value};
 use synapse_agentic::prelude::*;
@@ -36,11 +35,7 @@ macro_rules! sync_tool_wrapper {
                 $parameters
             }
 
-            async fn call(
-                &self,
-                _ctx: &dyn ToolContext,
-                args: Value,
-            ) -> anyhow::Result<Value> {
+            async fn call(&self, _ctx: &dyn ToolContext, args: Value) -> anyhow::Result<Value> {
                 let result = tokio::task::spawn_blocking(move || $handler(&args))
                     .await
                     .map_err(|e| anyhow::anyhow!("Task join error: {}", e))?;
@@ -66,11 +61,7 @@ macro_rules! async_tool_wrapper {
                 $parameters
             }
 
-            async fn call(
-                &self,
-                _ctx: &dyn ToolContext,
-                args: Value,
-            ) -> anyhow::Result<Value> {
+            async fn call(&self, _ctx: &dyn ToolContext, args: Value) -> anyhow::Result<Value> {
                 let result = $handler(&args).await;
                 Ok(result)
             }

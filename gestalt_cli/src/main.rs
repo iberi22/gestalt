@@ -13,6 +13,7 @@ use gestalt_timeline::services::VirtualFs;
 use serde_json::json;
 use std::collections::HashMap;
 use std::fs;
+use std::path::Path;
 use std::path::PathBuf;
 use std::process::Command;
 use std::sync::Arc;

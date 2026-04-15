@@ -10,6 +10,10 @@ Usage:
     python swarm_bridge.py --goal "analyze gestalt-rust codebase" --dry-run
     python swarm_bridge.py --goal "comprehensive security audit" --max-agents 5 --rate-limit 50
     GESTALT_MAX_AGENTS=20 GESTALT_RATE_LIMIT=50 python swarm_bridge.py --goal "deep analysis"
+
+Streaming mode:
+    python swarm_bridge.py --goal "git status" --agents "git_analyzer,git_status,env_check" --watch --timeout 10
+    python swarm_bridge.py --goal "analyze code" --watch --output C:\\temp\\swarm_results.json --poll-interval 200
 """
 
 import argparse
@@ -19,7 +23,9 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 import time
+import uuid
 from datetime import datetime, timezone
 from typing import Any
 
@@ -292,8 +298,17 @@ def run_agent_sync(agent: dict) -> dict:
         }
 
 
-async def run_swarm_parallel(goal: str, max_agents: int = 10, selected: list[str] = None) -> dict:
-    """Run N agents in parallel, return consolidated JSON."""
+async def run_agent_async(agent: dict) -> dict:
+    """Run agent in thread pool (to avoid blocking)."""
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, run_agent_sync, agent)
+
+
+async def run_swarm_parallel(goal: str, max_agents: int = 10, selected: list[str] = None, watch: bool = False, output_file: str = None, poll_interval_ms: int = 100, timeout_sec: int = 0) -> dict:
+    """Run N agents in parallel, return consolidated JSON.
+
+    When watch=True, writes incremental JSON to output_file as each agent completes.
+    """
     start = time.time()
     selected_ids = set(selected) if selected else None
 
@@ -305,9 +320,50 @@ async def run_swarm_parallel(goal: str, max_agents: int = 10, selected: list[str
     if not agents_to_run:
         return {"error": "No agents to run", "goal": goal}
 
+    # Generate unique run ID and output file for streaming
+    run_id = str(uuid.uuid4())[:8]
+    if output_file:
+        output_path = output_file
+    else:
+        output_path = os.path.join(tempfile.gettempdir(), f"swarm_{run_id}.json")
+
+    # Track running/completed agents
+    running_ids = {a["id"] for a in agents_to_run}
+    completed = {}
+
+    def update_stream_file():
+        """Write current state to stream file."""
+        with open(output_path, "w", encoding="utf-8") as f:
+            json.dump({
+                "run_id": run_id,
+                "completed_count": len(completed),
+                "total_count": len(agents_to_run),
+                "running": list(running_ids - set(completed.keys())),
+                "results": completed
+            }, f)
+
+    # Write initial state
+    update_stream_file()
+
+    async def run_agent_with_stream(agent: dict) -> dict:
+        """Run agent and update stream file on completion."""
+        result = await run_agent_async(agent)
+        agent_id = agent["id"]
+        if watch:
+            completed[agent_id] = result
+            running_ids.discard(agent_id)
+            update_stream_file()
+        return result
+
     # Run all agents concurrently using asyncio
-    tasks = [run_agent_async(a) for a in agents_to_run]
+    tasks = [run_agent_with_stream(a) for a in agents_to_run]
     results = await asyncio.gather(*tasks)
+
+    # If not watch mode, write final state for consistency
+    if not watch:
+        for r in results:
+            completed[r["id"]] = r
+        update_stream_file()
 
     total_ms = int((time.time() - start) * 1000)
     successful = sum(1 for r in results if r["status"] == "success")
@@ -325,13 +381,8 @@ async def run_swarm_parallel(goal: str, max_agents: int = 10, selected: list[str
             "errors": errors,
         },
         "agents": results,
+        "stream_file": output_path if watch else None,
     }
-
-
-async def run_agent_async(agent: dict) -> dict:
-    """Run agent in thread pool (to avoid blocking)."""
-    loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(None, run_agent_sync, agent)
 
 
 # ─────────────────────────────────────────────────────────────
@@ -339,6 +390,12 @@ async def run_agent_async(agent: dict) -> dict:
 # ─────────────────────────────────────────────────────────────
 
 def main():
+    # Ensure stdout supports UTF-8 (Windows compatibility)
+    try:
+        sys.stdout.reconfigure(encoding='utf-8')
+    except Exception:
+        pass
+
     parser = argparse.ArgumentParser(description="Gestalt Swarm Bridge")
     parser.add_argument("--goal", type=str, required=True, help="Goal to execute")
     parser.add_argument("--max-agents", type=int, default=None, help="Max agents to run (default: 10)")
@@ -347,6 +404,10 @@ def main():
     parser.add_argument("--dry-run", action="store_true", help="Show which agents would be selected without running")
     parser.add_argument("--json", action="store_true", help="Output JSON only")
     parser.add_argument("--quiet", action="store_true", help="Minimal output")
+    parser.add_argument("--watch", action="store_true", help="Enable streaming mode: poll output file as agents complete")
+    parser.add_argument("--output", type=str, default=None, help="Output file path for streaming mode (default: temp file)")
+    parser.add_argument("--poll-interval", type=int, default=100, help="Polling interval in milliseconds for --watch mode (default: 100)")
+    parser.add_argument("--timeout", type=int, default=0, help="Max time to wait in --watch mode in seconds (0 = no limit)")
     args = parser.parse_args()
 
     # Load config: CLI flags override environment variables
@@ -361,7 +422,10 @@ def main():
         selected = select_agents(args.goal)
 
     # Calculate optimal N based on complexity, user max, and rate limit
+    # When agents are explicitly specified, run all of them (ignore optimal_n)
     optimal_n = calculate_optimal_n(args.goal, user_max, rate_limit)
+    if args.agents:
+        optimal_n = max(optimal_n, len(selected))
     complexity = score_goal_complexity(args.goal)
 
     # Dry run: show selected agents and exit
@@ -370,6 +434,57 @@ def main():
         print(f"📋 Selected agents ({len(selected)}): {', '.join(selected)}")
         print(f"Using {optimal_n}/{user_max} agents (rate_limit={rate_limit}, complexity={complexity})")
         return
+
+    if args.watch:
+        # Streaming mode: start agents and poll for results
+        result = asyncio.run(run_swarm_parallel(
+            args.goal, optimal_n, selected,
+            watch=True,
+            output_file=args.output,
+            poll_interval_ms=args.poll_interval,
+            timeout_sec=args.timeout
+        ))
+        stream_file = result.get("stream_file")
+        poll_interval_sec = args.poll_interval / 1000.0
+        deadline = time.time() + args.timeout if args.timeout > 0 else None
+
+        print(f"🐝 Streaming mode enabled — output: {stream_file}")
+        print(f"📊 Polling every {poll_interval_sec:.1f}s | timeout={args.timeout}s")
+        print("─" * 60)
+
+        # Poll until all agents done or timeout
+        while True:
+            if os.path.exists(stream_file):
+                with open(stream_file, "r", encoding="utf-8") as f:
+                    state = json.load(f)
+                completed_count = state.get("completed_count", 0)
+                total_count = state.get("total_count", optimal_n)
+                running = state.get("running", [])
+                results_dict = state.get("results", {})
+
+                print(f"📈 {completed_count}/{total_count} complete | running: {running}")
+
+                if completed_count >= total_count:
+                    print("─" * 60)
+                    print(f"✅ All {total_count} agents finished!")
+                    for agent_id, agent_result in results_dict.items():
+                        status_icon = {"success": "✅", "warn": "⚠️", "error": "❌", "timeout": "⏱️"}.get(agent_result.get("status", "?"), "❓")
+                        print(f"{status_icon} [{agent_id}] {agent_result.get('name', agent_id)} ({agent_result.get('duration_ms', 0)}ms)")
+                    break
+
+            if deadline and time.time() >= deadline:
+                print(f"⏱️  Timeout after {args.timeout}s")
+                sys.exit(124)
+
+            time.sleep(poll_interval_sec)
+
+        # Exit with error count from final state
+        if os.path.exists(stream_file):
+            with open(stream_file, "r", encoding="utf-8") as f:
+                final_state = json.load(f)
+            error_count = sum(1 for r in final_state.get("results", {}).values() if r.get("status") in ("error", "timeout"))
+            sys.exit(min(error_count, 255))
+        sys.exit(0)
 
     result = asyncio.run(run_swarm_parallel(args.goal, optimal_n, selected))
 

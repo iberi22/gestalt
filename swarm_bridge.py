@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
 Gestalt Swarm — Parallel Agent Execution Bridge
 Called by OpenClaw skill/tool to execute N agents in parallel.

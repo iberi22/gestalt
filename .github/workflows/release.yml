@@ -196,7 +196,8 @@ jobs:
       - name: Prepare Release Binaries
         run: |
           cp release-assets/gestalt.exe release-assets/gestalt_timeline.exe
-          cp release-assets/app-release.apk release-assets/app-release.apk
+          mkdir -p release-assets/neural-link-app-android
+          cp release-assets/app-release.apk release-assets/neural-link-app-android/app-release.apk
 
       - name: Create Release
         uses: softprops/action-gh-release@v1

@@ -1,14 +1,76 @@
 {
    "_comment": "Feature tracking file for Cortex Cognitive Memory System.",
    "metadata": {
-      "project": "Cortex",
+      "project": "Gestalt-Rust",
       "created": "2026-03-05",
-      "last_verified": "2026-03-15",
-      "total_features": 5,
-      "passing": 3,
-      "failing": 1
+      "last_verified": "2026-04-15",
+      "total_features": 9,
+      "passing": 4,
+      "failing": 4
    },
    "features": [
+      {
+         "id": "feat-swarm-bridge",
+         "category": "automation",
+         "description": "Gestalt Swarm parallel exec bridge (Python asyncio)",
+         "steps": [
+            "Create swarm_bridge.py with asyncio parallel exec",
+            "Define 15 real CLI agents (rg, cargo, git, curl)",
+            "Delete gestalt_tui (no TUI, LLM UI instead)",
+            "Verify 91ms parallel execution for 3 agents",
+            "Register as OpenClaw tool (PENDING - issue #264)"
+         ],
+         "passes": true,
+         "verified_by": "manual",
+         "github_issue": null,
+         "last_tested": "2026-04-15",
+         "notes": "swarm_bridge.py at E:\scripts-python\gestalt-rust\swarm_bridge.py"
+      },
+      {
+         "id": "feat-swarm-smart-selection",
+         "category": "automation",
+         "description": "Smart goal to agent selection (keyword routing)",
+         "steps": [
+            "Implement select_agents(goal) function",
+            "Keyword matching for goal categorization",
+            "Fallback: run all relevant if ambiguous"
+         ],
+         "passes": false,
+         "verified_by": "none",
+         "github_issue": "263",
+         "last_tested": null,
+         "notes": "Pending implementation"
+      },
+      {
+         "id": "feat-swarm-dynamic-count",
+         "category": "automation",
+         "description": "Dynamic agent count based on rate limits and complexity",
+         "steps": [
+            "Configurable max_agents",
+            "Rate limit awareness",
+            "Complexity scoring for goals"
+         ],
+         "passes": false,
+         "verified_by": "none",
+         "github_issue": "265",
+         "last_tested": null,
+         "notes": "Pending implementation"
+      },
+      {
+         "id": "feat-swarm-streaming",
+         "category": "automation",
+         "description": "Streaming partial results as agents complete",
+         "steps": [
+            "Implement --watch flag",
+            "Output file with incremental writes",
+            "Polling from skill with timeout"
+         ],
+         "passes": false,
+         "verified_by": "none",
+         "github_issue": "266",
+         "last_tested": null,
+         "notes": "Pending implementation"
+      }
       {
          "id": "feat-unified-storage",
          "category": "core",

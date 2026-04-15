@@ -8,8 +8,7 @@ members = [
     "gestaltctl",
     "synapse-agentic",
     "gestalt_swarm",
-    "gestalt_tui",
-]
+    ]
 resolver = "2"
 
 [profile.dev-fast]

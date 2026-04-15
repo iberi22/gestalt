@@ -17,7 +17,6 @@ pub mod task_queue;
 #[cfg(feature = "telegram")]
 pub mod telegram;
 mod timeline;
-pub mod vfs;
 mod watch;
 
 pub use agent::{Agent, AgentService, AgentStatus, AgentType};
@@ -40,8 +39,8 @@ pub use task_queue::{QueuedTask, TaskQueue, TaskSource};
 #[cfg(feature = "telegram")]
 pub use telegram::TelegramService;
 pub use timeline::TimelineService;
-pub use vfs::{
+pub use gestalt_core::ports::outbound::vfs::{
     FileEventType, FileWatchEvent, FileWatcher, FlushError, FlushReport, LockStatus, OverlayFs,
-    PendingChange, VirtualFs,
+    PendingChange, VirtualFileSystem as VirtualFs,
 };
 pub use watch::WatchService;

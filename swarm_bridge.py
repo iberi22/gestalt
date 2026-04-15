@@ -37,7 +37,7 @@ AGENTS = [
     {
         "id": "code_analyzer",
         "name": "Code Analyzer",
-        "cmd": ["rg", "-c", ".", "E:\\scripts-python\\gestalt-rust\\src", "-g", "*.rs"],
+        "cmd": ["rg", "-c", ".", "E:\\scripts-python\\gestalt-rust", "-g", "*.rs"],
         "timeout": 15,
     },
     {
@@ -61,19 +61,19 @@ AGENTS = [
     {
         "id": "file_scanner",
         "name": "File Scanner",
-        "cmd": ["rg", "--files", "E:\\scripts-python\\gestalt-rust\\src"],
+        "cmd": ["rg", "--files", "E:\\scripts-python\\gestalt-rust"],
         "timeout": 10,
     },
     {
         "id": "log_parser",
         "name": "Log Parser",
-        "cmd": ["rg", "ERROR", "E:\\scripts-python\\gestalt-rust", "--type", "log", "-l"],
+        "cmd": ["rg", "ERROR", "E:\\scripts-python\\gestalt-rust", "-l"],
         "timeout": 10,
     },
     {
         "id": "security_audit",
         "name": "Security Audit",
-        "cmd": ["rg", "TODO|FIXME|XXX|unsafe", "E:\\scripts-python\\gestalt-rust\\src", "-l"],
+        "cmd": ["rg", "TODO|FIXME|XXX|unsafe", "E:\\scripts-python\\gestalt-rust", "-l"],
         "timeout": 15,
     },
     {
@@ -109,13 +109,13 @@ AGENTS = [
     {
         "id": "find_todos",
         "name": "TODO Finder",
-        "cmd": ["rg", "TODO|FIXME|HACK", "E:\\scripts-python\\gestalt-rust\\src", "-n", "--color", "never"],
+        "cmd": ["rg", "TODO|FIXME|HACK", "E:\\scripts-python\\gestalt-rust", "-n", "--color", "never"],
         "timeout": 10,
     },
     {
         "id": "rust_files",
         "name": "Rust Files",
-        "cmd": ["rg", "--files", "E:\\scripts-python\\gestalt-rust\\src", "--type", "rs"],
+        "cmd": ["rg", "--files", "E:\\scripts-python\\gestalt-rust", "--type", "rs"],
         "timeout": 10,
     },
     {
@@ -123,6 +123,36 @@ AGENTS = [
         "name": "Env Checker",
         "cmd": ["rg", "^[^#]", "E:\\scripts-python\\gestalt-rust\\.env.example"],
         "timeout": 5,
+    },
+    {
+        "id": "rust_analyzer",
+        "name": "Rust Analyzer",
+        "cmd": ["cargo", "check", "--manifest-path", "E:\\scripts-python\\gestalt-rust\\Cargo.toml", "--all-targets"],
+        "timeout": 60,
+    },
+    {
+        "id": "crate_count",
+        "name": "Crate Count",
+        "cmd": ["rg", "name ", "E:\\scripts-python\\gestalt-rust\\Cargo.toml"],
+        "timeout": 5,
+    },
+    {
+        "id": "readme_check",
+        "name": "README Check",
+        "cmd": ["rg", "-c", "README|QUICKSTART", "E:\\scripts-python\\gestalt-rust"],
+        "timeout": 5,
+    },
+    {
+        "id": "workflow_check",
+        "name": "Workflow Check",
+        "cmd": ["rg", "--files", "E:\\scripts-python\\gestalt-rust\\.github\\workflows"],
+        "timeout": 5,
+    },
+    {
+        "id": "vuln_check",
+        "name": "Vulnerability Check",
+        "cmd": ["cargo", "audit", "--manifest-path", "E:\\scripts-python\\gestalt-rust\\Cargo.toml"],
+        "timeout": 30,
     },
 ]
 

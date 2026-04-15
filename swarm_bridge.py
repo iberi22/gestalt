@@ -98,7 +98,7 @@ AGENTS = [
         "id": "cargo_check",
         "name": "Cargo Check",
         "cmd": ["cargo", "check", "--manifest-path", "E:\\scripts-python\\gestalt-rust\\Cargo.toml"],
-        "timeout": 30,
+        "timeout": 120,
     },
     {
         "id": "git_status",
@@ -115,7 +115,7 @@ AGENTS = [
     {
         "id": "rust_files",
         "name": "Rust Files",
-        "cmd": ["rg", "--files", "E:\\scripts-python\\gestalt-rust", "--type", "rs"],
+        "cmd": ["rg", "--files", "E:\\scripts-python\\gestalt-rust", "-g", "*.rs"],
         "timeout": 10,
     },
     {
@@ -128,7 +128,7 @@ AGENTS = [
         "id": "rust_analyzer",
         "name": "Rust Analyzer",
         "cmd": ["cargo", "check", "--manifest-path", "E:\\scripts-python\\gestalt-rust\\Cargo.toml", "--all-targets"],
-        "timeout": 60,
+        "timeout": 120,
     },
     {
         "id": "crate_count",
@@ -285,6 +285,8 @@ def run_agent_sync(agent: dict) -> dict:
             cmd,
             capture_output=True,
             text=True,
+            encoding='utf-8',
+            errors='replace',
             timeout=timeout,
             shell=False,
         )

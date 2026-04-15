@@ -6,8 +6,11 @@
 
 **Gestalt** is a universal AI agent platform with two core components:
 
-1. **Gestalt CLI** — Context-aware AI assistant for your terminal
-2. **Gestalt Swarm** — Parallel execution bridge for massive automation
+
+1. **Gestalt Swarm** — Parallel execution bridge for massive automation
+2. **Gestalt CLI** — Context-aware AI assistant for your terminal
+
+**[🚀 Quick Start — 5 min](QUICKSTART.md)** | **[📦 Install](#-installation)** | **[📂 Docs](.gitcore/ARCHITECTURE.md)**.
 
 ## 🐝 Gestalt Swarm (Primary Focus)
 

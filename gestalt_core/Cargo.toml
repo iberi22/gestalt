@@ -42,7 +42,7 @@ open = "5.3.3"
 # PKCE helpers
 sha2 = "0.10.8"
 base64 = "0.22.1"
-rand = "0.8.5"
+rand = "0.9.2"
 uuid = { version = "1.15.1", features = ["v4"] }
 mcp-protocol-sdk = "0.5.1"
 walkdir = "2.5.0"

@@ -6,12 +6,16 @@ Called by OpenClaw skill/tool to execute N agents in parallel.
 Usage:
     python swarm_bridge.py --goal "analyze gestalt-rust" --max-agents 10
     python swarm_bridge.py --goal "find todos" --agents 5 --json
+    python swarm_bridge.py --goal "analyze gestalt-rust codebase" --dry-run
+    python swarm_bridge.py --goal "comprehensive security audit" --max-agents 5 --rate-limit 50
+    GESTALT_MAX_AGENTS=20 GESTALT_RATE_LIMIT=50 python swarm_bridge.py --goal "deep analysis"
 """
 
 import argparse
 import asyncio
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -114,6 +118,121 @@ AGENTS = [
         "timeout": 5,
     },
 ]
+
+# ─────────────────────────────────────────────────────────────
+# COMPLEXITY SCORING
+# ─────────────────────────────────────────────────────────────
+
+def score_goal_complexity(goal: str) -> int:
+    """
+    Score goal complexity from 1-10 based on word count and keywords.
+    """
+    words = goal.split()
+    word_count = len(words)
+    goal_lower = goal.lower()
+
+    # Complex keywords indicate deeper analysis needed
+    complex_keywords = [
+        "analyze", "security", "audit", "deep", "comprehensive",
+        "refactor", "optimize", "benchmark", "performance", "vulnerability",
+        "migration", "architecture", "design", "review", "investigation",
+    ]
+    keyword_count = sum(1 for kw in complex_keywords if kw in goal_lower)
+
+    # Base score from word count (more words = more complex)
+    score = min(10, max(1, word_count // 3))
+
+    # Add weight for complex keywords
+    score += keyword_count * 2
+
+    return min(10, max(1, score))
+
+
+def calculate_optimal_n(goal: str, user_max: int, rate_limit: int) -> int:
+    """
+    Calculate optimal number of parallel agents based on:
+    - user_max: user's configured maximum (CLI flag or env)
+    - rate_limit: API rate limit (requests per minute)
+    - goal complexity: scored 1-10
+    """
+    complexity = score_goal_complexity(goal)
+    from_rate = rate_limit // 10
+    return min(user_max, from_rate, max(1, complexity))
+
+
+# ─────────────────────────────────────────────────────────────
+# CONFIGURATION — Environment + CLI
+# ─────────────────────────────────────────────────────────────
+
+def get_config() -> dict:
+    """
+    Load configuration from environment variables.
+    CLI flags override these values in main().
+    """
+    return {
+        "max_agents": int(os.environ.get("GESTALT_MAX_AGENTS", "10")),
+        "rate_limit": int(os.environ.get("GESTALT_RATE_LIMIT", "100")),
+    }
+
+
+# ─────────────────────────────────────────────────────────────
+# SMART AGENT SELECTION
+# ─────────────────────────────────────────────────────────────
+
+def select_agents(goal: str) -> list[str]:
+    """
+    Analyze goal keywords and return list of relevant agent IDs.
+    Falls back to code_analyzer + file_scanner if no keywords match.
+    """
+    goal_lower = goal.lower()
+
+    selected = set()
+
+    # analyze + code → code_analyzer, file_scanner, security_audit
+    if "analyze" in goal_lower and "code" in goal_lower:
+        selected.update(["code_analyzer", "file_scanner", "security_audit"])
+
+    # deps / dependencies → dep_check, cargo_check
+    if any(kw in goal_lower for kw in ["deps", "dependencies", "dependancy"]):
+        selected.update(["dep_check", "cargo_check"])
+
+    # git / commit / history → git_analyzer, git_status
+    if any(kw in goal_lower for kw in ["git", "commit", "history", "log"]):
+        selected.update(["git_analyzer", "git_status"])
+
+    # api / endpoint / http → api_tester
+    if any(kw in goal_lower for kw in ["api", "endpoint", "http", "rest"]):
+        selected.update(["api_tester"])
+
+    # todo / fixme / hack → find_todos
+    if any(kw in goal_lower for kw in ["todo", "fixme", "hack", "xxx"]):
+        selected.update(["find_todos"])
+
+    # security / audit / vuln → security_audit, find_todos
+    if any(kw in goal_lower for kw in ["security", "audit", "vuln", "vulnerability"]):
+        selected.update(["security_audit", "find_todos"])
+
+    # env / environment / config → env_check
+    if any(kw in goal_lower for kw in ["env", "environment", "config", "variable"]):
+        selected.update(["env_check"])
+
+    # file / list / scan → file_scanner, rust_files
+    if any(kw in goal_lower for kw in ["file", "list", "scan", "directory"]):
+        selected.update(["file_scanner", "rust_files"])
+
+    # doc / docs / readme → doc_gen
+    if any(kw in goal_lower for kw in ["doc", "docs", "readme", "documentation"]):
+        selected.update(["doc_gen"])
+
+    # metric / size / binary → metrics
+    if any(kw in goal_lower for kw in ["metric", "size", "binary", "stats"]):
+        selected.update(["metrics"])
+
+    # If nothing matched, default to code analysis
+    if not selected:
+        selected.update(["code_analyzer", "file_scanner"])
+
+    return list(selected)
 
 
 def run_agent_sync(agent: dict) -> dict:
@@ -221,14 +340,37 @@ async def run_agent_async(agent: dict) -> dict:
 def main():
     parser = argparse.ArgumentParser(description="Gestalt Swarm Bridge")
     parser.add_argument("--goal", type=str, required=True, help="Goal to execute")
-    parser.add_argument("--max-agents", type=int, default=10, help="Max agents to run")
-    parser.add_argument("--agents", type=str, default=None, help="Comma-separated agent IDs")
+    parser.add_argument("--max-agents", type=int, default=None, help="Max agents to run (default: 10)")
+    parser.add_argument("--rate-limit", type=int, default=None, help="Rate limit per minute (default: 100)")
+    parser.add_argument("--agents", type=str, default=None, help="Comma-separated agent IDs (overrides auto-selection)")
+    parser.add_argument("--dry-run", action="store_true", help="Show which agents would be selected without running")
     parser.add_argument("--json", action="store_true", help="Output JSON only")
     parser.add_argument("--quiet", action="store_true", help="Minimal output")
     args = parser.parse_args()
 
-    selected = args.agents.split(",") if args.agents else None
-    result = asyncio.run(run_swarm_parallel(args.goal, args.max_agents, selected))
+    # Load config: CLI flags override environment variables
+    cfg = get_config()
+    user_max = args.max_agents if args.max_agents is not None else cfg["max_agents"]
+    rate_limit = args.rate_limit if args.rate_limit is not None else cfg["rate_limit"]
+
+    # Smart agent selection or manual override
+    if args.agents:
+        selected = args.agents.split(",")
+    else:
+        selected = select_agents(args.goal)
+
+    # Calculate optimal N based on complexity, user max, and rate limit
+    optimal_n = calculate_optimal_n(args.goal, user_max, rate_limit)
+    complexity = score_goal_complexity(args.goal)
+
+    # Dry run: show selected agents and exit
+    if args.dry_run:
+        print(f"🐝 Goal: {args.goal}")
+        print(f"📋 Selected agents ({len(selected)}): {', '.join(selected)}")
+        print(f"Using {optimal_n}/{user_max} agents (rate_limit={rate_limit}, complexity={complexity})")
+        return
+
+    result = asyncio.run(run_swarm_parallel(args.goal, optimal_n, selected))
 
     if args.json:
         print(json.dumps(result, indent=2))
@@ -239,6 +381,7 @@ def main():
     else:
         # Human-readable output
         print(f"🐝 Gestalt Swarm — Goal: {result['goal']}")
+        print(f"Using {optimal_n}/{user_max} agents (rate_limit={rate_limit}, complexity={complexity})")
         print(f"⏱️  Duration: {result['duration_ms']}ms | ✅ {result['stats']['successful']} | ⚠️ {result['stats']['warnings']} | ❌ {result['stats']['errors']}")
         print("─" * 60)
         for agent in result["agents"]:

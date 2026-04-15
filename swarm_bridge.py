@@ -297,9 +297,9 @@ def run_agent_sync(agent: dict) -> dict:
             "status": "success" if result.returncode == 0 else "warn",
             "returncode": result.returncode,
             "duration_ms": duration_ms,
-            "stdout": result.stdout.strip()[:2000],
-            "stderr": result.stderr.strip()[:500] if result.stderr else "",
-            "lines": result.stdout.strip().split("\n"),
+            "stdout": (result.stdout or "").strip()[:2000],
+            "stderr": (result.stderr or "").strip()[:500],
+            "lines": (result.stdout or "").strip().split("\n"),
         }
     except subprocess.TimeoutExpired:
         return {

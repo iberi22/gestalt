@@ -440,7 +440,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             match result {
                 Ok(result) => {
                     info!("Tool {} executed successfully", tool);
-                    println!("{}", serde_json::to_string_pretty(&result).unwrap());
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&result).expect("Failed to serialize result")
+                    );
                 }
                 Err(e) => {
                     error!("Failed to execute tool {}: {}", tool, e);

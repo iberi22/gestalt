@@ -358,7 +358,7 @@ impl<H: ReplHandler + Default> InteractiveRepl<H> {
 
 impl<H: ReplHandler + Default> Default for InteractiveRepl<H> {
     fn default() -> Self {
-        InteractiveRepl::new().unwrap()
+        InteractiveRepl::new().expect("Failed to initialize interactive REPL")
     }
 }
 

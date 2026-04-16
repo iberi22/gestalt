@@ -397,7 +397,7 @@ pub mod prelude {
 
     impl std::fmt::Debug for ToolRegistry {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            f.debug_struct("ToolRegistry").finish()
+            f.debug_struct("ToolRegistry").finish_non_exhaustive()
         }
     }
 
@@ -419,17 +419,15 @@ pub mod prelude {
         pub async fn call(
             &self,
             name: &str,
-            _ctx: &EmptyContext,
+            ctx: &dyn ToolContext,
             args: Value,
         ) -> anyhow::Result<Value> {
-            let tool = {
-                let tools = self.tools.read().await;
-                tools
-                    .get(name)
-                    .cloned()
-                    .ok_or_else(|| anyhow::anyhow!("Tool '{}' not found", name))?
-            };
-            tool.call(&EmptyContext, args).await
+            let tools = self.tools.read().await;
+            if let Some(tool) = tools.get(name) {
+                tool.call(ctx, args).await
+            } else {
+                Err(anyhow::anyhow!("Tool not found: {}", name))
+            }
         }
     }
 

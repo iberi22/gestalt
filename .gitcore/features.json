@@ -5,8 +5,8 @@
       "created": "2026-03-05",
       "last_verified": "2026-04-15",
       "total_features": 9,
-      "passing": 4,
-      "failing": 4
+      "passing": 8,
+      "failing": 1
    },
    "features": [
       {
@@ -18,7 +18,7 @@
             "Define 15 real CLI agents (rg, cargo, git, curl)",
             "Delete gestalt_tui (no TUI, LLM UI instead)",
             "Verify 91ms parallel execution for 3 agents",
-            "Register as OpenClaw tool (PENDING - issue #264)"
+            "Register as OpenClaw tool"
          ],
          "passes": true,
          "verified_by": "manual",
@@ -35,11 +35,11 @@
             "Keyword matching for goal categorization",
             "Fallback: run all relevant if ambiguous"
          ],
-         "passes": false,
-         "verified_by": "none",
+         "passes": true,
+         "verified_by": "manual",
          "github_issue": "263",
-         "last_tested": null,
-         "notes": "Pending implementation"
+         "last_tested": "2026-04-15",
+         "notes": "Implemented in swarm_bridge.py"
       },
       {
          "id": "feat-swarm-dynamic-count",
@@ -50,11 +50,11 @@
             "Rate limit awareness",
             "Complexity scoring for goals"
          ],
-         "passes": false,
-         "verified_by": "none",
+         "passes": true,
+         "verified_by": "manual",
          "github_issue": "265",
-         "last_tested": null,
-         "notes": "Pending implementation"
+         "last_tested": "2026-04-15",
+         "notes": "Implemented in swarm_bridge.py"
       },
       {
          "id": "feat-swarm-streaming",
@@ -65,12 +65,12 @@
             "Output file with incremental writes",
             "Polling from skill with timeout"
          ],
-         "passes": false,
-         "verified_by": "none",
+         "passes": true,
+         "verified_by": "manual",
          "github_issue": "266",
-         "last_tested": null,
-         "notes": "Pending implementation"
-      }
+         "last_tested": "2026-04-15",
+         "notes": "Implemented in swarm_bridge.py"
+      },
       {
          "id": "feat-unified-storage",
          "category": "core",

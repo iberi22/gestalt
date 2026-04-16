@@ -30,6 +30,13 @@ from datetime import datetime, timezone
 from typing import Any
 
 # ─────────────────────────────────────────────────────────────
+# REPO CONFIGURATION
+# ─────────────────────────────────────────────────────────────
+
+# Dynamic repository root (absolute path)
+REPO_ROOT = os.path.abspath(os.path.dirname(__file__))
+
+# ─────────────────────────────────────────────────────────────
 # AGENT DEFINITIONS — Real CLI commands
 # ─────────────────────────────────────────────────────────────
 
@@ -37,55 +44,55 @@ AGENTS = [
     {
         "id": "code_analyzer",
         "name": "Code Analyzer",
-        "cmd": ["rg", "-c", ".", "E:\\scripts-python\\gestalt-rust", "-g", "*.rs"],
+        "cmd": ["rg", "-c", ".", REPO_ROOT, "-g", "*.rs"],
         "timeout": 15,
     },
     {
         "id": "dep_check",
         "name": "Dependency Check",
-        "cmd": ["cargo", "tree", "--manifest-path", "E:\\scripts-python\\gestalt-rust\\Cargo.toml", "--depth", "1", "--format", "plain"],
+        "cmd": ["cargo", "tree", "--manifest-path", os.path.join(REPO_ROOT, "Cargo.toml"), "--depth", "1", "--format", "plain"],
         "timeout": 30,
     },
     {
         "id": "test_runner",
         "name": "Cargo Check",
-        "cmd": ["cargo", "check", "--manifest-path", "E:\\scripts-python\\gestalt-rust\\Cargo.toml", "--message-format=short"],
+        "cmd": ["cargo", "check", "--manifest-path", os.path.join(REPO_ROOT, "Cargo.toml"), "--message-format=short"],
         "timeout": 60,
     },
     {
         "id": "git_analyzer",
         "name": "Git Analyzer",
-        "cmd": ["git", "-C", "E:\\scripts-python\\gestalt-rust", "log", "--oneline", "-20"],
+        "cmd": ["git", "-C", REPO_ROOT, "log", "--oneline", "-20"],
         "timeout": 10,
     },
     {
         "id": "file_scanner",
         "name": "File Scanner",
-        "cmd": ["rg", "--files", "E:\\scripts-python\\gestalt-rust"],
+        "cmd": ["rg", "--files", REPO_ROOT],
         "timeout": 10,
     },
     {
         "id": "log_parser",
         "name": "Log Parser",
-        "cmd": ["rg", "ERROR", "E:\\scripts-python\\gestalt-rust", "-l"],
+        "cmd": ["rg", "ERROR", REPO_ROOT, "--type", "log", "-l"],
         "timeout": 10,
     },
     {
         "id": "security_audit",
         "name": "Security Audit",
-        "cmd": ["rg", "TODO|FIXME|XXX|unsafe", "E:\\scripts-python\\gestalt-rust", "-l"],
+        "cmd": ["rg", "TODO|FIXME|XXX|unsafe", REPO_ROOT, "-l"],
         "timeout": 15,
     },
     {
         "id": "metrics",
         "name": "Cargo Stats",
-        "cmd": ["cargo", "tree", "--manifest-path", "E:\\scripts-python\\gestalt-rust\\Cargo.toml", "--depth", "2"],
+        "cmd": ["cargo", "tree", "--manifest-path", os.path.join(REPO_ROOT, "Cargo.toml"), "--depth", "2"],
         "timeout": 20,
     },
     {
         "id": "doc_gen",
         "name": "Doc Generator",
-        "cmd": ["rg", "--type", "md", "-l", ".", "E:\\scripts-python\\gestalt-rust"],
+        "cmd": ["rg", "--type", "md", "-l", ".", REPO_ROOT],
         "timeout": 10,
     },
     {
@@ -97,62 +104,32 @@ AGENTS = [
     {
         "id": "cargo_check",
         "name": "Cargo Check",
-        "cmd": ["cargo", "check", "--manifest-path", "E:\\scripts-python\\gestalt-rust\\Cargo.toml"],
-        "timeout": 120,
+        "cmd": ["cargo", "check", "--manifest-path", os.path.join(REPO_ROOT, "Cargo.toml")],
+        "timeout": 30,
     },
     {
         "id": "git_status",
         "name": "Git Status",
-        "cmd": ["git", "-C", "E:\\scripts-python\\gestalt-rust", "status", "--short"],
+        "cmd": ["git", "-C", REPO_ROOT, "status", "--short"],
         "timeout": 5,
     },
     {
         "id": "find_todos",
         "name": "TODO Finder",
-        "cmd": ["rg", "TODO|FIXME|HACK", "E:\\scripts-python\\gestalt-rust", "-n", "--color", "never"],
+        "cmd": ["rg", "TODO|FIXME|HACK", REPO_ROOT, "-n", "--color", "never"],
         "timeout": 10,
     },
     {
         "id": "rust_files",
         "name": "Rust Files",
-        "cmd": ["rg", "--files", "E:\\scripts-python\\gestalt-rust", "-g", "*.rs"],
+        "cmd": ["rg", "--files", REPO_ROOT, "--type", "rs"],
         "timeout": 10,
     },
     {
         "id": "env_check",
         "name": "Env Checker",
-        "cmd": ["rg", "^[^#]", "E:\\scripts-python\\gestalt-rust\\.env.example"],
+        "cmd": ["rg", "^[^#]", os.path.join(REPO_ROOT, ".env.example")],
         "timeout": 5,
-    },
-    {
-        "id": "rust_analyzer",
-        "name": "Rust Analyzer",
-        "cmd": ["cargo", "check", "--manifest-path", "E:\\scripts-python\\gestalt-rust\\Cargo.toml", "--all-targets"],
-        "timeout": 120,
-    },
-    {
-        "id": "crate_count",
-        "name": "Crate Count",
-        "cmd": ["rg", "name ", "E:\\scripts-python\\gestalt-rust\\Cargo.toml"],
-        "timeout": 5,
-    },
-    {
-        "id": "readme_check",
-        "name": "README Check",
-        "cmd": ["rg", "-c", "README|QUICKSTART", "E:\\scripts-python\\gestalt-rust"],
-        "timeout": 5,
-    },
-    {
-        "id": "workflow_check",
-        "name": "Workflow Check",
-        "cmd": ["rg", "--files", "E:\\scripts-python\\gestalt-rust\\.github\\workflows"],
-        "timeout": 5,
-    },
-    {
-        "id": "vuln_check",
-        "name": "Vulnerability Check",
-        "cmd": ["cargo", "audit", "--manifest-path", "E:\\scripts-python\\gestalt-rust\\Cargo.toml"],
-        "timeout": 30,
     },
 ]
 
@@ -285,8 +262,6 @@ def run_agent_sync(agent: dict) -> dict:
             cmd,
             capture_output=True,
             text=True,
-            encoding='utf-8',
-            errors='replace',
             timeout=timeout,
             shell=False,
         )
@@ -297,9 +272,9 @@ def run_agent_sync(agent: dict) -> dict:
             "status": "success" if result.returncode == 0 else "warn",
             "returncode": result.returncode,
             "duration_ms": duration_ms,
-            "stdout": (result.stdout or "").strip()[:2000],
-            "stderr": (result.stderr or "").strip()[:500],
-            "lines": (result.stdout or "").strip().split("\n"),
+            "stdout": result.stdout.strip()[:2000],
+            "stderr": result.stderr.strip()[:500] if result.stderr else "",
+            "lines": result.stdout.strip().split("\n"),
         }
     except subprocess.TimeoutExpired:
         return {

@@ -8,9 +8,9 @@ use tokio::task::JoinSet;
 use tokio::time::{Duration, Instant};
 use tracing::info;
 
-use crate::services::vfs::{
+use gestalt_core::ports::outbound::vfs::{
     FileEventType, FileWatchEvent, FileWatcher, FlushError, FlushReport, LockStatus, PendingChange,
-    VirtualFs,
+    VirtualFileSystem as VirtualFs,
 };
 
 /// Core FileManager Actor implementation.
@@ -138,18 +138,7 @@ impl FileManager {
 
 #[async_trait]
 impl VirtualFs for FileManager {
-    async fn read_to_string(&self, path: &Path) -> Result<String> {
-        let (reply, rx) = oneshot::channel();
-        self.sender
-            .send(FileCommand::ReadFile {
-                path: path.to_path_buf(),
-                reply,
-            })
-            .await?;
-        rx.await?
-    }
-
-    async fn read_bytes(&self, path: &Path) -> Result<Vec<u8>> {
+    async fn read(&self, path: &Path) -> Result<Vec<u8>> {
         let (reply, rx) = oneshot::channel();
         self.sender
             .send(FileCommand::ReadBytes {
@@ -160,20 +149,7 @@ impl VirtualFs for FileManager {
         rx.await?
     }
 
-    async fn write_string(&self, path: &Path, content: String, owner: &str) -> Result<()> {
-        let (reply, rx) = oneshot::channel();
-        self.sender
-            .send(FileCommand::WriteString {
-                path: path.to_path_buf(),
-                content,
-                owner: owner.to_string(),
-                reply,
-            })
-            .await?;
-        rx.await?
-    }
-
-    async fn write_bytes(&self, path: &Path, data: Vec<u8>, owner: &str) -> Result<()> {
+    async fn write(&self, path: &Path, data: Vec<u8>, owner: &str) -> Result<()> {
         let (reply, rx) = oneshot::channel();
         self.sender
             .send(FileCommand::WriteBytes {
@@ -184,6 +160,51 @@ impl VirtualFs for FileManager {
             })
             .await?;
         rx.await?
+    }
+
+    async fn list(&self, path: &Path) -> Result<Vec<PathBuf>> {
+        // FileManager doesn't have a direct List command yet, we'll simulate or add one.
+        // For now, let's list from disk and merge with pending dirs/files.
+        let mut entries = HashSet::new();
+
+        // This is a bit inefficient as it requires roundtrips to the actor for pending state
+        let pending = self.pending_changes().await;
+        for change in pending {
+            let p = match change {
+                PendingChange::CreateDir { path } => path,
+                PendingChange::WriteFile { path, .. } => path,
+            };
+            if let Some(parent) = p.parent() {
+                if parent == path {
+                    entries.insert(p);
+                }
+            }
+        }
+
+        if tokio::fs::metadata(path).await.is_ok() {
+            let mut dir = tokio::fs::read_dir(path).await?;
+            while let Some(entry) = dir.next_entry().await? {
+                entries.insert(entry.path());
+            }
+        }
+
+        let mut result: Vec<_> = entries.into_iter().collect();
+        result.sort();
+        Ok(result)
+    }
+
+    async fn exists(&self, path: &Path) -> Result<bool> {
+        let pending = self.pending_changes().await;
+        for change in pending {
+            let p = match change {
+                PendingChange::CreateDir { path } => path,
+                PendingChange::WriteFile { path, .. } => path,
+            };
+            if p == path {
+                return Ok(true);
+            }
+        }
+        Ok(tokio::fs::metadata(path).await.is_ok())
     }
 
     async fn create_dir_all(&self, path: &Path) -> Result<()> {

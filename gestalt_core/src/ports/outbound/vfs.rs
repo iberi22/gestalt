@@ -56,11 +56,30 @@ pub struct FileWatchEvent {
 }
 
 #[async_trait]
-pub trait VirtualFs: Send + Sync {
-    async fn read_to_string(&self, path: &Path) -> Result<String>;
-    async fn read_bytes(&self, path: &Path) -> Result<Vec<u8>>;
-    async fn write_string(&self, path: &Path, content: String, owner: &str) -> Result<()>;
-    async fn write_bytes(&self, path: &Path, data: Vec<u8>, owner: &str) -> Result<()>;
+pub trait VirtualFileSystem: Send + Sync {
+    async fn read(&self, path: &Path) -> Result<Vec<u8>>;
+    async fn write(&self, path: &Path, data: Vec<u8>, owner: &str) -> Result<()>;
+    async fn list(&self, path: &Path) -> Result<Vec<PathBuf>>;
+    async fn exists(&self, path: &Path) -> Result<bool>;
+
+    // Extended/Compatibility methods
+    async fn read_to_string(&self, path: &Path) -> Result<String> {
+        let bytes = self.read(path).await?;
+        Ok(String::from_utf8(bytes)?)
+    }
+
+    async fn read_bytes(&self, path: &Path) -> Result<Vec<u8>> {
+        self.read(path).await
+    }
+
+    async fn write_string(&self, path: &Path, content: String, owner: &str) -> Result<()> {
+        self.write(path, content.into_bytes(), owner).await
+    }
+
+    async fn write_bytes(&self, path: &Path, data: Vec<u8>, owner: &str) -> Result<()> {
+        self.write(path, data, owner).await
+    }
+
     async fn create_dir_all(&self, path: &Path) -> Result<()>;
     async fn flush(&self) -> Result<FlushReport>;
     async fn pending_changes(&self) -> Vec<PendingChange>;
@@ -95,20 +114,8 @@ impl OverlayFs {
 }
 
 #[async_trait]
-impl VirtualFs for OverlayFs {
-    async fn read_to_string(&self, path: &Path) -> Result<String> {
-        let state = self.state.lock().await;
-        if let Some(content) = state.text_files.get(path) {
-            return Ok(content.clone());
-        }
-        if let Some(bytes) = state.binary_files.get(path) {
-            return Ok(String::from_utf8(bytes.clone())?);
-        }
-        drop(state);
-        Ok(tokio::fs::read_to_string(path).await?)
-    }
-
-    async fn read_bytes(&self, path: &Path) -> Result<Vec<u8>> {
+impl VirtualFileSystem for OverlayFs {
+    async fn read(&self, path: &Path) -> Result<Vec<u8>> {
         let state = self.state.lock().await;
         if let Some(content) = state.binary_files.get(path) {
             return Ok(content.clone());
@@ -120,26 +127,7 @@ impl VirtualFs for OverlayFs {
         Ok(tokio::fs::read(path).await?)
     }
 
-    async fn write_string(&self, path: &Path, content: String, owner: &str) -> Result<()> {
-        let mut state = self.state.lock().await;
-        match state.locks.get(path) {
-            Some(current_owner) if current_owner != owner => {
-                anyhow::bail!(
-                    "lock conflict for '{}': held by '{}'",
-                    path.display(),
-                    current_owner
-                );
-            }
-            _ => {
-                state.locks.insert(path.to_path_buf(), owner.to_string());
-            }
-        }
-        state.binary_files.remove(path);
-        state.text_files.insert(path.to_path_buf(), content);
-        Ok(())
-    }
-
-    async fn write_bytes(&self, path: &Path, data: Vec<u8>, owner: &str) -> Result<()> {
+    async fn write(&self, path: &Path, data: Vec<u8>, owner: &str) -> Result<()> {
         let mut state = self.state.lock().await;
         match state.locks.get(path) {
             Some(current_owner) if current_owner != owner => {
@@ -156,6 +144,55 @@ impl VirtualFs for OverlayFs {
         state.text_files.remove(path);
         state.binary_files.insert(path.to_path_buf(), data);
         Ok(())
+    }
+
+    async fn list(&self, path: &Path) -> Result<Vec<PathBuf>> {
+        let state = self.state.lock().await;
+        let mut entries = HashSet::new();
+
+        // Overlay files
+        for p in state.text_files.keys().chain(state.binary_files.keys()) {
+            if let Some(parent) = p.parent() {
+                if parent == path {
+                    entries.insert(p.clone());
+                }
+            }
+        }
+
+        // Overlay dirs
+        for p in &state.dirs {
+            if let Some(parent) = p.parent() {
+                if parent == path {
+                    entries.insert(p.clone());
+                }
+            }
+        }
+
+        drop(state);
+
+        // Real filesystem
+        if tokio::fs::metadata(path).await.is_ok() {
+            let mut dir = tokio::fs::read_dir(path).await?;
+            while let Some(entry) = dir.next_entry().await? {
+                entries.insert(entry.path());
+            }
+        }
+
+        let mut result: Vec<_> = entries.into_iter().collect();
+        result.sort();
+        Ok(result)
+    }
+
+    async fn exists(&self, path: &Path) -> Result<bool> {
+        let state = self.state.lock().await;
+        if state.text_files.contains_key(path)
+            || state.binary_files.contains_key(path)
+            || state.dirs.contains(path)
+        {
+            return Ok(true);
+        }
+        drop(state);
+        Ok(tokio::fs::metadata(path).await.is_ok())
     }
 
     async fn create_dir_all(&self, path: &Path) -> Result<()> {
@@ -342,6 +379,60 @@ impl VirtualFs for OverlayFs {
     }
 }
 
+pub struct RealFileSystem;
+
+#[async_trait]
+impl VirtualFileSystem for RealFileSystem {
+    async fn read(&self, path: &Path) -> Result<Vec<u8>> {
+        Ok(tokio::fs::read(path).await?)
+    }
+
+    async fn write(&self, path: &Path, data: Vec<u8>, _owner: &str) -> Result<()> {
+        if let Some(parent) = path.parent() {
+            tokio::fs::create_dir_all(parent).await?;
+        }
+        Ok(tokio::fs::write(path, data).await?)
+    }
+
+    async fn list(&self, path: &Path) -> Result<Vec<PathBuf>> {
+        let mut entries = Vec::new();
+        let mut dir = tokio::fs::read_dir(path).await?;
+        while let Some(entry) = dir.next_entry().await? {
+            entries.push(entry.path());
+        }
+        entries.sort();
+        Ok(entries)
+    }
+
+    async fn exists(&self, path: &Path) -> Result<bool> {
+        Ok(tokio::fs::metadata(path).await.is_ok())
+    }
+
+    async fn create_dir_all(&self, path: &Path) -> Result<()> {
+        Ok(tokio::fs::create_dir_all(path).await?)
+    }
+
+    async fn flush(&self) -> Result<FlushReport> {
+        Ok(FlushReport::default())
+    }
+
+    async fn pending_changes(&self) -> Vec<PendingChange> {
+        Vec::new()
+    }
+
+    async fn acquire_lock(&self, _path: &Path, _owner: &str) -> Result<LockStatus> {
+        Ok(LockStatus::Acquired)
+    }
+
+    async fn release_locks(&self, _owner: &str) {}
+
+    async fn discard(&self) {}
+
+    async fn version(&self) -> u64 {
+        0
+    }
+}
+
 impl FileWatcher for OverlayFs {
     fn watch(&self, path: PathBuf, interval: Duration) -> mpsc::Receiver<FileWatchEvent> {
         let (tx, rx) = mpsc::channel(128);
@@ -432,7 +523,10 @@ impl FileWatcher for OverlayFs {
 
 #[cfg(test)]
 mod tests {
-    use super::{FileEventType, FileWatcher, LockStatus, OverlayFs, PendingChange, VirtualFs};
+    use super::{
+        FileEventType, FileWatcher, LockStatus, OverlayFs, PendingChange, RealFileSystem,
+        VirtualFileSystem,
+    };
     use anyhow::Result;
     use tempfile::tempdir;
     use tokio::time::Duration;
@@ -585,6 +679,38 @@ mod tests {
         }
 
         assert!(seen);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_minimal_vfs_methods() -> Result<()> {
+        let tmp = tempdir()?;
+        let dir = tmp.path().to_path_buf();
+        let file = dir.join("minimal.txt");
+
+        // Test with RealFileSystem
+        let real_vfs = RealFileSystem;
+        real_vfs
+            .write(&file, b"hello minimal".to_vec(), "owner")
+            .await?;
+        assert!(real_vfs.exists(&file).await?);
+        let data = real_vfs.read(&file).await?;
+        assert_eq!(data, b"hello minimal");
+        let list = real_vfs.list(&dir).await?;
+        assert!(list.contains(&file));
+
+        // Test with OverlayFs
+        let overlay_vfs = OverlayFs::new();
+        let overlay_file = dir.join("overlay_minimal.txt");
+        overlay_vfs
+            .write(&overlay_file, b"hello overlay minimal".to_vec(), "owner")
+            .await?;
+        assert!(overlay_vfs.exists(&overlay_file).await?);
+        let data = overlay_vfs.read(&overlay_file).await?;
+        assert_eq!(data, b"hello overlay minimal");
+        let list = overlay_vfs.list(&dir).await?;
+        assert!(list.contains(&overlay_file));
+
         Ok(())
     }
 }

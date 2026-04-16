@@ -17,7 +17,6 @@ pub mod task_queue;
 #[cfg(feature = "telegram")]
 pub mod telegram;
 mod timeline;
-pub mod vfs;
 mod watch;
 
 pub use agent::{Agent, AgentService, AgentStatus, AgentType};
@@ -26,6 +25,10 @@ pub use auth::AuthService;
 pub use context_compaction::{CompactionOutcome, ContextCompactor};
 pub use dispatcher::DispatcherService;
 pub use file_manager::{FileManager, FileManagerActor, FileState};
+pub use gestalt_core::ports::outbound::vfs::{
+    FileEventType, FileWatchEvent, FileWatcher, FlushError, FlushReport, LockStatus, OverlayFs,
+    PendingChange, VirtualFileSystem as VirtualFs,
+};
 pub use index::IndexService;
 pub use memory::{MemoryFragment, MemoryService};
 pub use project::ProjectService;
@@ -40,8 +43,4 @@ pub use task_queue::{QueuedTask, TaskQueue, TaskSource};
 #[cfg(feature = "telegram")]
 pub use telegram::TelegramService;
 pub use timeline::TimelineService;
-pub use vfs::{
-    FileEventType, FileWatchEvent, FileWatcher, FlushError, FlushReport, LockStatus, OverlayFs,
-    PendingChange, VirtualFs,
-};
 pub use watch::WatchService;

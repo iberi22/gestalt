@@ -6,7 +6,7 @@ edition = "2021"
 [dependencies]
 anyhow = "1.0"
 async-trait = "0.1"
-octocrab = "0.38.0"
+octocrab = "0.43.0"
 tracing = "0.1"
 uuid = { version = "1.15.1", features = ["v4"] }
 url = "2.5.4"

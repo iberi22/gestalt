@@ -322,29 +322,27 @@ impl FileWatcher for FileManager {
 
                 for (p, state) in &current {
                     match known.get(p) {
-                        None => {
-                            if tx
-                                .send(FileWatchEvent {
-                                    path: p.clone(),
-                                    event_type: FileEventType::Created,
-                                })
-                                .await
-                                .is_err()
-                            {
-                                return;
-                            }
+                        None if tx
+                            .send(FileWatchEvent {
+                                path: p.clone(),
+                                event_type: FileEventType::Created,
+                            })
+                            .await
+                            .is_err() =>
+                        {
+                            return;
                         }
-                        Some(old) if old != state => {
-                            if tx
-                                .send(FileWatchEvent {
-                                    path: p.clone(),
-                                    event_type: FileEventType::Modified,
-                                })
-                                .await
-                                .is_err()
-                            {
-                                return;
-                            }
+                        Some(old)
+                            if old != state
+                                && tx
+                                    .send(FileWatchEvent {
+                                        path: p.clone(),
+                                        event_type: FileEventType::Modified,
+                                    })
+                                    .await
+                                    .is_err() =>
+                        {
+                            return;
                         }
                         _ => {}
                     }

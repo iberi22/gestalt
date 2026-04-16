@@ -14,9 +14,6 @@ on:
   schedule:
     - cron: '0 6 * * 1'  # Mondays at 6 AM UTC
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 jobs:
   plan:
     runs-on: ubuntu-latest
@@ -25,7 +22,7 @@ jobs:
       issues: write
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           sparse-checkout: |
             .gitcore/ARCHITECTURE.md
@@ -44,18 +41,18 @@ jobs:
           echo "Planning Agent execution..."
           echo "Objective: ${{ github.event.inputs.objective }}"
           echo "Architecture file parsed successfully"
-          
+
           # In real implementation, would use AI to generate issues
           # For now, create a placeholder issue
-          
+
           cat << 'EOF' > issue_draft.md
           # Planned Issue Draft
-          
+
           Generated from ARCHITECTURE.md planning cycle
-          
+
           TODO: Implement based on architecture decisions
           EOF
-          
+
           echo "Issue draft created: issue_draft.md"
 
       - name: List Pending Issues

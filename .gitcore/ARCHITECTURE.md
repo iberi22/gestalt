@@ -61,7 +61,12 @@
 **Rationale:** Standardizes resiliency, supervision (auto-restart on panic), and failover strategies.
 **Implementation:** `AgentRuntime` leverages `synapse_agentic::framework::Hive` for agent supervision and inter-agent communication.
 
-### 8. Minimal Compile Graph by Default
+### 8. Parallel Execution Swarm (Gestalt Swarm)
+**Decision:** Implement a parallel execution bridge for high-throughput CLI agent tasks.
+**Rationale:** Sequential execution of diagnostic tools (rg, cargo, git) is too slow for real-time agent feedback.
+**Implementation:** `swarm_bridge.py` uses Python `asyncio` to spawn N concurrent processes, providing consolidated JSON results. It serves as a parallel execution layer rather than a UI component.
+
+### 9. Minimal Compile Graph by Default
 **Decision:** Heavy integrations must be isolated in infrastructure crates and activated by explicit Cargo features.
 **Rationale:** Reduce local feedback time and keep domain logic independent from vendor SDKs.
 **Implementation:**

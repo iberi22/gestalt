@@ -169,8 +169,16 @@ Crates like `gestalt_core` use `thiserror` to define exhaustive error enums:
 
 ## Security Considerations
 
-### 1. VFS Isolation
-Agents do not write directly to the host filesystem. Every agent operates within an `OverlayFs`. Changes are staged in memory and only flushed to disk after validation or human approval. Path traversal is prevented by strictly validating paths against the workspace root.
+### 1. VFS Isolation & Overlay Architecture
+The Virtual File System (VFS) provides a critical isolation layer between AI agents and the host operating system. It follows a layered approach:
+
+- **RealFileSystem**: The base layer that interacts directly with the physical disk using `tokio::fs`. It is typically used for read-only access by agents.
+- **OverlayFs**: A specialized implementation that maintains an in-memory "scratchpad" of changes. When an agent writes a file, it is stored in the overlay, not on disk.
+- **Merge Logic**: The `OverlayFs::list` and `read` methods perform a union of the disk state and the in-memory state. If a file exists in both, the overlay version takes precedence (Copy-on-Write semantics).
+
+This architecture ensures that agents can explore and modify the codebase without causing immediate, irreversible changes. All staged modifications can be inspected via `pending_changes()` and must be explicitly `flush()`-ed to the physical disk.
+
+Path traversal is prevented by strictly validating all incoming paths against the configured workspace root.
 
 ### 2. API Authentication
 The `gestalt_timeline` server implements a fail-closed `auth_middleware`. Requests must provide a valid `GESTALT_API_TOKEN` via Bearer header or query parameter.

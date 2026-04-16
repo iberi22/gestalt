@@ -481,14 +481,15 @@ impl FileWatcher for OverlayFs {
                         {
                             return;
                         }
-                        Some(old) if old != state
-                            && tx
-                                .send(FileWatchEvent {
-                                    path: p.clone(),
-                                    event_type: FileEventType::Modified,
-                                })
-                                .await
-                                .is_err() =>
+                        Some(old)
+                            if old != state
+                                && tx
+                                    .send(FileWatchEvent {
+                                        path: p.clone(),
+                                        event_type: FileEventType::Modified,
+                                    })
+                                    .await
+                                    .is_err() =>
                         {
                             return;
                         }

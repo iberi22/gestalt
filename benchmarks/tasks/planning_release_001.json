@@ -1,8 +1,0 @@
-{
-  "task_id": "planning_release_001",
-  "category": "planning",
-  "difficulty": "medium",
-  "prompt": "Create a release checklist to move a Rust monorepo from RC to production.",
-  "expected_keywords": ["checklist", "release", "tests", "rollback"]
-}
-

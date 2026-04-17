@@ -202,41 +202,9 @@ async fn main() -> anyhow::Result<()> {
     let vector_db: Arc<dyn gestalt_core::ports::outbound::repo_manager::VectorDb> =
         Arc::new(db.clone());
 
-    // Default lightweight embedding model for fast local builds.
-    let embedding_model: Arc<dyn gestalt_core::domain::rag::embeddings::EmbeddingModel> = {
-        #[cfg(feature = "rag-embeddings")]
-        {
-            let mut model =
-                Arc::new(gestalt_core::domain::rag::embeddings::DummyEmbeddingModel::new(384))
-                    as Arc<dyn gestalt_core::domain::rag::embeddings::EmbeddingModel>;
-
-            if std::path::Path::new("models/bert/config.json").exists()
-                && std::path::Path::new("models/bert/tokenizer.json").exists()
-                && std::path::Path::new("models/bert/model.safetensors").exists()
-            {
-                info!("🚀 Initializing BertEmbeddingModel...");
-                match gestalt_infra_embeddings::BertEmbeddingModel::new(
-                    "models/bert/config.json",
-                    "models/bert/tokenizer.json",
-                    "models/bert/model.safetensors",
-                ) {
-                    Ok(m) => model = Arc::new(m),
-                    Err(e) => warn!(
-                        "Failed to load BERT model: {}. Falling back to DummyEmbeddingModel.",
-                        e
-                    ),
-                }
-            } else {
-                info!("BERT model files not found. Using DummyEmbeddingModel for RAG.");
-            }
-            model
-        }
-        #[cfg(not(feature = "rag-embeddings"))]
-        {
-            info!("Feature 'rag-embeddings' disabled. Using DummyEmbeddingModel for RAG.");
-            Arc::new(gestalt_core::domain::rag::embeddings::DummyEmbeddingModel::new(384))
-        }
-    };
+    // Default lightweight embedding model — DummyEmbeddingModel for fast local builds.
+    let embedding_model: Arc<dyn gestalt_core::domain::rag::embeddings::EmbeddingModel> =
+        Arc::new(gestalt_core::domain::rag::embeddings::DummyEmbeddingModel::new(384));
 
     // Initialize services
     let timeline_service = TimelineService::new(db.clone());

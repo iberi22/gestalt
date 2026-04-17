@@ -8,7 +8,6 @@ license = "MIT"
 
 [features]
 default = []
-rag-embeddings = ["dep:gestalt_infra_embeddings", "gestalt_infra_embeddings/bert"]
 telegram = ["dep:teloxide"]
 
 [[bin]]
@@ -62,7 +61,7 @@ rustyline = "17.0.2"
 
 # Core Logic
 gestalt_core = { path = "../gestalt_core" }
-gestalt_infra_embeddings = { path = "../gestalt_infra_embeddings", optional = true }
+
 teloxide = { version = "0.17.0", features = ["macros"], optional = true }
 
 # Synapse Agentic - Framework base for Hive, Memory, Resilience, Compaction

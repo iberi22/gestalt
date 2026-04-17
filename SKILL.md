@@ -1,107 +1,71 @@
-# Gestalt Bridge Skill
+# Gestalt Skill
 
 ## Descripción
-Puente de integración entre OpenClaw y el framework Gestalt. Permite usar todas las instancias de Gestalt desde OpenClaw.
+Gestalt es la plataforma de orquestación de agentes AI de SouthWest AI Labs. Workspace Rust con VFS, Swarm, Timeline y Tool Registry.
 
 ## Ubicación
-`E:\scripts-python\gestalt-rust\gestalt_bridge.py`
+`E:\scripts-python\gestalt-rust`
 
-## Instancias Gestalt Disponibles
+## Crates
 
-| Instancia | Auth | Descripción |
-|-----------|------|-------------|
-| **MCP Server** | - | 17 tools (file_tree, search, git, etc) |
-| **Gemini CLI** | OAuth | gemini-2.0-flash |
-| **Qwen** | OAuth | qwen-coder |
-| **OpenAI** | API Key | gpt-4 |
-| **Ollama** | Local | llama2, etc |
+| Crate | Binary | Descripción |
+|-------|--------|-------------|
+| gestalt_core | lib | VFS, auth, LLM, tools, MCP client |
+| gestalt_timeline | `gestalt` | Orchestrator + timeline |
+| gestalt_cli | `gestalt_cli` | REPL |
+| gestalt_swarm | `gestalt_swarm` | Swarm coordinator |
+| synapse-agentic | lib | Tool registry + Hive |
 
 ## Uso
-
-### Python
-```python
-from gestalt_bridge import GestaltBridge, handle_gestalt_command
-
-bridge = GestaltBridge()
-
-# Ver estado
-print(bridge.status())
-
-# Ask a model
-response = bridge.run_prompt("Hello", model="gemini")
-
-# Consensus
-result = bridge.consensus("What is the best approach?")
-
-# MCP tools
-bridge.mcp_call("file_tree", {"path": ".", "depth": 2})
-bridge.mcp_call("search_code", {"pattern": "error", "extensions": ".rs"})
-```
 
 ### CLI
 ```bash
 cd E:\scripts-python\gestalt-rust
-python gestalt_bridge.py status
-python gestalt_bridge.py ask "Hello world"
-python gestalt_bridge.py consensus "What is Rust?"
+cargo run -p gestalt_timeline --bin gestalt
+cargo run -p gestalt_cli
 ```
 
-## Comandos desde OpenClaw
-
-```python
-# Status
-handle_gestalt_command("status")
-
-# Ask with specific model
-handle_gestalt_command("ask", {"prompt": "...", "model": "gemini"})
-
-# Consensus (multi-model)
-handle_gestalt_command("consensus", {"prompt": "..."})
-
-# Analyze project
-handle_gestalt_command("analyze", {"path": "E:\\scripts-python\\myproject"})
-
-# Search code
-handle_gestalt_command("search", {"pattern": "TODO", "path": "."})
-
-# Call MCP tool directly
-handle_gestalt_command("mcp", {"tool": "file_tree", "args": {"depth": 3}})
+### Build
+```bash
+cargo build --release -p gestalt_timeline
+cargo build --release -p gestalt_cli
+cargo build --release -p gestalt_swarm
 ```
 
-## MCP Tools Disponibles
-
-1. `echo` - Echo back
-2. `analyze_project` - Analyze project structure
-3. `list_files` - List files with filters
-4. `read_file` - Read file contents
-5. `get_context` - Get AI context
-6. `search_code` - Search in code
-7. `exec_command` - Execute shell command
-8. `git_status` - Git status
-9. `git_log` - Git log
-10. `file_tree` - Directory tree
-11. `grep` - Grep with context
-12. `create_file` - Create file
-13. `web_fetch` - Fetch URL
-14. `system_info` - System info
-15. `task_create` - Create task
-16. `task_status` - Task status
-17. `task_list` - List tasks
-
-## Iniciar MCP Server
+## Configuración
 
 ```bash
-cd E:\scripts-python\gestalt-rust
-cargo run -p gestalt_mcp -- --http
+export GESTALT_DATABASE_URL="surrealdb:memory"
+export GESTALT_LLM__OPENAI__API_KEY="sk-..."
 ```
+
+Ver `gestalt_core/src/application/CONFIG.md` para todas las variables.
+
+## Herramientas Disponibles (12+)
+
+- `scan_workspace` — directory tree
+- `search_code` — vector similarity search
+- `execute_shell` — shell commands
+- `read_file` / `write_file`
+- `git_status` / `git_log` / `git_branch` / `git_add` / `git_commit` / `git_push`
+- `clone_repo` / `list_repos`
+- `ask_ai` — query LLM
+
+## Swarm
+
+```bash
+cargo run -p gestalt_swarm -- --agents 4
+```
+
+## MCP Client
+
+Gestalt tiene un MCP client (no server) que puede conectarse a servers MCP externos.
+Configurar en `config/mcp.json`.
 
 ## Autenticación
 
-```bash
-# Ver estado de auth
-E:\scripts-python\gestalt-rust\target\debug\gestalt_cli.exe status
-```
+Google OAuth2 + PKCE disponible en `gestalt_core/adapters/auth/`.
 
 ---
 
-*Skill para integrar Gestalt en OpenClaw*
+*SouthWest AI Labs — AI agents that actually execute.*

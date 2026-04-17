@@ -1,41 +1,41 @@
-# SRC.md - Gestalt Rust
+# SRC.md — Gestalt Rust
 
-> Framework de coordinación de agentes en Rust
+> AI Agent Orchestration Platform — CLI-first, Swarm-powered
 
 ## Proyecto
 
 - **Nombre:** gestalt-rust
-- **Tipo:** Rust Framework / Multi-crate workspace
-- **Descripción:** Framework de coordinación de agentes AI con múltiples servicios y herramientas
-- **Tech Stack:** Rust, SQLite, Multiple crates
-
-## Módulos Detectados
-
-- (El monitor detecto 0 módulos - proyecto en desarrollo activo)
+- **Tipo:** Rust workspace (5 crates)
+- **Descripción:** Plataforma de orquestación de agentes AI via CLI. VFS + Swarm + Timeline + Tools.
+- **Tech Stack:** Rust, SurrealDB, tokio
 
 ## Estructura
 
 ```
 gestalt-rust/
-├── gestalt_core/           # Core del framework
-├── gestalt_cli/           # CLI tool
-├── gestalt_app/           # Aplicación principal
-├── gestalt_ui/            # Interfaz de usuario
-├── gestalt_terminal/      # Terminal interface
-├── gestalt_mcp/           # MCP server integration
-├── gestalt_timeline/      # Timeline service
-├── gestaltctl/            # Control tool
-├── gestalt_infra_github/  # GitHub integration
-├── gestalt_infra_embeddings/ # Embeddings service
-├── agent_benchmark/       # Benchmarking
-├── benchmarks/            # Benchmarks
-├── config/                # Configuración
-├── docs/                  # Documentación
-└── scripts/               # Scripts
+├── Cargo.toml              # Workspace (5 crates)
+├── gestalt_core/           # Core: VFS, auth, LLM, tools, MCP client
+├── gestalt_timeline/        # Orchestrator bin (gestalt)
+├── gestalt_cli/            # REPL bin
+├── gestalt_swarm/          # Swarm coordinator bin
+├── synapse-agentic/        # Tool registry + Hive actor model
+├── skills/                 # OpenClaw skill docs
+├── docs/                   # Architecture & guides
+└── .gitcore/              # Git-Core planning
 ```
+
+## Crates
+
+| Crate | Type | Props |
+|-------|------|-------|
+| gestalt_core | lib | 42 .rs files |
+| gestalt_timeline | bin | 37 .rs files |
+| gestalt_cli | bin | 4 .rs files |
+| gestalt_swarm | bin | 1 .rs file |
+| synapse-agentic | lib | tool registry |
 
 ## Estado
 
-✅ Proyecto activo - Southwest AI Labs
+✅ Proyecto activo — iberi22/gestalt-rust — SouthWest AI Labs
 
-*Última actualización: 2026-03-17*
+*Última actualización: 2026-04-16*

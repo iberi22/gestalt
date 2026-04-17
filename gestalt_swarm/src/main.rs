@@ -74,7 +74,13 @@ async fn run_agent(
     quiet: bool,
 ) {
     let start = Instant::now();
-    let permit = semaphore.acquire().await.unwrap();
+    let permit = match semaphore.acquire().await {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("Failed to acquire permit: {}", e);
+            return;
+        }
+    };
 
     if !quiet {
         println!("🟢 Agent {} started (cwd: {:?})", agent_id, cwd);
@@ -155,7 +161,7 @@ async fn main() -> Result<()> {
         .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(level)))
         .init();
 
-    let cwd = args.cwd.unwrap_or_else(|| std::env::current_dir().unwrap());
+    let cwd = args.cwd.unwrap_or_else(|| std::env::current_dir().expect("Failed to get current directory"));
 
     println!("\n🐝 Gestalt Swarm v1.0");
     println!("   Goal: {}", args.goal);

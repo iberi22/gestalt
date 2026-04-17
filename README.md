@@ -25,8 +25,8 @@ cargo run -p gestalt_cli
 Parallel agent execution bridge. Spawns multiple CLI agents concurrently for high-speed automation.
 
 ```bash
-# In gestalt REPL or via Python bridge
-swarm --goal "analyze codebase security" --agents code_analyzer,security_audit
+# Run with N agents
+cargo run --release -p gestalt_swarm -- --agents 4 --goal "analyze codebase security"
 ```
 
 See [skills/gestalt-swarm.md](skills/gestalt-swarm.md) for full usage.

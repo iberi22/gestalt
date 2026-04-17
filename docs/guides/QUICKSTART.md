@@ -36,11 +36,8 @@ See [gestalt_core/src/application/CONFIG.md](../gestalt_core/src/application/CON
 ## Swarm Mode
 
 ```bash
-# Run with swarm enabled
-cargo run -p gestalt_timeline --bin gestalt -- --swarm
-
-# Or use gestalt_swarm directly
-cargo run -p gestalt_swarm -- --agents 4
+# Run gestalt_swarm directly with N agents
+cargo run --release -p gestalt_swarm -- --agents 4 --goal "<your task>"
 ```
 
 ## Tools Available

@@ -255,16 +255,14 @@ PR + Merge
 ### Gestalt Swarm Quick Commands
 
 ```bash
-# Build and run via Cargo
-cargo build --release -p gestalt_swarm
-cargo run --release -p gestalt_swarm -- --agents 4
+# Run gestalt_swarm with N agents and a goal
+cargo run --release -p gestalt_swarm -- --agents 4 --goal "<task>"
 
-# Or use gestalt binary with --swarm flag
-cargo build --release -p gestalt_timeline
-cargo run --release -p gestalt_timeline --bin gestalt -- --swarm
+# With custom model
+cargo run --release -p gestalt_swarm -- --agents 8 --goal "analyze codebase" --model MiniMax-Text-01
 
-# REPL mode
-cargo run --release -p gestalt_cli
+# Quiet mode
+cargo run --release -p gestalt_swarm -- --agents 4 --goal "scan files" --quiet
 ```
 
 ### Workflow Integration

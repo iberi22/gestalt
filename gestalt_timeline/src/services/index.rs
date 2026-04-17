@@ -1,5 +1,5 @@
 use crate::db::SurrealClient;
-use anyhow::Result;
+use anyhow::{Context, Result};
 use chrono::Utc;
 use gestalt_core::application::indexer::{DocumentRecord, Indexer, RepositoryMetadata};
 use gestalt_core::domain::rag::embeddings::EmbeddingModel;
@@ -85,7 +85,9 @@ impl IndexService {
             .await?;
 
         if let Some(repo) = existing.first() {
-            Ok(repo.id.as_ref().unwrap().to_string())
+            repo.id.as_ref()
+                .map(|t| t.to_string())
+                .context("Repository record has no ID")
         } else {
             let new_repo = RepoRecord {
                 id: None,
@@ -95,7 +97,9 @@ impl IndexService {
                 created_at: Utc::now(),
             };
             let created: RepoRecord = self.db.create("repositories", &new_repo).await?;
-            Ok(created.id.as_ref().unwrap().to_string())
+            created.id.as_ref()
+                .map(|t| t.to_string())
+                .context("Created repository has no ID")
         }
     }
 
@@ -120,7 +124,10 @@ impl IndexService {
             if doc.checksum == record.metadata.checksum {
                 Ok(None) // No update needed
             } else {
-                Ok(Some(doc.id.as_ref().unwrap().to_string())) // Needs update
+                doc.id.as_ref()
+                    .map(|t| t.to_string())
+                    .context("Document record has no ID")
+                    .map(Some)
             }
         } else {
             // New document
@@ -133,7 +140,11 @@ impl IndexService {
                 updated_at: Utc::now(),
             };
             let created: DocRecord = self.db.create("documents", &new_doc).await?;
-            Ok(Some(created.id.as_ref().unwrap().to_string()))
+            Ok(Some(
+                created.id.as_ref()
+                    .map(|t| t.to_string())
+                    .context("Created document has no ID")?
+            ))
         }
     }
 

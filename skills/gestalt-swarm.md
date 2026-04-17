@@ -9,43 +9,33 @@ Gestalt Swarm — Parallel execution bridge for multi-agent orchestration. Dispa
 # Build
 cargo build --release -p gestalt_swarm
 
-# Run
-cargo run --release -p gestalt_swarm -- --agents 4
-```
+# Run with N agents and a goal
+cargo run --release -p gestalt_swarm -- --agents 4 --goal "analyze codebase"
 
-## Arquitectura
+# With custom model and concurrency
+cargo run --release -p gestalt_swarm -- --agents 8 --goal "security audit" --model MiniMax-Text-01 --max-concurrency 16
 
-```
-SwarmCoordinator
-├── TaskQueue (priority queue)
-├── AgentRegistry
-└── HealthMonitor
-
-Agent implementations:
-├── CliAgent (shell commands)
-└── LlmAgent (LLM-powered)
+# Quiet mode (less output)
+cargo run --release -p gestalt_swarm -- --agents 4 --goal "scan files" --quiet
 ```
 
 ## Configuración
 
 ```bash
-# Agents count
---agents 4
+# Required
+--agents N          # Number of parallel agents (default: 4)
+--goal "<task>"      # Task/goal for all agents (required)
 
-# Timeout
---timeout 300
-
-# Swarm mode in gestalt binary
-cargo run -p gestalt_timeline --bin gestalt -- --swarm
+# Optional
+--model <model>     # Model name (default: MiniMax-Text-01)
+--max-concurrency N # Max concurrent LLM calls (default: 8)
+--cwd <path>        # Working directory (default: current dir)
+--quiet, -q         # Less output
 ```
-
-## Agentes Disponibles
-
-Los agentes se registran en `AgentRegistry`. Cada agente implementa el trait `Agent` con `execute(task) -> Result<Value>`.
 
 ## Estado
 
-✅ Operativo — SwarmCoordinator 95% implementado
+✅ Operativo — `gestalt_swarm` ejecutable con CLIargs parsing, tokio async, semaphore concurrency, y summary reporting
 
 ---
 

@@ -68,7 +68,8 @@ impl ProtocolSyncService {
                 if existing_task.status != markdown_task.status
                     || existing_task.description != markdown_task.description
                 {
-                    let task_id = existing_task.id.as_ref().unwrap();
+                    let task_id = existing_task.id.as_ref()
+                        .context("Existing task has no ID")?;
                     let task_id_str = match &task_id.id {
                         surrealdb::sql::Id::String(s) => s.clone(),
                         _ => task_id.to_string(),
@@ -90,7 +91,9 @@ impl ProtocolSyncService {
             } else {
                 // Create new task
                 let created: Task = self.db.create("tasks", &markdown_task).await?;
-                let task_id_str = created.id.as_ref().unwrap().to_string();
+                let task_id_str = created.id.as_ref()
+                    .context("Created task has no ID")?
+                    .to_string();
 
                 self.timeline
                     .emit_task_event(

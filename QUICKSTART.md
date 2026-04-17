@@ -38,7 +38,12 @@ export GESTALT_LOG_LEVEL="info"
 ## Step 4 — Swarm
 
 ```bash
-cargo run --release -p gestalt_swarm -- --agents 4
+cargo run --release -p gestalt_swarm -- --agents 4 --goal "<your task>"
+```
+
+Ejemplo:
+```bash
+cargo run --release -p gestalt_swarm -- --agents 4 --goal "analyze codebase security"
 ```
 
 ## Tools Disponibles

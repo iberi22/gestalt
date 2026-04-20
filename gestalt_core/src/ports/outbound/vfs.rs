@@ -57,9 +57,49 @@ pub struct FileWatchEvent {
 
 #[async_trait]
 pub trait VirtualFileSystem: Send + Sync {
+    /// Reads the content of a file at the given path.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use std::path::Path;
+    /// # use gestalt_core::ports::outbound::vfs::{VirtualFileSystem, OverlayFs};
+    /// # tokio_test::block_on(async {
+    /// let vfs = OverlayFs::new();
+    /// let data = vfs.read(Path::new("hello.txt")).await;
+    /// # });
+    /// ```
     async fn read(&self, path: &Path) -> Result<Vec<u8>>;
+
+    /// Writes data to a file at the given path, associated with an owner.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use std::path::Path;
+    /// # use gestalt_core::ports::outbound::vfs::{VirtualFileSystem, OverlayFs};
+    /// # tokio_test::block_on(async {
+    /// let vfs = OverlayFs::new();
+    /// vfs.write(Path::new("hello.txt"), b"world".to_vec(), "agent-1").await.unwrap();
+    /// # });
+    /// ```
     async fn write(&self, path: &Path, data: Vec<u8>, owner: &str) -> Result<()>;
+
+    /// Lists entries in the directory at the given path.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use std::path::Path;
+    /// # use gestalt_core::ports::outbound::vfs::{VirtualFileSystem, OverlayFs};
+    /// # tokio_test::block_on(async {
+    /// let vfs = OverlayFs::new();
+    /// let entries = vfs.list(Path::new(".")).await.unwrap();
+    /// # });
+    /// ```
     async fn list(&self, path: &Path) -> Result<Vec<PathBuf>>;
+
+    /// Checks if a file or directory exists at the given path.
     async fn exists(&self, path: &Path) -> Result<bool>;
 
     // Extended/Compatibility methods
@@ -708,6 +748,44 @@ mod tests {
         assert_eq!(data, b"hello overlay minimal");
         let list = overlay_vfs.list(&dir).await?;
         assert!(list.contains(&overlay_file));
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn list_merges_overlay_and_disk_entries() -> Result<()> {
+        let tmp = tempdir()?;
+        let dir = tmp.path().to_path_buf();
+        let disk_file = dir.join("disk.txt");
+        let overlay_file = dir.join("overlay.txt");
+
+        tokio::fs::write(&disk_file, "disk").await?;
+
+        let vfs = OverlayFs::new();
+        vfs.write_string(&overlay_file, "overlay".to_string(), "agent-a")
+            .await?;
+
+        let entries = vfs.list(&dir).await?;
+        assert!(entries.contains(&disk_file));
+        assert!(entries.contains(&overlay_file));
+        assert_eq!(entries.len(), 2);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn list_handles_non_existent_disk_dir_with_overlay_entries() -> Result<()> {
+        let tmp = tempdir()?;
+        let dir = tmp.path().join("ghost_dir");
+
+        let vfs = OverlayFs::new();
+        let overlay_file = dir.join("new.txt");
+        vfs.write_string(&overlay_file, "new".to_string(), "agent-a")
+            .await?;
+
+        let entries = vfs.list(&dir).await?;
+        assert!(entries.contains(&overlay_file));
+        assert_eq!(entries.len(), 1);
 
         Ok(())
     }

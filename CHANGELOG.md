@@ -9,6 +9,18 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/lang/es/).
 
 ## [Unreleased]
 
+### 🔥 Removed (2026-04-16)
+- Removed 8 crates: gestalt_app, gestalt_terminal, gestalt_ui, gestalt_mcp (server), gestaltctl, gestalt_infra_github, gestalt_infra_embeddings, benchmarks/
+- Scope reduced to CLI/Swarm/Core only (5 crates)
+- Removed gestalt_mcp tools bridge from gestalt_core
+
+### 🔄 Changed
+- gestalt_timeline: simplified embedding model (DummyEmbeddingModel only, rag-embeddings feature removed)
+
+### ✅ Fixed
+- Clippy: collapsed nested if in vfs.rs and file_manager.rs watch loops
+- Cargo fmt: fixed formatting in gestalt_core/src/ports/outbound/vfs.rs
+
 ## [1.0.0] - 2026-03-03
 
 ### 🐛 Fixed

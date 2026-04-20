@@ -96,7 +96,8 @@ impl AuthService {
             refresh_token: token_result.refresh_token().map(|t| t.secret().to_string()),
             expires_at: token_result
                 .expires_in()
-                .map(|dur| chrono::Utc::now() + chrono::Duration::from_std(dur).unwrap()),
+                .and_then(|dur| chrono::Duration::from_std(dur).ok())
+                .map(|dur| chrono::Utc::now() + dur),
         };
 
         self.save_credentials(&credentials)?;
@@ -183,7 +184,8 @@ impl AuthService {
                     .or(creds.refresh_token),
                 expires_at: token_result
                     .expires_in()
-                    .map(|dur| chrono::Utc::now() + chrono::Duration::from_std(dur).unwrap()),
+                    .and_then(|dur| chrono::Duration::from_std(dur).ok())
+                    .map(|dur| chrono::Utc::now() + dur),
             };
 
             self.save_credentials(&new_creds)?;

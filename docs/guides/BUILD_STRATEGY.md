@@ -1,33 +1,47 @@
-# Build Strategy (Fast Iteration)
+# Build Strategy
 
-This project now uses a minimal default compile graph and optional infrastructure adapters.
+## Incremental Build
 
-## Principles
-- Keep `gestalt_core` focused on domain logic and traits.
-- Put heavy provider implementations in `gestalt_infra_*` crates.
-- Enable expensive integrations only through explicit features.
-
-## Infra Crates
-- `gestalt_infra_embeddings`: BERT/candle embedding adapter.
-- `gestalt_infra_github`: GitHub Octocrab adapter.
-
-## Timeline Feature Matrix
-- default: minimal runtime (no Telegram, no BERT)
-- `telegram`: enables Telegram bot service
-- `rag-embeddings`: enables BERT embeddings through `gestalt_infra_embeddings`
-
-## Recommended Commands
 ```bash
-# Fast local check (minimal graph)
-cargo check-fast
+# Fast dev build
+cargo build
 
-# Full check with optional integrations
-cargo check-full
+# Incremental (fastest, debugging)
+cargo build --incremental
 
-# Core-only iteration
-cargo check -p gestalt_core
+# Profile for speed
+cargo build -p gestalt_timeline
 ```
 
-## Notes
-- CI/release quality gates should run formatting and tests before artifact build jobs.
-- Avoid workspace-wide `--all-targets` loops during local development unless needed.
+## Release Build
+
+```bash
+cargo build --release --all
+```
+
+## Check (without linking)
+
+```bash
+cargo check --all
+```
+
+## Lint
+
+```bash
+cargo fmt --check
+cargo clippy --all -- -D warnings
+```
+
+## Test
+
+```bash
+cargo test --all
+```
+
+## Individual Crate
+
+```bash
+cargo build -p gestalt_core
+cargo test -p gestalt_cli
+cargo check -p gestalt_swarm
+```

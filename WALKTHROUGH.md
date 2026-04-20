@@ -1,91 +1,124 @@
-# 🚶 Gestalt System Walkthrough
+# 🚶 WALKTHROUGH.md — Gestalt Usage Walkthrough
 
-This guide provides a step-by-step walkthrough for running the complete Gestalt system, including the Rust backend server and the Flutter frontend application.
+> **Goal:** Run a swarm of agents to analyze, plan, and execute a task — all via CLI.
 
-## 🏗️ Architecture Overview
+---
 
-The system consists of two main components:
-1. **Gestalt Timeline (Backend):** A Rust application that manages the autonomous agent runtime, database (SurrealDB), and LLM orchestration (AWS Bedrock). It exposes an HTTP API.
-2. **Gestalt App (Frontend):** A Flutter application that provides a UI for interacting with the agent, visualizing the timeline, and setting goals.
-
-## 🚀 Prerequisites
-
-- **Rust:** Installed via `rustup` (stable toolchain).
-- **Flutter:** SDK installed and configured (`flutter doctor`).
-- **SurrealDB:** Running locally or accessible via URL.
-- **AWS Credentials:** Configured for Bedrock access (e.g., `~/.aws/credentials`).
-
-## 🛠️ Step 1: Start the Backend Server
-
-The backend runs the autonomous agent and exposes endpoints for the UI.
-
-1. Navigate to the `gestalt_timeline` directory:
-   ```bash
-   cd gestalt_timeline
-   ```
-
-2. Ensure SurrealDB is running:
-   ```bash
-   surreal start --user root --pass root file://gestalt.db
-   ```
-   *(Or just rely on the app connecting to your existing instance)*
-
-3. Run the Server:
-   ```bash
-   cargo run -- server --port 3000
-   ```
-   You should see:
-   ```
-   🚀 Starting Agent Server on port 3000
-   🚀 Agent Server listening on 0.0.0.0:3000
-   ```
-
-## 📱 Step 2: Run the Flutter App
-
-The frontend connects to the local server to control the agent.
-
-1. Navigate to the `gestalt_app` directory:
-   ```bash
-   cd gestalt_app
-   ```
-
-2. Install dependencies:
-   ```bash
-   flutter pub get
-   ```
-
-3. Run the app (Desktop or Mobile):
-   ```bash
-   flutter run -d windows
-   # or
-   flutter run -d macos
-   # or
-   flutter run -d chrome
-   ```
-
-## 🔄 Step 3: End-to-End Workflow
-
-1. **Set a Goal:**
-   - In the Flutter app, type a goal in the input field (e.g., "Create a project 'Omega' and add a task 'Init'").
-   - Click **Send**.
-
-2. **Autonomous Loop:**
-   - The Flutter app sends the goal to `POST /orchestrate`.
-   - The Rust Server triggers the `AgentRuntime`.
-   - The Agent "Thinks" (via Bedrock), "Acts" (creates DB records), and "Observes" (logs results).
-
-3. **Real-time Feedback:**
-   - The App polls `GET /timeline`.
-   - You will see "Thoughts", "Actions", and "Observations" appear in the chat interface as the agent works.
-   - The Project/Task creation events will also appear in the feed.
-
-## 🧪 Testing
-
-To verify the system integration logic without running the full UI:
+## Step 0 — Prerequisites
 
 ```bash
-cd gestalt_timeline
-cargo test --test e2e_runtime
+cargo build --release
+export GESTALT_DATABASE_URL="surrealdb:memory"
+export GESTALT_LLM__OPENAI__API_KEY="sk-..."
 ```
 
-This runs a mocked simulation of the autonomous loop against an in-memory database to ensure the core logic is sound.
+---
+
+## Step 1 — Run the REPL
+
+```bash
+cargo run --release -p gestalt_cli
+```
+
+The REPL loads with:
+- VFS initialized
+- Tool registry registered
+- SurrealDB connection active
+
+---
+
+## Step 2 — Run the Orchestrator (gestalt binary)
+
+```bash
+cargo run --release -p gestalt_timeline --bin gestalt
+```
+
+This starts the timeline service + main orchestrator loop.
+
+---
+
+## Step 3 — Run Swarm (parallel agents)
+
+```bash
+cargo run --release -p gestalt_swarm -- --agents 4
+```
+
+Swarm spawns N agents, each with a VFS + tool registry.
+
+---
+
+## Step 4 — Execute a Task
+
+From the REPL or timeline, send a goal:
+
+```
+> analyze workspace for security issues
+```
+
+Gestalt will:
+1. Parse the goal
+2. Select relevant agents
+3. Dispatch to Swarm
+4. Collect results
+5. Persist events to timeline
+
+---
+
+## Step 5 — Inspect Results
+
+```bash
+# Git status
+> git status
+
+# Search code
+> search "TODO"
+
+# Read file
+> read Cargo.toml
+```
+
+---
+
+## Step 6 — Persist Timeline
+
+Events are auto-saved to SurrealDB. Query with:
+
+```bash
+# Connect to SurrealDB CLI
+surreal sql --conn "memory"
+```
+
+---
+
+## Architecture in Walkthrough
+
+```
+User → gestalt_cli (REPL) → gestalt_core (VFS + tools)
+                         ↓
+                  gestalt_timeline (orchestrator)
+                         ↓
+                  gestalt_swarm (parallel agents)
+                         ↓
+                  synapse-agentic (tool registry)
+```
+
+---
+
+## Tools Available
+
+| Command | Action |
+|---------|--------|
+| `execute_shell` | Run shell |
+| `git_status` | Git status |
+| `git_log` | Git log |
+| `scan_workspace` | Directory tree |
+| `search_code` | Vector search |
+| `read_file` | Read file |
+| `write_file` | Write file |
+| `ask_ai` | Query LLM |
+| `clone_repo` | Clone repo |
+| `list_repos` | List repos |
+
+---
+
+*Walkthrough: 2026-04-16*

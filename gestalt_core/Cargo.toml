@@ -54,7 +54,6 @@ tempfile = "3.24.0"
 surrealdb = { version = "2.6.1", features = ["kv-mem"] }
 
 synapse-agentic = { path = "../synapse-agentic" }
-gestalt_mcp = { path = "../gestalt_mcp" }
 
 [lib]
 crate-type = ["lib", "cdylib", "staticlib"]

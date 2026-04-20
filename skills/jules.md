@@ -255,30 +255,24 @@ PR + Merge
 ### Gestalt Swarm Quick Commands
 
 ```bash
-# Full analysis (smart agent selection)
-python E:\scripts-python\gestalt-rust\swarm_bridge.py --goal "comprehensive security audit" --json
+# Run gestalt_swarm with N agents and a goal
+cargo run --release -p gestalt_swarm -- --agents 4 --goal "<task>"
 
-# Quick status
-python E:\scripts-python\gestalt-rust\swarm_bridge.py --goal "git status" --agents "git_analyzer,git_status" --json --quiet
+# With custom model
+cargo run --release -p gestalt_swarm -- --agents 8 --goal "analyze codebase" --model MiniMax-Text-01
 
-# Dry run (preview agents)
-python E:\scripts-python\gestalt-rust\swarm_bridge.py --goal "analyze codebase" --dry-run
-
-# Custom agents
-python E:\scripts-python\gestalt-rust\swarm_bridge.py --goal "check dependencies" --agents "dep_check,cargo_check" --json
-
-# Streaming mode
-python E:\scripts-python\gestalt-rust\swarm_bridge.py --goal "scan files" --watch --timeout 30
+# Quiet mode
+cargo run --release -p gestalt_swarm -- --agents 4 --goal "scan files" --quiet
 ```
 
 ### Workflow Integration
 
 ```bash
 # 1. Run Gestalt Swarm for fast analysis
-python swarm_bridge.py --goal "security audit" --max-agents 10 --json
+cargo run --release -p gestalt_swarm -- --agents 4 --goal "security audit"
 
 # 2. Based on results, assign to Jules
-jules new --repo iberi22/gestalt-rust "fix security issues found: [paste from swarm output]"
+jules new --repo iberi22/gestalt-rust "fix issues found: [details]"
 
 # 3. Monitor Jules
 jules remote list --session
@@ -338,26 +332,27 @@ jules remote pull --session <ID>
 
 ---
 
-## 11. Available Agents in Gestalt Swarm
+## 11. Swarm Tools Available
 
-| Agent | For |
-|-------|-----|
-| `code_analyzer` | Ripgrep patterns in .rs files |
-| `dep_check` | Cargo tree dependencies |
-| `cargo_check` | Cargo check compilation |
-| `git_analyzer` | Git log history |
-| `git_status` | Working tree status |
-| `file_scanner` | List files in directory |
-| `log_parser` | Find ERROR in logs |
-| `security_audit` | Find TODO/FIXME/unsafe |
-| `find_todos` | Find TODO/FIXME/HACK |
-| `api_tester` | Test HTTP endpoints |
-| `metrics` | Cargo tree stats |
-| `env_check` | Environment variables |
-| `doc_gen` | Find documentation files |
+Gestalt Swarm ships with 12+ built-in tools via `gestalt_core`:
+
+| Tool | Purpose |
+|------|---------|
+| `execute_shell` | Run shell commands |
+| `git_status` | Git working tree status |
+| `git_log` | Git commit log |
+| `git_branch` | Git branch operations |
+| `git_add` / `git_commit` / `git_push` | Git operations |
+| `scan_workspace` | Directory tree |
+| `search_code` | Vector similarity search |
+| `read_file` / `write_file` | File operations |
+| `clone_repo` / `list_repos` | Repository management |
+| `ask_ai` | Query LLM |
+
+Register new agents via `Agent` trait in `gestalt_swarm/src/`.
 
 ---
 
-*Last updated: 2026-04-15*
+*Last updated: 2026-04-16*
 *Jules = Google's autonomous AI coding agent*
 *Gestalt Swarm = SWAL's parallel execution bridge*

@@ -124,7 +124,7 @@ impl Indexer {
             let name = url
                 .split('/')
                 .next_back()
-                .unwrap_or("unknown")
+                .ok_or_else(|| anyhow::anyhow!("Invalid repository URL: {}", url))?
                 .trim_end_matches(".git")
                 .to_string();
 

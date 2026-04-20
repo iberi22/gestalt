@@ -1,112 +1,84 @@
 # Gestalt
 
+> ⚡ Universal AI Agent Orchestration Platform — CLI-first, Swarm-powered.
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Git-Core Protocol](https://img.shields.io/badge/Git--Core%20Protocol-v3.5-blueviolet)](AGENTS.md)
-[![Open Source](https://img.shields.io/badge/Open%20Source-GitHub-green.svg)](https://github.com/iberi22/gestalt-rust)
+[![Rust](https://img.shields.io/badge/Rust-1.75+-orange.svg)](https://www.rust-lang.org)
 
-**Gestalt** is a universal AI agent platform with two core components:
+**Gestalt** is a high-performance Rust workspace for orchestrating AI agents via CLI. It provides VFS isolation, Swarm parallel execution, timeline-based state, and tool registries — all controlled through a REPL or direct CLI.
 
-
-1. **Gestalt Swarm** — Parallel execution bridge for massive automation
-2. **Gestalt CLI** — Context-aware AI assistant for your terminal
-
-**[🚀 Quick Start — 5 min](QUICKSTART.md)** | **[📦 Install](#-installation)** | **[📂 Docs](.gitcore/ARCHITECTURE.md)**.
-
-## 🐝 Gestalt Swarm (Primary Focus)
-
-> ⚡ **Gestalt Swarm** launches N CLI agents in parallel for high-speed automation.
-
-Gestalt Swarm is a Python bridge that executes multiple CLI agents concurrently via `asyncio`. Each agent runs real commands (ripgrep, cargo, git, curl, etc.) and results are consolidated in JSON.
-
-**Quick Start:**
-```bash
-# Auto-select agents based on goal (smart selection)
-python swarm_bridge.py --goal "security audit of codebase" --json
-
-# Dry run (preview agents)
-python swarm_bridge.py --goal "analyze gestalt-rust" --dry-run
-
-# Specific agents (~91ms for 3 parallel)
-python swarm_bridge.py --goal "quick status" --agents "git_analyzer,git_status" --json
-
-# Streaming mode (partial results as agents complete)
-python swarm_bridge.py --goal "scan files" --watch --timeout 30
-```
-
-**Available Agents (15):**
-| Agent | Purpose |
-|-------|---------|
-| `code_analyzer` | Ripgrep patterns in code |
-| `dep_check` | Cargo tree dependencies |
-| `git_analyzer` | Git log history |
-| `git_status` | Working tree status |
-| `security_audit` | Find TODO/FIXME/unsafe |
-| `find_todos` | Find TODO/FIXME/HACK |
-| `api_tester` | Test HTTP endpoints |
-| `env_check` | Environment variables |
-| ... | and 8 more |
-
-**Performance:**
-- 3 agents in **~91ms** (vs ~300ms sequential)
-- 15 agents fully parallelizable
-- Dynamic count based on rate limits and goal complexity
-
-**OpenClaw Integration:**
-Gestalt Swarm is registered as an OpenClaw skill. The LLM can invoke it directly:
+## 🚀 Quick Start
 
 ```bash
-exec: python E:\scripts-python\gestalt-rust\swarm_bridge.py --goal "..." --json
+# Build
+cargo build --release -p gestalt_timeline
+
+# Run the orchestrator (gestalt binary)
+cargo run -p gestalt_timeline --bin gestalt
+
+# Or use the CLI REPL
+cargo run -p gestalt_cli
 ```
 
-## 🤖 Gestalt CLI
+## 🐝 Gestalt Swarm
 
-Context-aware AI assistant that intelligently gathers project context before sending to LLMs.
+Parallel agent execution bridge. Spawns multiple CLI agents concurrently for high-speed automation.
 
-**Install:**
 ```bash
-cargo install --path gestalt_cli
+# Run with N agents
+cargo run --release -p gestalt_swarm -- --agents 4 --goal "analyze codebase security"
 ```
 
-**Use:**
-```bash
-gestalt --prompt "How do I add a new endpoint to this API?"
-```
+See [skills/gestalt-swarm.md](skills/gestalt-swarm.md) for full usage.
+
+## 🧩 Crates
+
+| Crate | Type | Description |
+|-------|------|-------------|
+| `gestalt_core` | lib | VFS, auth, LLM adapters, agent tools, MCP client |
+| `gestalt_timeline` | bin | Main orchestrator (`gestalt` binary) + timeline service |
+| `gestalt_cli` | bin | REPL + CLI commands |
+| `gestalt_swarm` | bin | Swarm coordinator for parallel agent execution |
+| `synapse-agentic` | lib | Tool registry + agentic primitives (Hive, LLM providers) |
 
 ## 📂 Project Structure
 
 ```
 gestalt-rust/
-├── swarm_bridge.py          # 🐝 Gestalt Swarm (parallel exec)
-├── skills/
-│   ├── gestalt-swarm.md     # Skill documentation
-│   └── jules.md            # Jules AI integration
-├── .gitcore/               # Git-Core planning docs
-│   ├── ARCHITECTURE.md
-│   ├── features.json
-│   └── planning/
-├── gestalt_cli/            # CLI interface
-├── gestalt_core/           # Core domain logic
-├── gestalt_swarm/          # Swarm Rust binary
-└── synapse-agentic/        # Agent runtime
+├── Cargo.toml                  # Workspace root (5 crates)
+├── gestalt_core/               # Core domain: VFS, auth, LLM, tools
+│   └── src/
+│       ├── adapters/          # MCP client, auth (Google OAuth/PKCE)
+│       ├── application/        # Agent tools, config, indexer
+│       ├── domain/            # Rag embeddings, models
+│       ├── mcp/               # MCP client + registry
+│       └── ports/             # Inbound/outbound port traits
+│           └── outbound/vfs.rs # VFS trait + OverlayFs
+├── gestalt_timeline/           # Orchestrator binary
+│   └── src/main.rs            # gestalt CLI entry point
+├── gestalt_cli/                # Standalone REPL binary
+├── gestalt_swarm/              # Swarm coordinator binary
+├── synapse-agentic/            # Tool registry + Hive actor model
+├── skills/                     # OpenClaw skill docs
+├── docs/                       # Architecture & guides
+└── .gitcore/                  # Git-Core planning docs
 ```
+
+## 🔑 Key Features
+
+- **VFS Overlay** — Isolated file system per agent with merge semantics
+- **Swarm Orchestration** — Parallel multi-agent execution
+- **Timeline State** — Events persisted in SurrealDB
+- **MCP Client** — Connect to external MCP servers (not a standalone server)
+- **LLM Resilience** — OpenAI + Anthropic adapters with automatic failover
+- **Tool Registry** — 12+ built-in tools (git, shell, file, search, ask_ai, etc.)
+- **Auth** — Google OAuth2 + PKCE built-in
 
 ## 🔗 Resources
 
 - **Repository:** https://github.com/iberi22/gestalt-rust
 - **Issues:** https://github.com/iberi22/gestalt-rust/issues
 - **License:** MIT
-
-## 🏗️ Architecture
-
-See [.gitcore/ARCHITECTURE.md](.gitcore/ARCHITECTURE.md) for detailed system design.
-
-## 🤝 Contributing
-
-1. Fork the repo
-2. Create a branch (`git checkout -b feature/amazing`)
-3. Commit (`git commit -m 'feat: add amazing feature'`)
-4. Push (`git push origin feature/amazing`)
-5. Open a Pull Request
 
 ---
 

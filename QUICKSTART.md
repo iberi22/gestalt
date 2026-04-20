@@ -1,133 +1,68 @@
-# 🚀 Quick Start — Gestalt Swarm
+# 🚀 Quick Start — Gestalt
 
 > **Tiempo estimado: 5 minutos**
 
-Gestalt Swarm te permite ejecutar múltiples agentes CLI en paralelo para automatización masiva. Sin configuración compleja.
+Orquestación de agentes AI via CLI. Sin UI, sin setup complejo.
 
-## Prerequisite
+## Prerrequisitos
 
-Python 3.8+ y ripgrep (opcional pero recomendado):
+- Rust 1.75+
+- SurrealDB (o usar `surrealdb:memory`)
 
-```bash
-# Windows (via chocolatey)
-choco install ripgrep
-
-# macOS
-brew install ripgrep
-
-# Linux
-apt install ripgrep
-```
-
-## Step 1 — Clone & Run
+## Step 1 — Build
 
 ```bash
-# Clone el repo
 git clone https://github.com/iberi22/gestalt-rust.git
 cd gestalt-rust
-
-# Ejecuta tu primer swarm
-python swarm_bridge.py --goal "git status" --agents "git_analyzer,git_status" --json --quiet
+cargo build --release
 ```
 
-**Output esperado:**
-```
-✅ git_analyzer: success (63ms)
-✅ git_status: success (86ms)
-```
-
-## Step 2 — Smart Selection (Sin Especificar Agentes)
+## Step 2 — Run
 
 ```bash
-# El swarm elige los agentes automáticamente
-python swarm_bridge.py --goal "security audit of codebase" --json
+# Orchestrator principal
+cargo run --release -p gestalt_timeline --bin gestalt
+
+# O REPL standalone
+cargo run --release -p gestalt_cli
 ```
 
-**Output:**
-```
-🐝 Goal: security audit of codebase
-📋 Selected agents (2): security_audit, find_todos
-✅ security_audit: success (156ms)
-✅ find_todos: success (89ms)
-```
-
-## Step 3 — Preview con Dry Run
+## Step 3 — Configure
 
 ```bash
-# Ve qué agentes se seleccionarían sin ejecutar
-python swarm_bridge.py --goal "comprehensive codebase analysis" --dry-run
+export GESTALT_DATABASE_URL="surrealdb:memory"
+export GESTALT_LLM__OPENAI__API_KEY="sk-..."
+export GESTALT_LOG_LEVEL="info"
 ```
 
-**Output:**
-```
-🐝 Goal: comprehensive codebase analysis
-📋 Selected agents (5): code_analyzer, file_scanner, security_audit, find_todos, metrics
-⏭️  Dry run — no agents executed
-```
-
-## Step 4 — Parallel Execution Benchmark
+## Step 4 — Swarm
 
 ```bash
-# 3 agentes en paralelo vs secuencial
-time python swarm_bridge.py --goal "quick check" --agents "git_analyzer,git_status,env_check" --json --quiet
+cargo run --release -p gestalt_swarm -- --agents 4 --goal "<your task>"
 ```
 
-**Tiempo típico:** ~91ms (vs ~300ms secuencial)
-
-## Step 5 — Integrate with OpenClaw
-
-En tu sesión de OpenClaw, simplemente escribe:
-
-```
-analiza gestalt-rust en busca de errores de seguridad
-```
-
-El LLM detectará que necesitas Gestalt Swarm y ejecutará:
+Ejemplo:
 ```bash
-python swarm_bridge.py --goal "security audit of gestalt-rust" --max-agents 10 --json
+cargo run --release -p gestalt_swarm -- --agents 4 --goal "analyze codebase security"
 ```
 
-## Options Reference
+## Tools Disponibles
 
-| Flag | Description | Ejemplo |
-|------|-------------|---------|
-| `--goal "..."` | Descripción del objetivo | `--goal "find todos"` |
-| `--agents "a,b"` | Agentes específicos | `--agents "find_todos,security_audit"` |
-| `--max-agents N` | Máximo de agentes | `--max-agents 20` |
-| `--dry-run` | Preview sin ejecutar | `--dry-run` |
-| `--json` | Output JSON | `--json` |
-| `--watch` | Resultados parciales | `--watch --timeout 30` |
+12+ herramientas listas para usar:
+- git (status, log, branch, add, commit, push)
+- shell (execute_shell)
+- file (read_file, write_file)
+- search (search_code, scan_workspace)
+- repo (clone_repo, list_repos)
+- ai (ask_ai)
 
-## Agentes Disponibles
+## Documentation
 
-```bash
-# Todos los agentes
-python swarm_bridge.py --goal "check deps" --agents "dep_check,cargo_check,git_status" --json
-
-# Análisis rápido
-python swarm_bridge.py --goal "quick status" --agents "git_analyzer,git_status" --json --quiet
-```
-
-## Troubleshooting
-
-**"Command not found: rg"**
-```bash
-choco install ripgrep  # Windows
-brew install ripgrep  # macOS
-```
-
-**"Timeout after Xs"**
-```bash
-# Aumenta el timeout por agente
-python swarm_bridge.py --goal "..." --agents "metrics" --json
-# O usa streaming con --watch para no esperar
-```
-
-## Siguiente Paso
-
-- Lee [README.md](README.md) para documentación completa
-- Explora `.gitcore/ARCHITECTURE.md` para entender el diseño
-- Abre issues en GitHub si tienes preguntas
+- [README.md](README.md) — overview
+- [ARCHITECTURE.md](ARCHITECTURE.md) — arquitectura
+- [docs/guides/QUICKSTART.md](docs/guides/QUICKSTART.md) — guía detallada
+- [STATE.md](STATE.md) — estado actual
+- [TODO.md](TODO.md) — pendientes
 
 ---
 

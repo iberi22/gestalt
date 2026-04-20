@@ -1,4 +1,3 @@
-use crate::adapters::mcp::tools::McpToolsBridge;
 use crate::context::scanner;
 use crate::domain::rag::embeddings::{DummyEmbeddingModel, EmbeddingModel};
 use crate::ports::outbound::repo_manager::{RepoManager, VectorDb};
@@ -46,9 +45,6 @@ pub async fn create_gestalt_tools(
         })
         .await;
     registry.register_tool(AskAiTool { llm_provider }).await;
-
-    // Register MCP tools from gestalt_mcp crate
-    McpToolsBridge::register_all(&registry).await;
 
     registry
 }

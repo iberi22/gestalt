@@ -1,198 +1,177 @@
 # Gestalt-Rust Architecture
 
-> Last Updated: 2026-04-03
-> Status: Comprehensive Documentation v1.0
+> Last Updated: 2026-04-16
+> Status: v1.0 — CLI/Swarm/Core only (UI/MCP/infra removed)
 
 ## Overview
 
-Gestalt-Rust is a high-performance **Rust workspace** implementing an autonomous AI agent runtime. It features timeline-based orchestration, a Virtual File System (VFS) overlay for isolated workspace manipulation, and a resilient multi-provider LLM infrastructure.
+Gestalt is a high-performance Rust workspace for AI agent orchestration. It provides VFS isolation, Swarm parallel execution, timeline-based state in SurrealDB, and a tool registry — all accessible via CLI/REPL.
 
-The system is designed to power multiple interfaces, from the low-latency Gestalt CLI to the Gestalt Nexus daemon and cross-platform Flutter applications.
+**Scope**: CLI-first orchestration. No UI, no standalone MCP server, no Flutter app.
 
 ---
 
-## System Architecture
+## Crates
 
-### Module Diagram
+### gestalt_core (42 .rs files)
+The hexagonal core. Contains domain models, port traits, and business logic.
 
-The ecosystem consists of 12 specialized modules:
+```
+src/
+├── adapters/
+│   ├── auth/          # Google OAuth2 + PKCE
+│   └── mcp/           # MCP client (connects to external servers)
+├── application/
+│   ├── agent/         # Tool implementations (git, shell, file, search...)
+│   ├── config.rs      # GestaltConfig from env
+│   ├── indexer.rs     # Code indexer with SurrealDB
+│   └── mcp_service.rs # MCP server config loader
+├── context/           # Scanner, workspace analysis
+├── domain/
+│   └── rag/          # Embeddings (DummyEmbeddingModel)
+├── mcp/
+│   ├── client_impl.rs # MCP client implementation
+│   └── registry.rs   # MCP tool registry
+├── ports/
+│   ├── inbound/       # Port traits (incoming)
+│   └── outbound/      # Port traits (outgoing)
+│       ├── repo_manager.rs  # Repo + VectorDB traits
+│       └── vfs.rs     # VfsPort + OverlayFs + MemoryFs
+└── swarm/
+    ├── coordinator.rs # SwarmCoordinator
+    ├── agent.rs       # Agent trait
+    ├── health.rs      # HealthMonitor
+    └── registry.rs    # AgentRegistry
+```
 
-```mermaid
-graph TD
-    subgraph UI_Layer [User Interfaces]
-        CLI[gestalt_cli]
-        CTL[gestaltctl]
-        GUI[gestalt_ui]
-        APP[gestalt_app - Flutter]
-        TERM[gestalt_terminal - Flutter]
-    end
+### gestalt_timeline (37 .rs files)
+Primary orchestration engine. The `gestalt` binary.
 
-    subgraph Orchestration_Layer [Orchestration & State]
-        TL[gestalt_timeline]
-        SWARM[gestalt_swarm]
-    end
+- `TimelineService` — event sourcing with SurrealDB
+- `ProjectService` — project CRUD
+- `TaskService` — task management
+- Initializes: SurrealDB, VFS, LLM providers, tool registry, SwarmCoordinator
 
-    subgraph Core_Layer [Business Logic]
-        CORE[gestalt_core]
-        SYN[synapse-agentic]
-    end
+### gestalt_cli (4 .rs files)
+Standalone CLI binary with REPL.
 
-    subgraph Infrastructure_Layer [External Integration]
-        MCP_S[gestalt_mcp]
-        INFRA_GH[gestalt_infra_github]
-        INFRA_EM[gestalt_infra_embeddings]
-    end
+- `main.rs` — CLI entry point with subcommands
+- `repl.rs` — InteractiveRepl with command handling
 
-    CLI --> TL
-    GUI --> TL
-    APP --> TL
-    CTL --> MCP_S
-    TL --> CORE
-    TL --> SYN
-    SWARM --> TL
-    CORE --> INFRA_GH
-    CORE --> INFRA_EM
-    CORE --> MCP_S
-    SYN --> CORE
+### gestalt_swarm (1 .rs file)
+Swarm coordinator for parallel agent execution.
+
+- `SwarmCoordinator` — dispatch tasks to N agents in parallel
+- `AgentRegistry` — register/list agents
+- `TaskQueue` — priority queue for work distribution
+- `HealthMonitor` — monitor agent heartbeats
+
+### synapse-agentic (1 + generated)
+Tool registry and agentic primitives.
+
+- `Tool` + `ToolContext` traits
+- `ToolRegistry` — register/dispatch tools
+- `Hive` — actor system for sub-agents
+- `LLMProvider` trait — OpenAI + Anthropic adapters
+- `StochasticRotator` — LLM provider failover
+
+---
+
+## VFS Architecture
+
+```
+VfsPort (trait)
+├── MemoryFs        — in-memory file system
+└── OverlayFs       — layered merge (upper + lower)
+    ├── read        — upper first, then lower
+    ├── write       — upper only
+    └── merge       — explicit overlay merge
+```
+
+- FileWatchService — debounced file system watcher
+- Used for agent workspace isolation
+
+---
+
+## Swarm Architecture
+
+```
+SwarmCoordinator
+├── TaskQueue (priority queue)
+├── AgentRegistry (registered agents)
+└── HealthMonitor (heartbeat tracking)
+
+Agent (trait)
+└── execute(task) -> Result<Value>
+
+Agent implementations:
+├── CliAgent (execute shell commands)
+└── LlmAgent (LLM-powered agent)
 ```
 
 ---
 
-## Module Specifications
+## MCP Client (not standalone server)
 
-### 1. `gestalt_core`
-The "Hexagonal Core". Contains domain models, pure business logic, and port definitions.
-- **Key Traits**: `McpClientPort`, `RepoManager`, `EmbeddingModel`, `VirtualFileSystem`.
-- **Responsibility**: Validation, configuration parsing, and defining how the system interacts with the outside world without being tied to specific implementations.
+`gestalt_core/adapters/mcp/` contains an MCP **client** that:
+- Connects to external MCP servers via HTTP
+- Loads server configs from `config/mcp.json`
+- Exposes tools from remote servers as `Tool` implementations
 
-### 2. `gestalt_timeline`
-The primary orchestration engine.
-- **Key Components**: `AgentRuntime`, `TimelineService`, `TaskQueue`, `VfsService`.
-- **Responsibility**: Manages the "Source of Truth" (SurrealDB), handles the Think-Act-Observe loop, and manages isolated agent workspaces.
-
-### 3. `synapse-agentic`
-Actor-based agent framework.
-- **Key Components**: `Hive` (actor system), `DecisionEngine`, `StochasticRotator`, `LLMProvider`.
-- **Responsibility**: Provides LLM resilience, cost-tracking, and the underlying actor model for spawning autonomous sub-agents.
-
-### 4. `gestalt_mcp`
-Model Context Protocol implementation.
-- **Function**: Implements both a server and client for MCP.
-- **Tools**: Includes `analyze_project`, `search_code`, `exec_command`, and `git_status`.
-
-### 5. `gestalt_cli`
-The primary human interface.
-- **Features**: Stateful REPL, task management commands, and "Swarm" mode for parallel execution.
-
-### 6. `gestalt_swarm`
-A high-throughput parallel execution bridge for CLI tasks.
-- **Purpose**: Optimized for running many short-lived agent tasks (e.g., repository-wide refactoring) in parallel.
-
-### 7. `gestalt_ui`
-A native desktop management console built with `egui`.
-- **Purpose**: Visualizing the universal timeline, agent status, and VFS diffs.
-
-### 8. `gestaltctl`
-A lightweight, standalone CLI tool for direct MCP server interaction and task tracking.
-
-### 9. `gestalt_infra_github`
-Infrastructure adapter for GitHub.
-- **Interface**: Implements `RepoManager` using `octocrab`.
-
-### 10. `gestalt_infra_embeddings`
-Local ML infrastructure.
-- **Interface**: Implements `EmbeddingModel` using BERT models via `candle`.
-
-### 11. `gestalt_app` & 12. `gestalt_terminal`
-Flutter-based applications for cross-platform (Mobile/Desktop) access to the Gestalt Nexus.
+The **standalone MCP server** (`gestalt_mcp` crate) was removed.
 
 ---
 
-## Key Workflows
+## State Management
 
-### Agent Autonomous Loop (Think-Act-Observe)
+- **SurrealDB** — timeline events, projects, tasks, agent state
+- **VFS** — file system snapshots per agent session
+- **In-memory** — tool registry, agent registry, task queues
 
-```mermaid
-sequenceDiagram
-    participant A as AgentRuntime
-    participant E as DecisionEngine
-    participant T as ToolRegistry
-    participant V as VirtualFs
-    participant L as Timeline
+---
 
-    A->>L: Fetch recent events (Context)
-    A->>E: Decide Action (Query + Context)
-    E-->>A: Decision (Action + Reasoning)
-    A->>T: Call Tool (e.g., WriteFile)
-    T->>V: Stage change in Overlay
-    V-->>T: Success
-    T-->>A: Observation
-    A->>L: Record TimelineEvent
-    Note over A,L: Loop continues until Goal met
+## Removed in 2026-04-16
+
+These crates were removed (out of scope for CLI-first orchestration):
+
+- `gestalt_app` — Flutter app
+- `gestalt_terminal` — TUI
+- `gestalt_ui` — UI components
+- `gestalt_mcp` (server) — standalone MCP server
+- `gestaltctl` — standalone admin binary
+- `gestalt_infra_github` — GitHub infra adapter
+- `gestalt_infra_embeddings` — BERT embedding infra
+- `benchmarks` — standalone benchmark suite
+
+---
+
+## Dependencies
+
 ```
+gestalt_core
+├── surrealdb = "2.6.1"         # Database
+├── synapse-agentic              # Tool registry
+├── tokio = { features = "full" }
+├── serde_json
+├── reqwest (for MCP client)
+└── oauth2 / jsonwebtoken (auth)
 
-### Task Dispatching Workflow
+gestalt_timeline
+├── gestalt_core
+├── tokio
+├── teloxide (optional, telegram)
 
-```mermaid
-sequenceDiagram
-    participant U as User/API
-    participant Q as TaskQueue
-    participant D as Dispatcher
-    participant R as AgentRuntime
+gestalt_cli
+├── gestalt_core
+├── tokio
+└── reedline (REPL)
 
-    U->>Q: Submit Task (Goal)
-    Q->>D: Notify New Task
-    D->>D: Check Worker Availability
-    D->>R: Spawn AgentRuntime
-    R->>R: Execute Loop
-    R-->>D: Task Complete
-    D->>Q: Update Status
+gestalt_swarm
+├── gestalt_core
+├── tokio
+└── tokio-sync
+
+synapse-agentic
+├── tokio
+└── async-trait
 ```
-
----
-
-## Error Handling Strategy
-
-### 1. Propagation & Context
-The system uses `anyhow::Result` for application-level error propagation, ensuring that failures carry backtraces and descriptive context (e.g., `.with_context(|| "failed to read config")`).
-
-### 2. Domain-Specific Errors
-Crates like `gestalt_core` use `thiserror` to define exhaustive error enums:
-- `ConfigError`: Handles missing files, environment variable conflicts, and parsing failures.
-- `VfsError`: Manages lock conflicts and path traversal attempts.
-
-### 3. Failover & Resilience
-- **LLM Failures**: `StochasticRotator` in `synapse-agentic` catches API timeouts/errors and automatically retries with the next available provider.
-- **Silent Failures**: Critical services (like the Timeline fetch) are being moved from silent `Ok()` swallows to `warn!` logging or hard stops to prevent agents from operating with stale context.
-
----
-
-## Security Considerations
-
-### 1. VFS Isolation & Overlay Architecture
-The Virtual File System (VFS) provides a critical isolation layer between AI agents and the host operating system. It follows a layered approach:
-
-- **RealFileSystem**: The base layer that interacts directly with the physical disk using `tokio::fs`. It is typically used for read-only access by agents.
-- **OverlayFs**: A specialized implementation that maintains an in-memory "scratchpad" of changes. When an agent writes a file, it is stored in the overlay, not on disk.
-- **Merge Logic**: The `OverlayFs::list` and `read` methods perform a union of the disk state and the in-memory state. If a file exists in both, the overlay version takes precedence (Copy-on-Write semantics).
-
-This architecture ensures that agents can explore and modify the codebase without causing immediate, irreversible changes. All staged modifications can be inspected via `pending_changes()` and must be explicitly `flush()`-ed to the physical disk.
-
-Path traversal is prevented by strictly validating all incoming paths against the configured workspace root.
-
-### 2. API Authentication
-The `gestalt_timeline` server implements a fail-closed `auth_middleware`. Requests must provide a valid `GESTALT_API_TOKEN` via Bearer header or query parameter.
-
-### 3. Tool Whitelisting
-External command execution is restricted by a hard-coded whitelist (e.g., `git`, `cargo`, `gh`). Subprocesses are spawned with limited environment variables to prevent credential leakage.
-
-### 4. Credential Management
-API keys for LLM providers are loaded from environment variables or a secure `gestalt.toml`. Future iterations will integrate with OS keyrings (via the `keyring` crate) for OAuth token storage.
-
----
-
-## Data Flow & State
-
-- **Timeline**: Stored in **SurrealDB**. Every state change (task update, file edit, agent thought) is a `TimelineEvent`.
-- **Files**: Managed by **FileManagerActor**. The VFS handles the mapping between physical disk and agent-specific overlays.
-- **Configuration**: Managed by the `config` crate, merging `gestalt.toml`, environment variables, and CLI overrides.

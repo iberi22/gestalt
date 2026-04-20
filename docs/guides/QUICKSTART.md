@@ -1,146 +1,77 @@
-# 🚀 Quick Start Guide
+# Quick Start — Gestalt
 
-## Prerequisites
-
-- Rust 1.70+ (with Cargo)
-- Git
-- SurrealDB (embedded or Docker)
-
-## Installation
+## Build
 
 ```bash
-# Clone the repository
 git clone https://github.com/iberi22/gestalt-rust.git
 cd gestalt-rust
-
-# Build the project
 cargo build --release
-
-# Or build specific components
-cargo build -p gestalt_timeline
-cargo build -p gestalt_cli
 ```
 
-## API Key Setup
-
-Gestalt uses LLM providers for AI capabilities. Configure API keys via environment variables:
-
-### Gemini (Google)
+## Run
 
 ```bash
-export GEMINI_API_KEY="your-google-ai-studio-api-key"
-```
-
-Get your key at: https://aistudio.google.com/app/apikey
-
-### MiniMax
-
-```bash
-export MINIMAX_API_KEY="your-minimax-api-key"
-export MINIMAX_GROUP_ID="your-group-id"  # Optional
-```
-
-Get your key at: https://platform.minimax.chat/
-
-### Verification
-
-```bash
-# Test that API keys are recognized
-cargo run -p gestalt_timeline -- --prompt "Hello" --model gemini-2.0-flash
-```
-
-You should see `🚀 Initializing Gemini resilient provider...` in the logs.
-
-## Database Setup
-
-### Option 1: Embedded (Simplest)
-
-SurrealDB runs embedded - no additional setup needed.
-
-### Option 2: Docker
-
-```bash
-docker run -p 8000:8000 surrealdb/surrealdb:latest start
-```
-
-Set environment:
-```bash
-export SURREAL_URL="ws://localhost:8000"
-export SURREAL_USER="root"
-export SURREAL_PASS="root"
-```
-
-## Basic Usage
-
-### CLI Mode
-
-```bash
-# Start the timeline orchestrator
+# Main orchestrator
 cargo run -p gestalt_timeline --bin gestalt
 
-# Interactive commands
-gestalt add-project my-app
-gestalt add-task my-app "Implement feature X"
-gestalt list-projects
-gestalt timeline --since=1h
+# Or CLI REPL
+cargo run -p gestalt_cli
 ```
 
-### Agent Mode
+## Configure
 
 ```bash
-# Run with AI decision engine
-cargo run -p gestalt_timeline --bin gestalt -- \
-  --prompt "Review the codebase and suggest improvements" \
-  --context
+# Required env vars
+export GESTALT_DATABASE_URL="surrealdb:memory"  # or file:/tmp/gestalt.db
+export GESTALT_LLM__PROVIDER="openai"            # or anthropic
+export GESTALT_LLM__OPENAI__API_KEY="sk-..."
+
+# Optional
+export GESTALT_LLM__ANTHROPIC__API_KEY="sk-ant-..."
+export GESTALT_LOG_LEVEL="info"
 ```
 
-### Configuration
+See [gestalt_core/src/application/CONFIG.md](../gestalt_core/src/application/CONFIG.md) for full config reference.
 
-Edit `config/gestalt.toml`:
-
-```toml
-[agent]
-id = "gestalt-01"
-
-[cognition]
-provider = "gemini"  # or "minimax", "auto"
-model_id = "gemini-2.0-flash"
-
-[database]
-url = "mem"  # or "ws://localhost:8000"
-```
-
-## MCP Server
-
-Start the MCP server for external tool integration:
+## Swarm Mode
 
 ```bash
-cargo run -p gestalt_mcp
-# Server runs on http://127.0.0.1:3000
+# Run gestalt_swarm directly with N agents
+cargo run --release -p gestalt_swarm -- --agents 4 --goal "<your task>"
 ```
 
-Available tools: echo, analyze_project, list_files, read_file, get_context, search_code, exec_command, git_status, git_log, file_tree, grep, create_file, web_fetch, system_info, task_create, task_status, task_list
+## Tools Available
 
-## Troubleshooting
+After starting `gestalt`, these tools are registered:
 
-### "No external LLM providers configured"
+| Tool | Description |
+|------|-------------|
+| `scan_workspace` | Directory tree of workspace |
+| `search_code` | Vector similarity search |
+| `execute_shell` | Run shell commands |
+| `read_file` | Read file contents |
+| `write_file` | Write file contents |
+| `git_status` | Git status |
+| `git_log` | Git commit log |
+| `git_branch` | Git branch operations |
+| `git_add` | Git add |
+| `git_commit` | Git commit |
+| `git_push` | Git push |
+| `clone_repo` | Clone repository |
+| `list_repos` | List accessible repos |
+| `ask_ai` | Query LLM |
 
-Ensure API keys are set:
-```bash
-echo $GEMINI_API_KEY  # Should print your key
-```
+## MCP Client
 
-### Build errors
+Connect to external MCP servers by adding entries to `config/mcp.json`:
 
-```bash
-# Clean and rebuild
-cargo clean
-cargo check --workspace
-```
-
-### Database connection issues
-
-Verify SurrealDB is running:
-```bash
-curl http://localhost:8000/health
+```json
+{
+  "servers": {
+    "my-server": {
+      "url": "http://localhost:3000",
+      "tools": []
+    }
+  }
+}
 ```

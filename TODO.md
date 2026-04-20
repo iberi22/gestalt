@@ -1,24 +1,27 @@
-# 📝 TODO.md - Pending Tasks
+# 📝 TODO.md — Pending Tasks
 
-## 🚀 PHASE 1: OpenClaw Integration (50% 🔄)
-- [x] **Gestalt Bridge**: Implementation of `gestalt_bridge.py` and MCP tools.
-- [ ] **MiniMax Integration**: Configure API key and verify model `MiniMax-M2.1` in production.
-- [ ] **Refinement**: Improve search semantics in `gestalt_superagent.py`.
+> Last Updated: 2026-04-16
 
-## 🧪 Testing & Validation
-- [ ] **Granular Benchmark Coverage**: Add specific tests for `gestalt_infra_embeddings` (BERT/Candle).
-- [ ] **E2E VFS Scenarios**: Verify multi-agent conflict resolution in complex workspace structures.
-- [ ] **Performance Audit**: Profile SurrealDB WebSocket latencies under high concurrency.
+## 🔴 Priority: High
 
-## 🛠️ Infrastructure Improvements
-- [ ] **Auto-Recovery**: Enhance `AgentRuntime` supervisor logic to handle database disconnection with exponential backoff.
-- [ ] **Dynamic Plugin System**: Formalize the mechanism for external agents to register tools via MCP at runtime.
-- [ ] **Cloud Sync**: Optional cloud persistence for the timeline service.
+- [ ] **Fix unwraps in production** — `gestalt_core/src/application/indexer.rs`, `gestalt_cli/src/repl.rs` — replace with `?` + `thiserror`
+- [ ] **SurrealDB v2 deepen** — make v2 the default, migrate indexer queries to v2 syntax
+- [ ] **Dependabot alerts** — 5 vulnerabilities (jsonwebtoken, lru, rand, rustls-webpki)
 
-## 📦 Maintenance
-- [ ] **Documentation**: Complete API reference for `gestalt_core` traits using `cargo doc`.
-- [ ] **CI Optimizations**: Reduce cache miss rate in GitHub Actions for faster feedback loops.
+## 🟡 Priority: Medium
+
+- [ ] **VFS integration tests** — test OverlayFs merge in complex workspace structures
+- [ ] **Tool registry tests** — add unit tests for git/shell/file tools
+- [ ] **Graceful shutdown** — gestalt_swarm needs proper SIGTERM handling
+- [ ] **Config hot-reload** — no runtime config update without restart
+
+## 🟢 Priority: Low
+
+- [ ] **cargo doc** — generate API reference for `gestalt_core` traits
+- [ ] **CI cache optimization** — reduce GitHub Actions build times
+- [ ] **Streaming for LLM adapters** — not implemented yet
+- [ ] **Long-term memory** — no persistent memory system (relies on external vector DB)
 
 ---
-*Last Update: 2026-03-03*
-*Status: Synchronized with .gitcore/planning/TASK.md*
+
+*Scope: CLI/Swarm/Core only. UI, MCP server, infra crates removed.*

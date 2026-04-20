@@ -1,8 +1,8 @@
-use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 use tempfile::tempdir;
+use thiserror::Error;
 use tracing::{info, warn};
 use walkdir::WalkDir;
 
@@ -30,6 +30,23 @@ pub struct DocumentRecord {
     pub metadata: FileMetadata,
     pub chunks: Vec<Chunk>,
 }
+
+#[derive(Debug, Error)]
+pub enum IndexerError {
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
+
+    #[error("Git error: {0}")]
+    Git(#[from] git2::Error),
+
+    #[error("Strip prefix error: {0}")]
+    StripPrefix(#[from] std::path::StripPrefixError),
+
+    #[error("Other error: {0}")]
+    Other(String),
+}
+
+pub type Result<T> = std::result::Result<T, IndexerError>;
 
 pub struct Indexer {
     allowlist: Vec<String>,
@@ -79,7 +96,9 @@ impl Indexer {
         url: &str,
     ) -> Result<(RepositoryMetadata, PathBuf, Option<tempfile::TempDir>)> {
         if Path::new(url).exists() {
-            let path = PathBuf::from(url).canonicalize()?;
+            let path = PathBuf::from(url)
+                .canonicalize()
+                .map_err(IndexerError::Io)?;
             let name = path
                 .file_name()
                 .unwrap_or_default()
@@ -160,8 +179,12 @@ impl Indexer {
 
     /// Process a file into chunks and metadata.
     pub fn process_file(&self, root: &Path, file_path: &Path) -> Result<DocumentRecord> {
-        let relative_path = file_path.strip_prefix(root)?.to_string_lossy().to_string();
-        let content = std::fs::read_to_string(file_path)?;
+        let relative_path = file_path
+            .strip_prefix(root)
+            .map_err(IndexerError::StripPrefix)?
+            .to_string_lossy()
+            .to_string();
+        let content = std::fs::read_to_string(file_path).map_err(IndexerError::Io)?;
 
         let mut hasher = Sha256::new();
         hasher.update(content.as_bytes());
@@ -229,8 +252,13 @@ impl Indexer {
 
 #[async_trait::async_trait]
 pub trait VectorAdapter: Send + Sync {
-    async fn index_document(&self, repo_id: &str, doc: DocumentRecord) -> Result<()>;
-    async fn search(&self, repo_id: &str, query: &str, limit: usize) -> Result<Vec<VectorRecord>>;
+    async fn index_document(&self, repo_id: &str, doc: DocumentRecord) -> anyhow::Result<()>;
+    async fn search(
+        &self,
+        repo_id: &str,
+        query: &str,
+        limit: usize,
+    ) -> anyhow::Result<Vec<VectorRecord>>;
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -252,7 +280,7 @@ impl SurrealAdapter {
 
 #[async_trait::async_trait]
 impl VectorAdapter for SurrealAdapter {
-    async fn index_document(&self, repo_id: &str, doc: DocumentRecord) -> Result<()> {
+    async fn index_document(&self, repo_id: &str, doc: DocumentRecord) -> anyhow::Result<()> {
         let created_at = chrono::Utc::now().to_rfc3339();
 
         // 1. Create document record
@@ -293,7 +321,12 @@ impl VectorAdapter for SurrealAdapter {
         Ok(())
     }
 
-    async fn search(&self, repo_id: &str, query: &str, limit: usize) -> Result<Vec<VectorRecord>> {
+    async fn search(
+        &self,
+        repo_id: &str,
+        query: &str,
+        limit: usize,
+    ) -> anyhow::Result<Vec<VectorRecord>> {
         // Simple keyword-based search in SurrealDB as a fallback for pure vector search
         let sql = "SELECT path, content FROM chunks WHERE doc_id CONTAINS $repo_id AND content CONTAINS $query LIMIT $limit";
         let results: Vec<VectorRecord> = self
@@ -337,21 +370,22 @@ mod tests {
     }
 
     #[test]
-    fn test_scan() {
-        let dir = tempdir().unwrap();
+    fn test_scan() -> anyhow::Result<()> {
+        let dir = tempdir().expect("failed to create temp dir");
         let file_path = dir.path().join("test.rs");
-        let mut file = File::create(&file_path).unwrap();
-        writeln!(file, "fn main() {{}}").unwrap();
+        let mut file = File::create(&file_path).expect("failed to create test file");
+        writeln!(file, "fn main() {{}}").expect("failed to write to test file");
 
         let hidden_dir = dir.path().join(".git");
-        std::fs::create_dir(&hidden_dir).unwrap();
+        std::fs::create_dir(&hidden_dir).expect("failed to create hidden dir");
         let hidden_file = hidden_dir.join("config");
-        File::create(&hidden_file).unwrap();
+        File::create(&hidden_file).expect("failed to create hidden file");
 
         let indexer = Indexer::default();
         let files = indexer.scan(dir.path());
 
         assert_eq!(files.len(), 1);
         assert!(files[0].ends_with("test.rs"));
+        Ok(())
     }
 }

@@ -1,17 +1,15 @@
 use anyhow::Result;
-use clap::{Parser, ValueHint};
+use clap::{Parser, ValueEnum, ValueHint};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
-use tokio::sync::{Semaphore, RwLock};
+use tokio::sync::{RwLock, Semaphore};
 use tracing::warn;
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
-use gestalt_core::application::agent::tools::{
-    AskAiTool, ExecuteShellTool, GitStatusTool,
-};
+use gestalt_core::application::agent::tools::{AskAiTool, ExecuteShellTool, GitStatusTool};
 use synapse_agentic::prelude::{
-    MinimaxProvider, ToolRegistry, LLMProvider,
+    GeminiProvider, GroqProvider, LLMProvider, MinimaxProvider, ToolRegistry,
 };
 
 // ============================================================================
@@ -38,13 +36,24 @@ struct Cli {
     #[arg(short, long, value_hint = ValueHint::DirPath)]
     cwd: Option<PathBuf>,
 
-    /// Model to use
-    #[arg(long, default_value = "MiniMax-Text-01")]
-    model: String,
+    /// LLM provider to use
+    #[arg(long, value_enum, default_value_t = LlmProviderKind::Gemini)]
+    provider: LlmProviderKind,
+
+    /// Model to use. Defaults depend on provider.
+    #[arg(long)]
+    model: Option<String>,
 
     /// Be quiet (less output)
     #[arg(short, long)]
     quiet: bool,
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, ValueEnum)]
+enum LlmProviderKind {
+    Gemini,
+    Groq,
+    Minimax,
 }
 
 // ============================================================================
@@ -60,6 +69,38 @@ struct AgentResult {
     tools_used: usize,
 }
 
+fn default_model(provider: LlmProviderKind) -> &'static str {
+    match provider {
+        LlmProviderKind::Gemini => "gemini-2.5-flash-lite",
+        LlmProviderKind::Groq => "llama-3.3-70b-versatile",
+        LlmProviderKind::Minimax => "MiniMax-Text-01",
+    }
+}
+
+fn build_llm_provider(provider: LlmProviderKind, model: String) -> Result<Arc<dyn LLMProvider>> {
+    match provider {
+        LlmProviderKind::Gemini => {
+            let api_key = std::env::var("GEMINI_API_KEY")
+                .map_err(|_| anyhow::anyhow!("GEMINI_API_KEY is required for --provider gemini"))?;
+            Ok(Arc::new(GeminiProvider::new(api_key, model)))
+        }
+        LlmProviderKind::Groq => {
+            let api_key = std::env::var("GROQ_API_KEY")
+                .map_err(|_| anyhow::anyhow!("GROQ_API_KEY is required for --provider groq"))?;
+            Ok(Arc::new(GroqProvider::new(api_key, model)))
+        }
+        LlmProviderKind::Minimax => {
+            let api_key = std::env::var("MINIMAX_API_KEY").map_err(|_| {
+                anyhow::anyhow!("MINIMAX_API_KEY is required for --provider minimax")
+            })?;
+            let group_id = std::env::var("MINIMAX_GROUP_ID").map_err(|_| {
+                anyhow::anyhow!("MINIMAX_GROUP_ID is required for --provider minimax")
+            })?;
+            Ok(Arc::new(MinimaxProvider::new(api_key, group_id, model)))
+        }
+    }
+}
+
 // ============================================================================
 // Swarm Execution
 // ============================================================================
@@ -68,6 +109,7 @@ async fn run_agent(
     agent_id: usize,
     goal: String,
     cwd: PathBuf,
+    provider: LlmProviderKind,
     model: String,
     semaphore: Arc<Semaphore>,
     results: Arc<RwLock<Vec<AgentResult>>>,
@@ -87,32 +129,47 @@ async fn run_agent(
     }
 
     let mut tools_used = 0;
-    let mut success = false;
-    let mut output = String::new();
+    let success;
+    let output;
 
-    // Initialize LLM provider
-    let api_key = std::env::var("MINIMAX_API_KEY").unwrap_or_default();
-    let group_id = std::env::var("MINIMAX_GROUP_ID").unwrap_or_default();
-
-    let llm = Arc::new(MinimaxProvider::new(
-        api_key.clone(),
-        group_id.clone(),
-        model.clone(),
-    ));
+    let llm = match build_llm_provider(provider, model.clone()) {
+        Ok(provider) => provider,
+        Err(e) => {
+            success = false;
+            output = format!("Agent {} failed before LLM call: {}", agent_id, e);
+            let duration_ms = start.elapsed().as_millis() as u64;
+            let mut r = results.write().await;
+            r.push(AgentResult {
+                agent_id,
+                success,
+                output,
+                duration_ms,
+                tools_used,
+            });
+            drop(permit);
+            return;
+        }
+    };
 
     // Build minimal tool registry for this agent
     let registry = ToolRegistry::new();
     registry.register_tool(ExecuteShellTool).await;
     registry.register_tool(GitStatusTool).await;
-    registry.register_tool(AskAiTool { llm_provider: llm.clone() }).await;
+    registry
+        .register_tool(AskAiTool {
+            llm_provider: llm.clone(),
+        })
+        .await;
 
     // Execute the goal
     let prompt = format!(
         "[Agent {}] Task: {}\n\
         Working directory: {:?}\n\
+        Provider: {:?}\n\
+        Model: {}\n\
         Execute this task and report results concisely.\n\
         Use tools: execute_shell, git_status, ask_ai\n",
-        agent_id, goal, cwd
+        agent_id, goal, cwd, provider, model
     );
 
     match llm.generate(&prompt).await {
@@ -154,6 +211,10 @@ async fn run_agent(
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Cli::parse();
+    let model = args
+        .model
+        .clone()
+        .unwrap_or_else(|| default_model(args.provider).to_string());
 
     let level = if args.quiet { "warn" } else { "info" };
     tracing_subscriber::registry()
@@ -161,13 +222,16 @@ async fn main() -> Result<()> {
         .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(level)))
         .init();
 
-    let cwd = args.cwd.unwrap_or_else(|| std::env::current_dir().expect("Failed to get current directory"));
+    let cwd = args
+        .cwd
+        .unwrap_or_else(|| std::env::current_dir().expect("Failed to get current directory"));
 
     println!("\n🐝 Gestalt Swarm v1.0");
     println!("   Goal: {}", args.goal);
     println!("   Agents: {}", args.agents);
     println!("   Max concurrency: {}", args.max_concurrency);
-    println!("   Model: {}", args.model);
+    println!("   Provider: {:?}", args.provider);
+    println!("   Model: {}", model);
     println!("   CWD: {:?}\n", cwd);
 
     // Shared state
@@ -185,10 +249,11 @@ async fn main() -> Result<()> {
         let sem = semaphore.clone();
         let res = results.clone();
         let quiet = args.quiet;
-        let model = args.model.clone();
+        let provider = args.provider;
+        let model = model.clone();
 
         let handle = tokio::spawn(async move {
-            run_agent(agent_id, goal, cwd, model, sem, res, quiet).await;
+            run_agent(agent_id, goal, cwd, provider, model, sem, res, quiet).await;
         });
 
         handles.push(handle);
@@ -215,8 +280,10 @@ async fn main() -> Result<()> {
     println!("  ✅ Success: {}", successes);
     println!("  ❌ Failed: {}", failures);
     println!("  ⏱️  Total time: {}ms", total_duration_ms);
-    println!("  📈 Throughput: {:.1} agents/sec",
-        all_results.len() as f64 / (total_duration_ms as f64 / 1000.0));
+    println!(
+        "  📈 Throughput: {:.1} agents/sec",
+        all_results.len() as f64 / (total_duration_ms as f64 / 1000.0)
+    );
 
     if !args.quiet {
         println!("\n{}", "-".repeat(60));

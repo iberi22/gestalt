@@ -1,11 +1,10 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand, ValueEnum, ValueHint};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
-use tokio::sync::{mpsc, watch, RwLock, Semaphore};
-use tracing::{info, warn};
+use tokio::sync::{RwLock, Semaphore};
+use tracing::warn;
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 mod health;

@@ -4,6 +4,7 @@ mod agent;
 mod auth;
 pub mod context_compaction;
 pub mod dispatcher;
+mod feedback_loop;
 pub mod file_manager;
 mod index;
 pub mod memory;
@@ -18,6 +19,8 @@ pub mod task_queue;
 pub mod telegram;
 mod timeline;
 mod watch;
+
+pub use feedback_loop::{FeedbackLoopService, SwarmAgentResult};
 
 pub use agent::{Agent, AgentService, AgentStatus, AgentType};
 pub use auth::AuthService;

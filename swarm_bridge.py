@@ -311,6 +311,62 @@ async def run_agent_async(agent: dict) -> dict:
     return await loop.run_in_executor(None, run_agent_sync, agent)
 
 
+def call_rust_ingest(run_id: str, result: dict) -> None:
+    """
+    Call the Rust swarm binary's ingest command to record metrics
+    and trigger the automated feedback loop.
+    """
+    import shutil
+
+    # Find the Rust binary
+    binary = None
+    for candidate in [
+        os.path.join(os.path.dirname(__file__), "target", "debug", "swarm.exe"),
+        os.path.join(os.path.dirname(__file__), "target", "release", "swarm.exe"),
+        "swarm",  # in PATH
+    ]:
+        if candidate == "swarm" or os.path.exists(candidate):
+            binary = candidate
+            break
+
+    if not binary:
+        print("⚠️  Rust swarm binary not found, skipping feedback loop")
+        return
+
+    # Write results to temp file
+    import tempfile
+    tmp_file = os.path.join(tempfile.gettempdir(), f"swarm_ingest_{run_id}.json")
+    with open(tmp_file, "w", encoding="utf-8") as f:
+        json.dump(result, f)
+
+    try:
+        cmd = [binary, "ingest", "--run-id", run_id, "--file", tmp_file]
+        proc = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if proc.returncode == 0:
+            if proc.stdout:
+                for line in proc.stdout.strip().split("\n"):
+                    if line.strip():
+                        print(f"   {line}")
+        else:
+            print(f"⚠️  Feedback loop returned non-zero: {proc.stderr[:200]}")
+    except FileNotFoundError:
+        print("⚠️  Rust binary not found, skipping feedback loop")
+    except subprocess.TimeoutExpired:
+        print("⚠️  Feedback loop timed out, skipping")
+    except Exception as e:
+        print(f"⚠️  Feedback loop error: {e}")
+    finally:
+        try:
+            os.unlink(tmp_file)
+        except Exception:
+            pass
+
+
 async def run_swarm_parallel(goal: str, max_agents: int = 10, selected: list[str] = None, watch: bool = False, output_file: str = None, poll_interval_ms: int = 100, timeout_sec: int = 0) -> dict:
     """Run N agents in parallel, return consolidated JSON.
 
@@ -415,6 +471,9 @@ def main():
     parser.add_argument("--output", type=str, default=None, help="Output file path for streaming mode (default: temp file)")
     parser.add_argument("--poll-interval", type=int, default=100, help="Polling interval in milliseconds for --watch mode (default: 100)")
     parser.add_argument("--timeout", type=int, default=0, help="Max time to wait in --watch mode in seconds (0 = no limit)")
+    parser.add_argument("--feedback-loop", action="store_true", default=True, help="Enable automated feedback loop after run (default: True)")
+    parser.add_argument("--no-feedback", dest="feedback_loop", action="store_false", help="Disable automated feedback loop after run")
+    parser.add_argument("--run-id", type=str, default=None, help="Custom run ID for feedback loop (auto-generated if not provided)")
     args = parser.parse_args()
 
     # Load config: CLI flags override environment variables
@@ -490,10 +549,37 @@ def main():
             with open(stream_file, "r", encoding="utf-8") as f:
                 final_state = json.load(f)
             error_count = sum(1 for r in final_state.get("results", {}).values() if r.get("status") in ("error", "timeout"))
+
+            # Automated feedback loop for watch mode
+            if args.feedback_loop and stream_file and os.path.exists(stream_file):
+                with open(stream_file, "r", encoding="utf-8") as f:
+                    stream_data = json.load(f)
+                run_id = args.run_id or str(uuid.uuid4())[:8]
+                # Reconstruct a SwarmBridgeResponse-like structure
+                feedback_data = {
+                    "goal": args.goal,
+                    "duration_ms": 0,
+                    "stats": {
+                        "total": len(stream_data.get("results", {})),
+                        "successful": sum(1 for r in stream_data.get("results", {}).values() if r.get("status") == "success"),
+                        "warnings": sum(1 for r in stream_data.get("results", {}).values() if r.get("status") == "warn"),
+                        "errors": sum(1 for r in stream_data.get("results", {}).values() if r.get("status") in ("error", "timeout")),
+                    },
+                    "agents": list(stream_data.get("results", {}).values()),
+                }
+                print(f"\n🔄 Running automated feedback loop (run_id={run_id})...")
+                call_rust_ingest(run_id, feedback_data)
+
             sys.exit(min(error_count, 255))
         sys.exit(0)
 
     result = asyncio.run(run_swarm_parallel(args.goal, optimal_n, selected))
+
+    # Automated feedback loop: ingest results and analyze
+    if args.feedback_loop:
+        run_id = args.run_id or str(uuid.uuid4())[:8]
+        print(f"\n🔄 Running automated feedback loop (run_id={run_id})...")
+        call_rust_ingest(run_id, result)
 
     if args.json:
         print(json.dumps(result, indent=2))

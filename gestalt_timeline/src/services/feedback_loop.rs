@@ -12,7 +12,7 @@ use tracing::{debug, info, warn};
 
 use crate::db::SurrealClient;
 use crate::models::execution_metrics::{
-    AgentStats, ErrorCategory, ExecutionMetrics, NextStep, PriorityLevel, PriorityUpdate,
+    AgentStats, ExecutionMetrics, NextStep, PriorityLevel, PriorityUpdate,
 };
 use crate::models::EventType;
 
@@ -21,11 +21,6 @@ const MIN_RUNS_FOR_STATS: u32 = 3;
 
 /// Minimum runs before auto-updating priority
 const MIN_RUNS_FOR_PRIORITY_UPDATE: u32 = 5;
-
-/// Failure rate thresholds for priority escalation
-const CRITICAL_FAILURE_RATE: f64 = 0.5;
-const HIGH_FAILURE_RATE: f64 = 0.25;
-const MEDIUM_FAILURE_RATE: f64 = 0.1;
 
 /// Tracks current priorities per agent type (in-memory cache).
 type PriorityCache = HashMap<String, u8>;
@@ -36,8 +31,6 @@ pub struct FeedbackLoopService {
     db: SurrealClient,
     /// In-memory cache of current priorities per agent type
     priorities: Arc<RwLock<PriorityCache>>,
-    /// Previously computed stats (for delta detection)
-    previous_stats: Arc<RwLock<HashMap<String, AgentStats>>>,
 }
 
 impl FeedbackLoopService {
@@ -46,7 +39,6 @@ impl FeedbackLoopService {
         Self {
             db,
             priorities: Arc::new(RwLock::new(HashMap::new())),
-            previous_stats: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 

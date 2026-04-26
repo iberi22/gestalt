@@ -154,6 +154,33 @@ impl SurrealClient {
             DEFINE FIELD embedding ON chunks TYPE option<array<float, 384>>;
             DEFINE FIELD metadata ON chunks TYPE option<object>;
             DEFINE INDEX idx_chunk_doc ON chunks FIELDS doc_id;
+
+            DEFINE TABLE execution_metrics SCHEMAFULL;
+            DEFINE FIELD run_id ON execution_metrics TYPE string;
+            DEFINE FIELD agent_id ON execution_metrics TYPE string;
+            DEFINE FIELD agent_type ON execution_metrics TYPE string;
+            DEFINE FIELD success ON execution_metrics TYPE bool;
+            DEFINE FIELD duration_ms ON execution_metrics TYPE int;
+            DEFINE FIELD tools_used ON execution_metrics TYPE int;
+            DEFINE FIELD return_code ON execution_metrics TYPE option<int>;
+            DEFINE FIELD error_category ON execution_metrics TYPE option<string>;
+            DEFINE FIELD error_message ON execution_metrics TYPE option<string>;
+            DEFINE FIELD timestamp ON execution_metrics TYPE any;
+            DEFINE FIELD project_id ON execution_metrics TYPE option<string>;
+            DEFINE FIELD output_lines ON execution_metrics TYPE option<int>;
+            DEFINE FIELD metadata ON execution_metrics TYPE option<object>;
+            DEFINE INDEX idx_metrics_run ON execution_metrics FIELDS run_id;
+            DEFINE INDEX idx_metrics_agent_type ON execution_metrics FIELDS agent_type;
+            DEFINE INDEX idx_metrics_timestamp ON execution_metrics FIELDS timestamp;
+
+            DEFINE TABLE priority_updates SCHEMAFULL;
+            DEFINE FIELD agent_type ON priority_updates TYPE string;
+            DEFINE FIELD old_priority ON priority_updates TYPE int;
+            DEFINE FIELD new_priority ON priority_updates TYPE int;
+            DEFINE FIELD reason ON priority_updates TYPE string;
+            DEFINE FIELD triggered_by_run_id ON priority_updates TYPE string;
+            DEFINE FIELD timestamp ON priority_updates TYPE any;
+            DEFINE INDEX idx_priority_updates_timestamp ON priority_updates FIELDS timestamp;
             "#,
         )
         .await

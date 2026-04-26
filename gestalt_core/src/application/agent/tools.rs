@@ -347,6 +347,22 @@ impl Tool for WriteFileTool {
     }
 }
 
+fn validate_shell_command(cmd: &str) -> anyhow::Result<()> {
+    if cmd.is_empty() {
+        anyhow::bail!("command cannot be empty");
+    }
+    if cmd.len() > 1000 {
+        anyhow::bail!("command too long (max 1000 characters)");
+    }
+    let dangerous = ["&&", "||", "|", ";", "`", "$"];
+    for pattern in dangerous {
+        if cmd.contains(pattern) {
+            anyhow::bail!("command contains forbidden pattern: {}", pattern);
+        }
+    }
+    Ok(())
+}
+
 fn validate_branch_name(name: &str) -> anyhow::Result<()> {
     if name.is_empty() {
         anyhow::bail!("branch name cannot be empty");

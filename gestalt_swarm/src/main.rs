@@ -9,6 +9,8 @@ use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 mod health;
 mod ingest;
+mod load_test;
+mod shared;
 
 use gestalt_core::application::agent::tools::{AskAiTool, ExecuteShellTool, GitStatusTool};
 use health::{HealthChecker, HealthConfig, SwarmHealthMonitor};

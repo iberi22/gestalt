@@ -374,11 +374,11 @@ impl<'a> PooledAgentGuard<'a> {
 impl<'a> Drop for PooledAgentGuard<'a> {
     fn drop(&mut self) {
         // Return agent to pool on drop
-        let pool = self.pool.clone();
-        let agent_id = self.agent_id;
-        tokio::spawn(async move {
-            pool.checkin(agent_id).await;
-        });
+        // NOTE: We must NOT use tokio::spawn here (async runtime may be shutting down).
+        // The guard pattern relies on explicit checkin() calls instead.
+        // If this guard is dropped without explicit checkin, the agent becomes
+        // unavailable (pool leak) but we avoid UB from spawning on a runtime in shutdown.
+        // TODO(perf): Consider a shutdown-safe channel if true async drop is needed.
     }
 }
 

@@ -5,6 +5,7 @@ use serde_json::{json, Value};
 use std::path::Path;
 use std::sync::Arc;
 use synapse_agentic::prelude::*;
+use tokio::time;
 
 pub async fn create_gestalt_tools(
     repo_manager: Arc<dyn RepoManager>,
@@ -128,6 +129,20 @@ impl Tool for SearchCodeTool {
     }
 }
 
+fn validate_shell_command(command: &str) -> anyhow::Result<()> {
+    let forbidden = [";", "&&", "||", "|", "`", "$(&", "$(", "${", ">", "<", "\n", "\r", "#", "//", "/*", "*/"];
+    for token in forbidden {
+        if command.contains(token) {
+            anyhow::bail!("command contains forbidden shell metacharacter: {{}} ({})", token);
+        }
+    }
+    if command.contains("$(") || command.contains("${") || command.contains("<<<") || command.contains("2>&1") || command.contains("1>&2") {
+        anyhow::bail!("command contains forbidden expansion pattern");
+    }
+    Ok(())
+}
+
+
 pub struct ExecuteShellTool;
 
 #[async_trait]
@@ -152,7 +167,9 @@ impl Tool for ExecuteShellTool {
         let command = args
             .get("command")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| anyhow::anyhow!("Missing 'command' parameter"))?;
+            .ok_or_else(|| anyhow::anyhow!("Missing command parameter"))?;
+
+        validate_shell_command(command)?;
 
         #[cfg(target_os = "windows")]
         let mut cmd = tokio::process::Command::new("powershell");
@@ -164,7 +181,16 @@ impl Tool for ExecuteShellTool {
         #[cfg(not(target_os = "windows"))]
         cmd.arg("-c").arg(command);
 
-        match cmd.output().await {
+        cmd.kill_on_drop(true);
+        let output_res = time::timeout(
+            std::time::Duration::from_secs(30),
+            cmd.output(),
+        )
+        .await
+        .map_err(|_| anyhow::anyhow!("command timed out after 30 seconds"))
+        .and_then(|r| r.map_err(anyhow::Error::from));
+
+        match output_res {
             Ok(output) => {
                 let stdout = String::from_utf8_lossy(&output.stdout).to_string();
                 let stderr = String::from_utf8_lossy(&output.stderr).to_string();
@@ -658,7 +684,29 @@ impl Tool for GitPushTool {
 
 #[cfg(test)]
 mod tests {
-    use super::{validate_branch_name, validate_git_path};
+    use super::{validate_branch_name, validate_git_path, validate_shell_command};
+
+    #[test]
+    fn shell_command_validation_rejects_dangerous_metacharacters() {
+        assert!(validate_shell_command("echo hello").is_ok());
+        assert!(validate_shell_command("dir /B").is_ok());
+        assert!(validate_shell_command("ls -la").is_ok());
+        assert!(validate_shell_command("echo hello; rm -rf /").is_err());
+        assert!(validate_shell_command("echo hello && malicious").is_err());
+        assert!(validate_shell_command("echo hello || evil").is_err());
+        assert!(validate_shell_command("cat file | grep secret").is_err());
+        assert!(validate_shell_command("echo $(whoami)").is_err());
+        assert!(validate_shell_command("echo '$foo'").is_err());
+        assert!(validate_shell_command("echo hello > /tmp/out").is_err());
+        assert!(validate_shell_command("echo < input.txt").is_err());
+        assert!(validate_shell_command("echo hello # comment").is_err());
+        assert!(validate_shell_command("echo // comment").is_err());
+        assert!(validate_shell_command("echo /* comment */").is_err());
+        assert!(validate_shell_command("echo hello\nwhoami").is_err());
+        assert!(validate_shell_command("echo hello\r\nid").is_err());
+        assert!(validate_shell_command("cat <<< input").is_err());
+        assert!(validate_shell_command("ls 2>&1").is_err());
+    }
 
     #[test]
     fn branch_validation_rejects_unsafe_names() {

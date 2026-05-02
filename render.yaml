@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: gestalt
+    runtime: rust
+    region: oregon
+    repo: https://github.com/iberi22/gestalt
+    buildCommand: cargo build --release -p gestalt_cli
+    startCommand: ./target/release/gestalt_cli serve --host 0.0.0.0 --port 10000
+    envVars:
+      - key: DEEPSEEK_API_KEY
+        sync: false

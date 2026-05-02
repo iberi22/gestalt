@@ -44,6 +44,9 @@ pub enum IndexerError {
 
     #[error("Other error: {0}")]
     Other(String),
+
+    #[error("Anyhow error: {0}")]
+    Anyhow(#[from] anyhow::Error),
 }
 
 pub type Result<T> = std::result::Result<T, IndexerError>;

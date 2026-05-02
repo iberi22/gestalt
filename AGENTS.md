@@ -1,82 +1,87 @@
----
-title: "Git-Core Protocol - Agent Configuration"
-type: CONFIGURATION
-id: "config-agents"
-created: 2025-12-20
-updated: 2026-03-03
-agent: copilot
-model: gemini-3-pro
-requested_by: system
-summary: |
-  Configuration rules for AI agents working on Gestalt.
-keywords: [agents, rules, workflow, configuration]
-tags: ["#configuration", "#agents", "#rules"]
-project: Gestalt
-protocol_version: 3.5.1
----
+# Gestalt — Agent Developer Guide
 
-# 🤖 AGENTS.md - AI Agent Configuration
+## Project Overview
 
-## 🎯 Prime Directive: Token Economy
-```
-Your state is GitHub Issues. Not memory. Not files. GitHub Issues.
-```
+Gestalt is a **multi-agent orchestration framework** written in Rust. It provides:
+- A REPL/CLI interface (`gestalt_cli`)
+- Core agent framework (`gestalt_core`)
+- Timeline tracking (`gestalt_timeline`)
+- Swarm capabilities (`gestalt_swarm`)
 
-## 🛡️ Architecture Verification Rule (MANDATORY)
-**BEFORE implementing ANY infrastructure/tooling:**
-1. Read `.gitcore/ARCHITECTURE.md` CRITICAL DECISIONS section
-2. Verify your implementation matches the decided stack
-3. If issue mentions alternatives, ARCHITECTURE.md decision wins
+## Key Packages
 
-## 🔄 The Loop (Workflow)
+| Package | Purpose | Entry Point |
+|---|---|---|
+| `gestalt_cli` | CLI binary & REPL | `gestalt_cli/src/main.rs` |
+| `gestalt_core` | Core agent tools, tools, context | `gestalt_core/src/` |
+| `gestalt_timeline` | Event timeline tracking | `gestalt_timeline/src/` |
+| `gestalt_swarm` | Multi-agent swarm logic | `gestalt_swarm/src/` |
+| `synapse-agentic` | Agentic primitives | `synapse-agentic/src/` |
 
-### Phase 0: HEALTH CHECK
+## Building
+
 ```bash
-# 1. Check project state
-git log --oneline -5
-# 2. Run tests (if applicable to current scope)
-cargo test -p gestalt_core
+# Full project (all crates)
+cargo build --release
+
+# CLI only (most common)
+cargo build --release -p gestalt_cli
+
+# Run the CLI
+cargo run --release -p gestalt_cli -- serve --host 0.0.0.0 --port 10000
 ```
 
-### Phase 1: READ (Context Loading)
+## Running
+
 ```bash
-# 1. Architecture
-cat .gitcore/ARCHITECTURE.md
-# 2. Current Task
-gh issue list --assignee "@me"
+# REPL mode
+cargo run --release -p gestalt_cli
+
+# Serve mode (HTTP API)
+cargo run --release -p gestalt_cli -- serve --host 0.0.0.0 --port 10000
 ```
 
-### Phase 2: ACT (Development)
+## Environment Variables
+
+| Variable | Required | Description |
+|---|---|---|
+| `DEEPSEEK_API_KEY` | Yes | DeepSeek API key for LLM calls |
+| `RUST_LOG` | No | Log level, e.g. `info` or `debug` |
+
+## Common Tasks
+
+### Run Tests
 ```bash
-# Create feature branch
-git checkout -b feat/issue-<ID>
-# Implement & Commit
-git commit -m "feat(scope): description (closes #<ID>)"
+cargo test -p gestalt_core --all-targets
+cargo test -p gestalt_cli --all-targets
+cargo test -p gestalt_timeline --lib
 ```
 
-### Phase 3: UPDATE
+### Format & Lint
 ```bash
-# Push & PR
-git push -u origin HEAD
-gh pr create --fill
+cargo fmt --all
+cargo clippy --all-targets -- -D warnings
 ```
 
-## ⛔ FORBIDDEN FILES (in Root)
-- ❌ `TODO.md`, `TASKS.md` (Moved to `.gitcore/planning/`)
-- ❌ `PLANNING.md` (Moved to `.gitcore/planning/`)
-- ❌ `NOTES.md` (Use Issue Comments)
+### Check for Security Vulnerabilities
+```bash
+cargo audit
+```
 
-## ✅ ALLOWED FILES
-- Source code (`.rs`, `.dart`)
-- `.gitcore/ARCHITECTURE.md`
-- `.gitcore/planning/` (Historical Reference)
-- `.gitcore/sprints/` (Sprint progress)
-- `.github/issues/*.md` (File-based issues)
+## Build Errors
 
-## 🚀 Proactive Execution
-**"No sugerir, HACER"**
-- If user describes a bug -> Create Issue -> Fix -> PR
-- If user wants a feature -> Create Issue -> Implement -> PR
+If you see `async fn is not permitted in Rust 2015`, the crate is using Rust 2021 edition. Make sure your toolchain supports 2021:
+```bash
+rustup update stable
+```
 
----
-*Aligned with Git-Core Protocol v3.5.1*
+## Render Deployment
+
+The `render.yaml` file defines the Render blueprint. Build/start commands for the service:
+
+```
+Build: cargo build --release -p gestalt_cli
+Start: ./target/release/gestalt_cli serve --host 0.0.0.0 --port 10000
+```
+
+Required environment variable: `DEEPSEEK_API_KEY`

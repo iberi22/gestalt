@@ -57,6 +57,32 @@ jobs:
             -p gestalt_infra_embeddings \
             --all-targets
 
+  build-binary:
+    name: Build Binary
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: rust-checks
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "gestalt-rust"
+
+      - name: Build CLI binary
+        run: cargo build --release -p gestalt_cli
+
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gestalt-cli
+          path: target/release/gestalt_cli
+          retention-days: 7
+
   security-audit:
     name: Security Audit
     runs-on: ubuntu-latest

@@ -1,130 +1,64 @@
-# CLAUDE.md
+# CLAUDE.md — Gestalt Development Guide
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+You are working on **Gestalt**, a multi-agent orchestration framework in Rust.
 
-## Project Overview
+## Project Structure
 
-Gestalt is a context-aware AI assistant for the terminal that intelligently gathers project context (files, structure, configs) to give LLMs the full picture of your work. It's a Rust workspace with multiple crates.
-
-## Key Commands
-
-### Building
-```bash
-# Build entire workspace
-cargo build
-
-# Build specific crate
-cargo build -p gestalt_cli
-cargo build -p gestalt_core
-cargo build -p gestalt_timeline
-
-# Fast/full validation aliases
-cargo check-fast
-cargo check-full
-
-# Run the CLI
-cargo run -p gestalt_cli -- --help
-
-# Run the timeline server
-cargo run -p gestalt_timeline --bin gestalt -- server --port 3000
+```
+gestalt/
+├── gestalt_cli/          # CLI binary (entry point)
+├── gestalt_core/         # Core library (agents, tools, context)
+├── gestalt_timeline/     # Timeline tracking
+├── gestalt_swarm/        # Swarm orchestration
+├── gestalt_mcp/          # MCP protocol integration
+├── gestalt_infra_github/ # GitHub integration
+├── synapse-agentic/      # Agentic primitives
+└── .github/workflows/    # CI/CD pipelines
 ```
 
-### Linting & Formatting
-```bash
-# Format code
-cargo fmt
+## Build Commands
 
-# Run clippy
-cargo clippy
-cargo clippy -p gestalt_core --fix  # with auto-fix
-```
+| Command | Purpose |
+|---|---|
+| `cargo build --release -p gestalt_cli` | Build CLI binary |
+| `cargo run --release -p gestalt_cli -- serve` | Run server |
+| `cargo test -p gestalt_core --all-targets` | Test core |
+| `cargo fmt --all` | Format code |
+| `cargo clippy --all-targets -- -D warnings` | Lint |
 
-### Testing
-```bash
-# Run all tests
-cargo test
-cargo check-fast
-cargo check-full
+## Render Deployment
 
-# Run tests for specific crate
-cargo test -p gestalt_core
-cargo test -p gestalt_timeline
+Service: `gestalt-sxo4.onrender.com`
+Blueprint: `render.yaml`
 
-# Run a specific test
-cargo test -p gestalt_timeline test_name
+**Render build settings:**
+- Root Directory: leave empty (repo root)
+- Build: `cargo build --release -p gestalt_cli`
+- Start: `./target/release/gestalt_cli serve --host 0.0.0.0 --port 10000`
+- Environment: `DEEPSEEK_API_KEY` (required)
 
-# Run e2e tests
-cargo test -p gestalt_timeline --test e2e_runtime
+## Error Resolution Workflow
 
-# Run integration tests
-cargo test -p gestalt_timeline --test integration
+When CI fails:
 
-# Benchmark compare + sync Rust metrics to leaderboard DB
-python -m agent_benchmark sync-rust --file benchmarks/rust_current.json
-python scripts/compare_benchmarks.py
-```
+1. **Check the error** — Most errors are Rust compilation or test failures
+2. **Common fixes:**
+   - `validate_shell_command` duplicates → check `gestalt_core/src/application/agent/tools.rs`
+   - `IndexerError` conversion → check `gestalt_core/src/application/indexer.rs`
+   - `async fn` errors → ensure Rust 2021 edition, run `rustup update`
+3. **Make the fix** on a branch, push, open PR
+4. **CI auto-runs** on every push/PR
 
-### Development
-```bash
-# Initialize config
-gestalt config init
+## CI Pipeline
 
-# Start MCP server
-gestalt serve --port 3000
-```
+See `.github/workflows/ci.yml`:
+- Rust format check
+- Clippy lint
+- Tests for `gestalt_core`, `gestalt_cli`, `gestalt_timeline`
+- Security audit with `cargo audit`
 
-## Architecture
+## Environment
 
-This is a Rust workspace with the following main crates:
-
-| Crate | Purpose |
-|-------|---------|
-| `gestalt_core` | Generic logic, domain models, ports/adapters, context engine |
-| `gestalt_cli` | Command-line interface using Clap and Rustyline |
-| `gestalt_timeline` | Tokio + SurrealDB orchestration, agent runtime |
-| `gestalt_mcp` | Model Context Protocol server |
-| `synapse-agentic` | Hive actor model for agent supervision |
-
-### Key Design Patterns
-
-1. **Ports & Adapters (Hexagonal)**: `gestalt_core` uses ports in `src/ports/` (inbound/outbound) with implementations in `src/adapters/`
-
-2. **Async Non-Blocking**: All long-running agent actions spawn `tokio::task` and return immediately with a `JobId`
-
-3. **Timeline-First**: Every action, command, result, or state change is recorded in a universal timeline with timestamps
-
-4. **Context Compaction**: Older reasoning steps are automatically summarized using tiktoken for estimation to manage context windows
-
-5. **Virtual File System (VFS)**: Agents operate in a volatile memory-mapped workspace before committing to disk
-6. **Binary-Safe VFS + Watcher**: Runtime supports `read_bytes`/`write_bytes` and `FileWatcher` to observe external file mutations
-
-### Data Flow
-```
-CLI -> Synapse Hive -> AgentRuntime -> LLM/_tools/VFS
-                    -> JobManager (async tasks)
-                    -> Timeline (SurrealDB)
-```
-
-## Configuration
-
-Configuration uses TOML files with environment variable overrides. See `gestalt_core/src/application/CONFIG.md` for details.
-
-- Config file locations: `./gestalt.toml`, `./config/gestalt.toml`, `~/.config/gestalt/gestalt.toml`
-- Env vars use prefix `GESTALT_` with double underscores: `GESTALT_LLM__DEFAULT_PROVIDER=openai`
-
-## Important Files
-
-- `.gitcore/ARCHITECTURE.md` - Detailed system design decisions
-- `.github/copilot-instructions.md` - Git-Core Protocol workflow
-- `RULES.md` - Development rules for AI agents
-- `gestalt_core/src/application/CONFIG.md` - Configuration system
-- `gestalt_timeline/src/services/vfs.rs` - `VirtualFs` + `FileWatcher` traits and `OverlayFs` implementation
-- `gestalt_timeline/src/services/file_manager.rs` - Runtime VFS orchestration and flush semantics
-
-## Git Workflow
-
-Follow the Git-Core Protocol:
-1. Create issues in `.github/issues/` directory
-2. Use `gh issue comment` for updates
-3. Commit format: `type(scope): description #issue`
-4. Run `cargo fmt` and `cargo clippy` before commits
+- Rust toolchain: stable
+- Edition: 2021
+- Key dependencies: tokio, async-trait, surrealdb, git2

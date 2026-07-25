@@ -139,6 +139,14 @@ impl RouterError {
             source: None,
         }
     }
+
+    pub fn Timeout(msg: impl Into<String>) -> Self {
+        Self {
+            kind: RouterErrorKind::Timeout,
+            message: msg.into(),
+            source: None,
+        }
+    }
 }
 
 pub struct Router {

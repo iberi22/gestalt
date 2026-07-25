@@ -33,6 +33,7 @@ pub struct OverlapInfo {
 
 /// Find overlaps between multiple agent branches.
 pub fn find_overlaps(
+    repo_path: &Path,
     base_sha: &str,
     active_branches: &[(String, String)],
 ) -> Result<Vec<OverlapInfo>, RouterError> {
@@ -42,8 +43,8 @@ pub fn find_overlaps(
             let (id_a, branch_a) = &active_branches[i];
             let (id_b, branch_b) = &active_branches[j];
 
-            let files_a = get_modified_files(Path::new("."), base_sha, branch_a)?;
-            let files_b = get_modified_files(Path::new("."), base_sha, branch_b)?;
+            let files_a = get_modified_files(repo_path, base_sha, branch_a)?;
+            let files_b = get_modified_files(repo_path, base_sha, branch_b)?;
 
             let result = detect_overlap(&files_a, &files_b);
             if !result.disjoint {

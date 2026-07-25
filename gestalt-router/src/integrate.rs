@@ -71,7 +71,7 @@ pub fn integrate_branches(
             conflicts: conflicted_binaries
                 .iter()
                 .map(|f| ConflictInfo {
-                    agent_id: String::new(),
+                    agent_id: binary_mods.get(f).and_then(|v| v.first().cloned()).unwrap_or_default(),
                     path: f.clone(),
                 })
                 .collect(),
@@ -83,7 +83,7 @@ pub fn integrate_branches(
     let mut conflicted_files = Vec::new();
 
     for (_agent_id, branch_or_sha) in branches {
-        let args = ["merge-tree", "--write-tree", &current_tree, branch_or_sha];
+        let args = ["merge-tree", "--write-tree", "--merge-base", base_sha, &current_tree, branch_or_sha];
         let result = checkpoint::run_git_cmd(repo_dir, &args);
 
         match result {

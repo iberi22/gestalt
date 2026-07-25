@@ -48,7 +48,7 @@ pub fn clean_path(path: &Path) -> PathBuf {
 }
 
 /// Execute a git command and return stdout as String on success.
-fn run_git_cmd(repo_path: &Path, args: &[&str]) -> Result<String, RouterError> {
+pub(crate) fn run_git_cmd(repo_path: &Path, args: &[&str]) -> Result<String, RouterError> {
     let output = std::process::Command::new("git")
         .current_dir(repo_path)
         .args(args)

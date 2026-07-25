@@ -185,6 +185,16 @@ pub fn checkpoint(
         }
     }
 
+    if files_to_add.is_empty() {
+        return Ok(CheckpointResult {
+            success: true,
+            commit_sha: None,
+            symlink_escapes: Vec::new(),
+            excluded_files,
+            files_committed: Vec::new(),
+        });
+    }
+
     // 2. Stage the valid files individually.
     for path_str in &files_to_add {
         run_git_cmd(
@@ -251,8 +261,19 @@ pub fn checkpoint(
         }
     }
 
-    // Filter out files_committed that were actually unstaged.
-    files_committed.retain(|f| !symlink_escapes.iter().any(|se| &se.path == f));
+    // Filter out files_committed that were actually unstaged or not part of files_to_add.
+    files_committed.retain(|f| {
+        let is_staged = files_to_add.iter().any(|added| {
+            if f == added {
+                true
+            } else {
+                let added_path = Path::new(added);
+                let f_path = Path::new(f);
+                f_path.starts_with(added_path)
+            }
+        });
+        is_staged && !symlink_escapes.iter().any(|se| &se.path == f)
+    });
 
     // 4. Commit changes with hooks bypassed.
     let commit_args = &[

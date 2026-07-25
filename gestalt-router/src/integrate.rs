@@ -78,12 +78,19 @@ pub fn integrate_branches(
         });
     }
 
-    // 2. Perform sequential merge using git merge-tree
+    // 2. Perform sequential merge using git merge-tree with an explicit merge-base
     let mut current_tree = base_sha.to_string();
     let mut conflicted_files = Vec::new();
 
     for (_agent_id, branch_or_sha) in branches {
-        let args = ["merge-tree", "--write-tree", &current_tree, branch_or_sha];
+        let merge_base_arg = format!("--merge-base={}", base_sha);
+        let args = vec![
+            "merge-tree",
+            "--write-tree",
+            merge_base_arg.as_str(),
+            current_tree.as_str(),
+            branch_or_sha.as_str(),
+        ];
         let result = checkpoint::run_git_cmd(repo_dir, &args);
 
         match result {

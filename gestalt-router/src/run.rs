@@ -24,6 +24,7 @@ pub struct RunSpec {
     pub max_parallel: usize,
     pub timeout: u64,
     pub push: bool,
+    pub integration_branch: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -43,11 +44,11 @@ pub struct AgentResult {
     pub state: AgentState,
     pub output: Option<String>,
     pub error: Option<String>,
-    pub status: AgentStatus,
-    pub exit_code: Option<i32>,
+    pub branch: Option<String>,
     pub changed_files: Vec<String>,
-    pub branch: String,
     pub duration_ms: u64,
+    pub run_id: Option<uuid::Uuid>,
+    pub worktree_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -69,9 +70,8 @@ pub struct ConflictInfo {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RunReport {
     pub run_id: Uuid,
-    pub base_sha: String,
-    pub agents: Vec<AgentResult>,
-    pub integration_branch: String,
+    pub results: Vec<AgentResult>,
+    pub merged_branches: Vec<String>,
     pub conflicts: Vec<ConflictInfo>,
     pub events_path: String,
     pub success: bool,

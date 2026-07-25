@@ -23,8 +23,8 @@ pub trait AgentRunner: Send + Sync {
         spec: &AgentSpec,
         worktree: &Path,
         task: &str,
-        log: &dyn EventLog,
-    ) -> Result<AgentOutcome, RouterError>;
+        timeout: Duration,
+    ) -> Result<AgentResult, RouterError>;
 }
 
 pub struct SubprocessRunner {
@@ -44,8 +44,8 @@ impl AgentRunner for SubprocessRunner {
         spec: &AgentSpec,
         worktree: &Path,
         task: &str,
-        _log: &dyn EventLog,
-    ) -> Result<AgentOutcome, RouterError> {
+        timeout: Duration,
+    ) -> Result<AgentResult, RouterError> {
         let start_time = Instant::now();
 
         // 1. Generate unique stdout and stderr file paths

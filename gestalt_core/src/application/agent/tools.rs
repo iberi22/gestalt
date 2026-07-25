@@ -130,18 +130,27 @@ impl Tool for SearchCodeTool {
 }
 
 fn validate_shell_command(command: &str) -> anyhow::Result<()> {
-    let forbidden = [";", "&&", "||", "|", "`", "$(&", "$(", "${", ">", "<", "\n", "\r", "#", "//", "/*", "*/"];
+    let forbidden = [
+        ";", "&&", "||", "|", "`", "$(&", "$(", "${", ">", "<", "\n", "\r", "#", "//", "/*", "*/",
+    ];
     for token in forbidden {
         if command.contains(token) {
-            anyhow::bail!("command contains forbidden shell metacharacter: {{}} ({})", token);
+            anyhow::bail!(
+                "command contains forbidden shell metacharacter: {{}} ({})",
+                token
+            );
         }
     }
-    if command.contains("$(") || command.contains("${") || command.contains("<<<") || command.contains("2>&1") || command.contains("1>&2") {
+    if command.contains("$(")
+        || command.contains("${")
+        || command.contains("<<<")
+        || command.contains("2>&1")
+        || command.contains("1>&2")
+    {
         anyhow::bail!("command contains forbidden expansion pattern");
     }
     Ok(())
 }
-
 
 pub struct ExecuteShellTool;
 
@@ -182,13 +191,10 @@ impl Tool for ExecuteShellTool {
         cmd.arg("-c").arg(command);
 
         cmd.kill_on_drop(true);
-        let output_res = time::timeout(
-            std::time::Duration::from_secs(30),
-            cmd.output(),
-        )
-        .await
-        .map_err(|_| anyhow::anyhow!("command timed out after 30 seconds"))
-        .and_then(|r| r.map_err(anyhow::Error::from));
+        let output_res = time::timeout(std::time::Duration::from_secs(30), cmd.output())
+            .await
+            .map_err(|_| anyhow::anyhow!("command timed out after 30 seconds"))
+            .and_then(|r| r.map_err(anyhow::Error::from));
 
         match output_res {
             Ok(output) => {

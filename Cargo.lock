@@ -1800,6 +1800,7 @@ dependencies = [
  "chrono",
  "clap",
  "config",
+ "gestalt-router",
  "gestalt_core",
  "home",
  "reqwest 0.12.28",
@@ -1812,6 +1813,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "ulid",
+ "uuid",
 ]
 
 [[package]]

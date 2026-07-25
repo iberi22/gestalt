@@ -21,6 +21,15 @@ use tokio::task::JoinSet;
 use tracing::{error, info, warn};
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 use ulid::Ulid;
+use uuid::Uuid;
+
+// gestalt-router types
+use gestalt_router::agent::SubprocessRunner;
+use gestalt_router::run::{AgentSpec, RunSpec};
+use gestalt_router::run_state::AgentState;
+use gestalt_router::router::Router;
+use gestalt_router::timeline::JsonlEventLog;
+use gestalt_router::worktree::WorktreeManager;
 
 /// Simple task storage
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -190,6 +199,29 @@ enum Commands {
         /// Workspace directory for swarm operations
         #[arg(long, default_value = ".swarm")]
         workspace: String,
+    },
+
+    /// Run multi-agent orchestration via Gestalt Router
+    Run {
+        /// Task description for the orchestrated run
+        #[arg(long)]
+        task: String,
+
+        /// Agent commands (can be specified multiple times, e.g. --agent "python agent.py")
+        #[arg(long, value_name = "COMMAND")]
+        agents: Vec<String>,
+
+        /// Base git ref (branch or commit SHA)
+        #[arg(long, default_value = "main")]
+        base_ref: String,
+
+        /// Maximum number of agents to run in parallel
+        #[arg(long, default_value_t = 4)]
+        max_parallel: usize,
+
+        /// Timeout in seconds for each agent
+        #[arg(long, default_value_t = 300)]
+        timeout: u64,
     },
 }
 
@@ -858,6 +890,153 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             // Exit with error if any tasks failed
             if failures > 0 {
                 std::process::exit(1);
+            }
+        }
+
+        Commands::Run {
+            task,
+            agents,
+            base_ref,
+            max_parallel,
+            timeout,
+        } => {
+            info!(
+                "Starting Gestalt Router run: task='{}', agents={}, max_parallel={}, timeout={}s",
+                task,
+                agents.len(),
+                max_parallel,
+                timeout
+            );
+
+            println!("🚀 Gestalt Router Run");
+            println!("   Task: {}", task);
+            println!("   Agents: {}", agents.len());
+            println!("   Base ref: {}", base_ref);
+            println!("   Max parallel: {}", max_parallel);
+            println!("   Timeout: {}s", timeout);
+            println!();
+
+            // 1. Create WorktreeManager with a temp directory
+            let run_dir = std::env::temp_dir().join(format!(
+                "gestalt-run-{}",
+                chrono::Utc::now().format("%Y%m%d-%H%M%S")
+            ));
+            std::fs::create_dir_all(&run_dir).map_err(|e| {
+                error!("Failed to create run directory: {}", e);
+                e
+            })?;
+            let worktrees = WorktreeManager::new(run_dir);
+
+            // 2. Create SubprocessRunner with the configured timeout
+            let timeout_dur = std::time::Duration::from_secs(timeout);
+            let runner = SubprocessRunner::new(timeout_dur);
+
+            // 3. Create JsonlEventLog for event timeline tracking
+            let run_id = Uuid::new_v4();
+            let log = JsonlEventLog::new(run_id).map_err(|e| {
+                let msg = format!("Failed to create event log: {}", e);
+                error!("{}", msg);
+                std::io::Error::new(std::io::ErrorKind::Other, msg)
+            })?;
+
+            // 4. Build AgentSpecs from the CLI agent commands
+            let agent_specs: Vec<AgentSpec> = agents
+                .iter()
+                .enumerate()
+                .map(|(idx, cmd)| {
+                    let parts: Vec<&str> = cmd.split_whitespace().collect();
+                    let command = parts
+                        .first()
+                        .map(|s| s.to_string())
+                        .unwrap_or_else(|| cmd.clone());
+                    let args: Vec<String> = parts[1..].iter().map(|s| s.to_string()).collect();
+                    AgentSpec {
+                        id: format!("agent-{}", idx),
+                        command,
+                        args,
+                        allowed_paths: None,
+                        env: None,
+                    }
+                })
+                .collect();
+
+            // 5. Build the RunSpec from CLI arguments
+            let spec = RunSpec {
+                base_ref: base_ref.clone(),
+                task: task.clone(),
+                agents: agent_specs,
+                max_parallel,
+                timeout,
+                push: false,
+                integration_branch: None,
+            };
+
+            // 6. Create Router and execute
+            let router = Router::new(worktrees, Box::new(runner), Box::new(log));
+            println!("⚙️  Executing run...");
+
+            match router.execute(spec).await {
+                Ok(report) => {
+                    println!();
+                    println!("📊 Run Report:");
+                    println!("   Run ID: {}", report.run_id);
+                    println!("   Success: {}", report.success);
+                    println!("   Agents: {}", report.agents.len());
+                    println!("   Merged branches: {}", report.merged_branches.len());
+                    println!("   Conflicts: {}", report.conflicts.len());
+                    println!("   Events log: {}", report.events_path);
+                    println!();
+
+                    // Print individual agent results
+                    for agent in &report.agents {
+                        let icon = match agent.state {
+                            AgentState::Success => "✅",
+                            AgentState::NoChanges => "⏭️",
+                            AgentState::Timeout => "⏰",
+                            AgentState::Crashed => "💥",
+                            AgentState::Quarantined => "⚠️",
+                            AgentState::Pending => "⏳",
+                            AgentState::Running => "🔄",
+                        };
+                        println!(
+                            "   {} [{}] {:?}",
+                            icon, agent.agent_id, agent.state
+                        );
+                        if let Some(ref err) = agent.error {
+                            println!("      Error: {}", err);
+                        }
+                        if let Some(ref out) = agent.output {
+                            if !out.is_empty() {
+                                println!("      Output: {}...", &out[..out.len().min(200)]);
+                            }
+                        }
+                        if !agent.changed_files.is_empty() {
+                            println!("      Changed files: {}", agent.changed_files.len());
+                        }
+                        println!(
+                            "      Duration: {}ms",
+                            agent.duration_ms
+                        );
+                    }
+
+                    // Print conflicts if any
+                    if !report.conflicts.is_empty() {
+                        println!();
+                        println!("   ⚠️  Conflicts:");
+                        for conflict in &report.conflicts {
+                            println!("      - {}: {}", conflict.agent_id, conflict.path);
+                        }
+                    }
+
+                    // Also output the full report as JSON for machine consumption
+                    println!();
+                    println!("{}", serde_json::to_string_pretty(&report)?);
+                }
+                Err(e) => {
+                    error!("Router execution failed: {}", e);
+                    eprintln!("❌ Router execution failed: {}", e);
+                    std::process::exit(1);
+                }
             }
         }
     }

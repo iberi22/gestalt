@@ -78,7 +78,7 @@ pub struct VersionedEvent {
 }
 
 /// Trait defining the operations on an append-only timeline log.
-pub trait EventLog {
+pub trait EventLog: Send + Sync {
     fn log(&self, event: Event) -> Result<(), crate::run::RouterError>;
     fn append(&self, event: Event) -> Result<(), crate::run::RouterError>;
     fn read_events(&self, run_id: Uuid) -> Result<Vec<Event>, crate::run::RouterError>;

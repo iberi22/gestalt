@@ -3,7 +3,10 @@ use crate::timeline::{Event, EventLog};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::time::{Duration, Instant};
+#[cfg(unix)]
+use std::os::unix::process::CommandExt;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentOutcome {
@@ -84,15 +87,10 @@ impl AgentRunner for SubprocessRunner {
         // Add the task itself as an environment variable or context if needed, but the main thing is sanitizing env
         cmd.env("GESTALT_TASK", task);
 
-        // Configure process group setsid on Unix
+        // Configure process group on Unix (safe, no unsafe)
         #[cfg(unix)]
         {
-            unsafe {
-                cmd.pre_exec(|| {
-                    libc::setsid();
-                    Ok(())
-                });
-            }
+            cmd.process_group(0);
         }
 
         cmd.stdout(std::process::Stdio::piped());

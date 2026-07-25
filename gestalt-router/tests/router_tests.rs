@@ -1,5 +1,9 @@
 use gestalt_router::run::{AgentResult, AgentSpec, RouterError, RunReport, RunSpec};
 use gestalt_router::run_state::{AgentState, RunManifest};
+use gestalt_router::worktree::WorktreeManager;
+use gestalt_router::agent::SubprocessRunner;
+use gestalt_router::timeline::MockEventLog;
+use gestalt_router::router::Router;
 use std::collections::HashMap;
 use uuid::Uuid;
 
@@ -115,4 +119,63 @@ fn test_agent_result_and_report() {
     assert_eq!(report.agents[0].state, AgentState::Success);
     assert_eq!(report.merged_branches[0], "feature-1");
     assert_eq!(report.events_path, "/tmp/events");
+}
+
+#[tokio::test]
+async fn test_router_execute_pipeline_success() {
+    // 1. Prepare temp directory for base_dir
+    let temp_base = std::env::temp_dir().join(format!("gestalt-test-{}", Uuid::new_v4()));
+    let worktrees = WorktreeManager::new(temp_base.clone());
+    let runner = Box::new(SubprocessRunner::new());
+    let log = Box::new(MockEventLog::new());
+
+    let router = Router::new(worktrees, runner, log);
+
+    // 2. Build specs for 2 agents that write a file inside their worktrees
+    let agent1 = AgentSpec {
+        id: "agent-1".to_string(),
+        command: "sh".to_string(),
+        args: vec!["-c".to_string(), "echo 'change from agent 1' > file_1.txt".to_string()],
+        allowed_paths: vec![],
+        env: HashMap::new(),
+    };
+
+    let agent2 = AgentSpec {
+        id: "agent-2".to_string(),
+        command: "sh".to_string(),
+        args: vec!["-c".to_string(), "echo 'change from agent 2' > file_2.txt".to_string()],
+        allowed_paths: vec![],
+        env: HashMap::new(),
+    };
+
+    let spec = RunSpec {
+        base_ref: "HEAD".to_string(),
+        task: "Refactor pipeline".to_string(),
+        agents: vec![agent1, agent2],
+        integration_branch: format!("gestalt/test-integration-{}", Uuid::new_v4()),
+        timeout: 30,
+        max_parallel: 2,
+    };
+
+    // 3. Execute
+    let report_res = router.execute(spec).await;
+    assert!(report_res.is_ok(), "execute failed: {:?}", report_res.err());
+
+    let report = report_res.unwrap();
+    assert_eq!(report.agents.len(), 2);
+
+    let states: HashMap<String, AgentState> = report.agents.iter()
+        .map(|r| (r.agent_id.clone(), r.state))
+        .collect();
+
+    assert_eq!(states.get("agent-1").unwrap(), &AgentState::Success);
+    assert_eq!(states.get("agent-2").unwrap(), &AgentState::Success);
+
+    // 4. Clean up integration branch created during the test
+    let _ = std::process::Command::new("git")
+        .args(["branch", "-D", &report.merged_branches[0]])
+        .output();
+
+    // Clean up temporary base directory
+    let _ = std::fs::remove_dir_all(&temp_base);
 }

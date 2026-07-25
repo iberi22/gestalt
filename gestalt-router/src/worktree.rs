@@ -2,8 +2,9 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use crate::run::RouterError;
 use serde::{Deserialize, Serialize};
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+use std::path::{Path, PathBuf};
+use std::sync::Mutex;
+use uuid::Uuid;
 pub struct WorktreeInfo {
     pub path: PathBuf,
     pub branch: Option<String>,
@@ -13,6 +14,7 @@ pub struct WorktreeInfo {
 
 pub struct WorktreeManager {
     lock: Mutex<()>,
+    pub base_dir: PathBuf,
 }
 
 impl Default for WorktreeManager {
@@ -22,10 +24,44 @@ impl Default for WorktreeManager {
 }
 
 impl WorktreeManager {
-    pub fn new() -> Self {
+    pub fn new(base_dir: PathBuf) -> Self {
         Self {
             lock: Mutex::new(()),
+            base_dir,
         }
+    }
+
+    /// High-level create_worktree: creates a worktree named by run_id + agent_id.
+    pub fn create_worktree(
+        &self,
+        run_id: Uuid,
+        agent_id: &str,
+        base_sha: &str,
+    ) -> Result<PathBuf, RouterError> {
+        let _lock = self.lock.lock().unwrap();
+        let branch = format!("gestalt/{}/{}", run_id, agent_id);
+        let wt_path = self.base_dir.join(format!("{}-{}", run_id, agent_id));
+
+        let repo_dir = std::env::current_dir()
+            .map_err(|e| RouterError::GitError(format!("Failed to get current dir: {}", e)))?;
+
+        let path_str = wt_path.to_str().ok_or_else(|| {
+            RouterError::GitError("Invalid worktree path".to_string())
+        })?;
+
+        self.run_git_command(
+            &repo_dir,
+            &["worktree", "add", "-b", &branch, path_str, base_sha],
+        )?;
+
+        Ok(wt_path)
+    }
+
+    /// Cleanup a worktree by path.
+    pub fn cleanup_worktree(&self, path: &Path) -> Result<(), RouterError> {
+        let repo_dir = std::env::current_dir()
+            .map_err(|e| RouterError::GitError(format!("Failed to get current dir: {}", e)))?;
+        self.remove_worktree(&repo_dir, path)
     }
 
     /// Verifies that git is installed and accessible.

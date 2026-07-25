@@ -159,7 +159,7 @@ impl Router {
                     static_self.write_manifest_atomically(run_id_clone, &m)?;
                     let _ = static_self.log.log(Event::AgentStateChanged {
                         run_id: run_id_clone,
-                        agent: agent_id.clone(),
+                        agent_id: agent_id.clone(),
                         from: old_state,
                         to: AgentState::Running,
                     });
@@ -167,7 +167,6 @@ impl Router {
 
                 // Run Agent
                 let mut run_result = static_self.runner.run(&agent_spec, &wt_path, &task_desc, timeout).await?;
-
                 // Run Checkpoint
                 let checkpoint_res = crate::checkpoint::run_checkpoint(&wt_path, &agent_id);
 
@@ -202,7 +201,7 @@ impl Router {
                     static_self.write_manifest_atomically(run_id_clone, &m)?;
                     let _ = static_self.log.log(Event::AgentStateChanged {
                         run_id: run_id_clone,
-                        agent: agent_id.clone(),
+                        agent_id: agent_id.clone(),
                         from: old_state,
                         to: final_state,
                     });

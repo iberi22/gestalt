@@ -1,9 +1,14 @@
+use gestalt_router::checkpoint::{checkpoint, clean_path, is_symlink_escape, run_git_cmd};
+use gestalt_router::integrate::{integrate, MergeResult};
+use gestalt_router::run::{AgentResult, AgentSpec, RouterError, RunReport, RunSpec};
 use gestalt_router::run::{
     AgentResult, AgentSpec, AgentStatus, ConflictInfo, ConflictKind, RouterError, RouterErrorKind,
     RunReport, RunSpec,
 };
+
 use gestalt_router::run_state::{AgentState, RunManifest};
 use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
 #[test]
@@ -454,4 +459,348 @@ async fn test_integrate_fallback_with_conflicts() {
     let ref_name = format!("refs/heads/gestalt/run_{}", run_id);
     let resolved_sha = run_git_sync(&["rev-parse", &ref_name], &repo.path);
     assert_eq!(resolved_sha, result.merge_sha);
+}
+
+use gestalt_router::process::{ProcessManager, RunStatus};
+
+#[tokio::test]
+async fn test_process_manager_mock_success() {
+    let pm = ProcessManager::new();
+
+    let agent1 = AgentSpec {
+        id: "agent-1".to_string(),
+        command: "mock_success".to_string(),
+        args: vec!["Hello from agent 1".to_string()],
+        allowed_paths: vec![],
+        env: HashMap::new(),
+    };
+
+    let agent2 = AgentSpec {
+        id: "agent-2".to_string(),
+        command: "mock_success".to_string(),
+        args: vec!["Hello from agent 2".to_string()],
+        allowed_paths: vec![],
+        env: HashMap::new(),
+    };
+
+    let spec = RunSpec {
+        base_ref: "main".to_string(),
+        task: "successful task".to_string(),
+        agents: vec![agent1, agent2],
+        integration_branch: "int-branch".to_string(),
+        timeout: 10,
+        max_parallel: 2,
+    };
+
+    let handle = pm.start_run(spec);
+
+    // Initial status should be Running (since tokio spawns it instantly) or Pending
+    let current_status = handle.status();
+    assert!(
+        current_status == RunStatus::Pending || current_status == RunStatus::Running,
+        "Status should be Pending or Running, got {:?}",
+        current_status
+    );
+
+    let report = handle.await_completion().await.unwrap();
+
+    assert_eq!(handle.status(), RunStatus::Completed);
+    assert_eq!(report.agents.len(), 2);
+
+    let agent1_res = report.agents.iter().find(|a| a.agent_id == "agent-1").unwrap();
+    assert_eq!(agent1_res.state, AgentState::Success);
+    assert_eq!(agent1_res.output.as_deref(), Some("Hello from agent 1"));
+
+    let agent2_res = report.agents.iter().find(|a| a.agent_id == "agent-2").unwrap();
+    assert_eq!(agent2_res.state, AgentState::Success);
+    assert_eq!(agent2_res.output.as_deref(), Some("Hello from agent 2"));
+
+    // Check manifest too
+    let manifest = handle.manifest();
+    assert_eq!(manifest.agent_states.get("agent-1").unwrap(), &AgentState::Success);
+    assert_eq!(manifest.agent_states.get("agent-2").unwrap(), &AgentState::Success);
+}
+
+#[tokio::test]
+async fn test_process_manager_cancel() {
+    let pm = ProcessManager::new();
+
+    let agent = AgentSpec {
+        id: "sleepy-agent".to_string(),
+        command: "mock_sleep".to_string(),
+        args: vec!["5000".to_string()], // Sleep for 5 seconds
+        allowed_paths: vec![],
+        env: HashMap::new(),
+    };
+
+    let spec = RunSpec {
+        base_ref: "main".to_string(),
+        task: "cancellable task".to_string(),
+        agents: vec![agent],
+        integration_branch: "int-branch".to_string(),
+        timeout: 10,
+        max_parallel: 1,
+    };
+
+    let handle = pm.start_run(spec);
+
+    // Yield control to let background tasks start running
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    assert_eq!(handle.status(), RunStatus::Running);
+
+    // Cancel the run
+    handle.cancel();
+
+    // Awaiting completion should fail or return cancelled error quickly
+    let result = handle.await_completion().await;
+    assert!(result.is_err());
+    assert_eq!(handle.status(), RunStatus::Cancelled);
+
+    // Agent state in the manifest should be Crashed (due to cancellation)
+    let manifest = handle.manifest();
+    assert_eq!(manifest.agent_states.get("sleepy-agent").unwrap(), &AgentState::Crashed);
+}
+
+#[tokio::test]
+async fn test_process_manager_global_timeout() {
+    let pm = ProcessManager::new();
+
+    let agent = AgentSpec {
+        id: "sleepy-agent".to_string(),
+        command: "mock_sleep".to_string(),
+        args: vec!["5000".to_string()], // Sleep for 5 seconds
+        allowed_paths: vec![],
+        env: HashMap::new(),
+    };
+
+    let spec = RunSpec {
+        base_ref: "main".to_string(),
+        task: "timeout task".to_string(),
+        agents: vec![agent],
+        integration_branch: "int-branch".to_string(),
+        timeout: 1, // Global timeout of 1 second
+        max_parallel: 1,
+    };
+
+    let handle = pm.start_run(spec);
+
+    // Awaiting completion should return timeout error after ~1 second
+    let result = handle.await_completion().await;
+    assert!(result.is_err(), "Expected timeout error, got Ok");
+
+    match result.unwrap_err() {
+        RouterError::Timeout => {}
+        err => panic!("Expected RouterError::Timeout, got {:?}", err),
+    }
+
+    assert_eq!(handle.status(), RunStatus::Failed);
+
+    // Agent state in the manifest should be Timeout
+    let manifest = handle.manifest();
+    assert_eq!(manifest.agent_states.get("sleepy-agent").unwrap(), &AgentState::Timeout);
+}
+
+#[tokio::test]
+async fn test_process_manager_max_parallel() {
+    let pm = ProcessManager::new();
+
+    let agent1 = AgentSpec {
+        id: "agent-1".to_string(),
+        command: "mock_sleep".to_string(),
+        args: vec!["100".to_string()],
+        allowed_paths: vec![],
+        env: HashMap::new(),
+    };
+
+    let agent2 = AgentSpec {
+        id: "agent-2".to_string(),
+        command: "mock_sleep".to_string(),
+        args: vec!["100".to_string()],
+        allowed_paths: vec![],
+        env: HashMap::new(),
+    };
+
+    let spec = RunSpec {
+        base_ref: "main".to_string(),
+        task: "parallel task".to_string(),
+        agents: vec![agent1, agent2],
+        integration_branch: "int-branch".to_string(),
+        timeout: 10,
+        max_parallel: 1, // Sequential execution
+    };
+
+    let start_time = std::time::Instant::now();
+    let handle = pm.start_run(spec);
+    let report = handle.await_completion().await.unwrap();
+    let duration = start_time.elapsed();
+
+    assert_eq!(handle.status(), RunStatus::Completed);
+    assert_eq!(report.agents.len(), 2);
+    // Since each sleeps 100ms and max_parallel is 1, they must run sequentially and take >= 200ms
+    assert!(
+        duration >= std::time::Duration::from_millis(200),
+        "Expected sequential execution to take at least 200ms, took {:?}",
+        duration
+    );
+}
+
+#[test]
+fn test_is_symlink_escape() {
+    let root = Path::new("/app/worktree");
+
+    // Normal inside-worktree relative target
+    assert!(!is_symlink_escape(root, Path::new("sub/link"), "file.txt"));
+    assert!(!is_symlink_escape(
+        root,
+        Path::new("sub/link"),
+        "../file.txt"
+    ));
+
+    // Escaping relative target
+    assert!(is_symlink_escape(
+        root,
+        Path::new("sub/link"),
+        "../../etc/passwd"
+    ));
+
+    // Absolute targets
+    assert!(is_symlink_escape(
+        root,
+        Path::new("sub/link"),
+        "/etc/passwd"
+    ));
+}
+
+#[test]
+fn test_clean_path() {
+    assert_eq!(clean_path(Path::new("a/b/../c")), PathBuf::from("a/c"));
+    assert_eq!(clean_path(Path::new("a/b/../../c")), PathBuf::from("c"));
+}
+
+#[test]
+fn test_checkpoint_integration() {
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path();
+
+    // Init fresh git repo
+    let (s, _, _) = run_git_cmd(dir, &["init", "-b", "main"]).unwrap();
+    assert_eq!(s, 0);
+
+    // Set mock identity
+    let _ = run_git_cmd(dir, &["config", "user.name", "Test User"]);
+    let _ = run_git_cmd(dir, &["config", "user.email", "test@example.com"]);
+
+    // Create a regular file and commit it first
+    let base_file = dir.join("base.txt");
+    std::fs::write(&base_file, "base content").unwrap();
+    let (s2, _, _) = run_git_cmd(dir, &["add", "base.txt"]).unwrap();
+    assert_eq!(s2, 0);
+    let (s3, _, _) = run_git_cmd(dir, &["commit", "-m", "initial"]).unwrap();
+    assert_eq!(s3, 0);
+
+    // 1. Hook bypass verification: write pre-commit hook that returns exit 1
+    let hooks_dir = dir.join(".git").join("hooks");
+    std::fs::create_dir_all(&hooks_dir).unwrap();
+    let hook_path = hooks_dir.join("pre-commit");
+    std::fs::write(&hook_path, "#!/bin/sh\nexit 1\n").unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = std::fs::metadata(&hook_path).unwrap().permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&hook_path, perms).unwrap();
+    }
+
+    // 2. Add gitignored file
+    let gitignore_path = dir.join(".gitignore");
+    std::fs::write(&gitignore_path, "*.log\n").unwrap();
+    let ignored_file = dir.join("agent_run.log");
+    std::fs::write(&ignored_file, "some log data").unwrap();
+
+    // 3. Create regular change to commit
+    let src_file = dir.join("main.rs");
+    std::fs::write(&src_file, "fn main() {}").unwrap();
+
+    // 4. Create an escaped symlink on disk
+    #[cfg(unix)]
+    {
+        let symlink_path = dir.join("leak_link");
+        let _ = std::os::unix::fs::symlink("/etc/passwd", &symlink_path);
+    }
+
+    // Run checkpoint
+    let res = checkpoint(dir, "feat: implement main").unwrap();
+    assert!(res.success);
+
+    // Verify gitignored file was logged as ExcludedFile and not staged
+    assert!(res.excluded_files.iter().any(|f| f.path == "agent_run.log"));
+
+    // Verify hook was bypassed (we successfully committed even with pre-commit hook exit 1)
+    assert!(res.commit_sha.is_some());
+
+    // Verify symlink escape was caught and not committed
+    #[cfg(unix)]
+    {
+        assert!(res.symlink_escapes.iter().any(|se| se.path == "leak_link"));
+        // Check that leak_link is not part of the commit
+        let (_, stdout, _) = run_git_cmd(dir, &["ls-tree", "HEAD", "--name-only"]).unwrap();
+        assert!(!stdout.contains("leak_link"));
+    }
+}
+
+#[test]
+fn test_integrate_binary_conflict() {
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path();
+
+    // Init fresh git repo
+    let _ = run_git_cmd(dir, &["init", "-b", "main"]);
+    let _ = run_git_cmd(dir, &["config", "user.name", "Test User"]);
+    let _ = run_git_cmd(dir, &["config", "user.email", "test@example.com"]);
+
+    // Create a base commit with a binary file
+    let base_file = dir.join("base.bin");
+    std::fs::write(&base_file, b"\x00\x01\x02").unwrap();
+    let _ = run_git_cmd(dir, &["add", "base.bin"]);
+    let _ = run_git_cmd(dir, &["commit", "-m", "init"]);
+
+    let (_, base_sha, _) = run_git_cmd(dir, &["rev-parse", "main"]).unwrap();
+    let base_sha = base_sha.trim();
+
+    // Agent A modifies base.bin on branch-a
+    let _ = run_git_cmd(dir, &["checkout", "-b", "branch-a"]);
+    std::fs::write(&base_file, b"\x00\x01\x02\x03_agent_a").unwrap();
+    let _ = run_git_cmd(
+        dir,
+        &["commit", "-a", "-m", "agent a changes", "--no-verify"],
+    );
+
+    // Agent B modifies base.bin on branch-b
+    let _ = run_git_cmd(dir, &["checkout", "main"]);
+    let _ = run_git_cmd(dir, &["checkout", "-b", "branch-b"]);
+    std::fs::write(&base_file, b"\x00\x01\x02\x04_agent_b").unwrap();
+    let _ = run_git_cmd(
+        dir,
+        &["commit", "-a", "-m", "agent b changes", "--no-verify"],
+    );
+
+    // Integrate branch-a and branch-b
+    let branches = vec![
+        ("agent-a".to_string(), "branch-a".to_string()),
+        ("agent-b".to_string(), "branch-b".to_string()),
+    ];
+
+    let res = integrate(dir, base_sha, &branches).unwrap();
+
+    match res {
+        MergeResult::HardConflict {
+            conflicted_files,
+            branches_preserved,
+        } => {
+            assert!(conflicted_files.contains(&"base.bin".to_string()));
+            assert!(branches_preserved.contains(&"branch-a".to_string()));
+            assert!(branches_preserved.contains(&"branch-b".to_string()));
+        }
+        _ => panic!("Expected HardConflict for binary file modified by multiple agents"),
+    }
 }

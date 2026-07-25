@@ -70,6 +70,7 @@ pub struct ConflictInfo {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RunReport {
     pub run_id: Uuid,
+    pub agents: Vec<AgentResult>,
     pub results: Vec<AgentResult>,
     pub merged_branches: Vec<String>,
     pub conflicts: Vec<ConflictInfo>,

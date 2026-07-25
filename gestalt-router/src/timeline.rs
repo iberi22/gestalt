@@ -45,6 +45,9 @@ pub enum Event {
         agent_b: String,
         files: Vec<String>,
     },
+    MergeConflict {
+        file: String,
+    },
     MergeComputed {
         target_branch: String,
         success: bool,

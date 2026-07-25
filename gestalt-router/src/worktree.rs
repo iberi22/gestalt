@@ -17,7 +17,7 @@ pub struct WorktreeManager {
 
 impl Default for WorktreeManager {
     fn default() -> Self {
-        Self::new()
+        Self::new(PathBuf::from("/tmp/gestalt"))
     }
 }
 
@@ -99,9 +99,8 @@ impl WorktreeManager {
         Ok(String::from_utf8_lossy(&output.stdout).into_owned())
     }
 
-    /// Creates a new worktree at the specified path and checks out a new branch.
-    /// Maps to: git worktree add -b <branch> <path> <sha>
-    pub fn create_worktree(
+    /// Low-level create_worktree: creates a worktree at a specific path.
+    pub fn create_worktree_at(
         &self,
         repo_path: &Path,
         base_sha: &str,
@@ -298,7 +297,7 @@ mod tests {
 
         // 1. Create worktree
         manager
-            .create_worktree(&repo_dir.path, &base_sha, "test-branch", &wt_path)
+            .create_worktree_at(&repo_dir.path, &base_sha, "test-branch", &wt_path)
             .expect("Failed to create worktree");
 
         // 2. List worktrees

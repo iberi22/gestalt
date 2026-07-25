@@ -1,8 +1,8 @@
 pub mod run;
 pub mod run_state;
+pub mod worktree;
 
 // Structure of commented-out modules:
-// pub mod worktree;
 // pub mod agent;
 // pub mod checkpoint;
 // pub mod overlap;

@@ -75,9 +75,11 @@ fn run_git_commit_cmd(repo_path: &Path, args: &[&str]) -> Result<String, RouterE
         .map_err(|e| RouterError::GitError(format!("Failed to execute git commit: {}", e)))?;
 
     if !output.status.success() {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(RouterError::GitError(format!(
-            "git commit failed: {}",
-            String::from_utf8_lossy(&output.stderr)
+            "git commit failed: {}\n{}",
+            stdout, stderr
         )));
     }
 
@@ -199,7 +201,6 @@ pub fn checkpoint(
         .map_err(|e| RouterError::GitError(format!("Failed to run git ls-files: {}", e)))?;
 
     let mut symlink_escapes = Vec::new();
-    let mut files_committed = Vec::new();
 
     for line in ls_stdout.lines() {
         let parts: Vec<&str> = line.split('\t').collect();
@@ -242,11 +243,28 @@ pub fn checkpoint(
                         // Use git rm --cached <file> as a fallback.
                         let _ = run_git_cmd(worktree_dir, &["rm", "--cached", path_str]);
                     }
-                } else {
-                    files_committed.push(path_str.to_string());
                 }
-            } else {
-                files_committed.push(path_str.to_string());
+            }
+        }
+    }
+
+    // Retrieve the list of staged files that are actually being committed
+    let mut files_committed = Vec::new();
+    if let Ok(staged_stdout) = run_git_cmd(worktree_dir, &["diff", "--name-only", "--cached"]) {
+        for line in staged_stdout.lines() {
+            let trimmed = line.trim();
+            if !trimmed.is_empty() {
+                files_committed.push(trimmed.to_string());
+            }
+        }
+    } else {
+        // Fallback for empty repo (no HEAD)
+        if let Ok(ls_stdout) = run_git_cmd(worktree_dir, &["ls-files"]) {
+            for line in ls_stdout.lines() {
+                let trimmed = line.trim();
+                if !trimmed.is_empty() {
+                    files_committed.push(trimmed.to_string());
+                }
             }
         }
     }

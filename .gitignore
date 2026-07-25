@@ -18,3 +18,9 @@ benchmarks/agent_benchmark.sqlite
 .env.production
 *.pem
 *.key
+
+# Database files
+xavier_memory.db
+xavier_memory.db-shm
+xavier_memory.db-wal
+*.db

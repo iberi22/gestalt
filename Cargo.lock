@@ -1777,8 +1777,10 @@ dependencies = [
 name = "gestalt-router"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "dirs",
  "gestalt_core",
+ "libc",
  "serde",
  "serde_json",
  "tempfile",

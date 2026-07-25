@@ -1,5 +1,6 @@
-use crate::checkpoint::run_git_cmd;
+use crate::checkpoint;
 use crate::run::RouterError;
+use serde::{Deserialize, Serialize};
 use std::path::Path;
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -13,33 +14,40 @@ pub enum MergeResult {
     },
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ConflictInfo {
+    pub agent_id: String,
+    pub path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IntegrateResult {
+    pub merge_sha: String,
+    pub merged_branches: Vec<String>,
+    pub conflicts: Vec<ConflictInfo>,
+}
+
+#[derive(Debug, Clone)]
+pub struct AgentIntegrationSpec {
+    pub id: String,
+    pub branch: String,
+}
+
 /// Integration implementation.
 /// Integrates changes from multiple agent branches sequentially using in-memory git merge-tree.
-/// Specifically detects if two or more agents have modified the same binary file, in which case
-/// it aborts, preserves both branches, and reports a HardConflict.
 pub fn integrate(
     repo_dir: &Path,
     base_sha: &str,
-    branches: &[(String, String)], // Vec of (agent_id, branch_or_sha)
+    branches: &[(String, String)],
 ) -> Result<MergeResult, RouterError> {
     // 1. Detect binary files modified by each agent and check for binary conflicts.
-    // binary_mods tracks which agents modified which binary files: HashMap<binary_path, Vec<agent_id>>
     let mut binary_mods: std::collections::HashMap<String, Vec<String>> =
         std::collections::HashMap::new();
 
     for (agent_id, branch_or_sha) in branches {
-        // Run git diff --numstat base_sha..branch_or_sha
         let args = ["diff", "--numstat", base_sha, branch_or_sha];
-        let (status, stdout, _stderr) = run_git_cmd(repo_dir, &args).map_err(|e| {
-            RouterError::GitError(format!("Failed to run git diff --numstat: {}", e))
-        })?;
-
-        if status != 0 {
-            return Err(RouterError::GitError(format!(
-                "git diff --numstat returned error code {}: {}",
-                status, _stderr
-            )));
-        }
+        let stdout = checkpoint::run_git_cmd(repo_dir, &args)
+            .map_err(|e| RouterError::GitError(format!("Failed to run git diff --numstat: {}", e)))?;
 
         for line in stdout.lines() {
             let parts: Vec<&str> = line.split('\t').collect();
@@ -50,7 +58,6 @@ pub fn integrate(
         }
     }
 
-    // Check if any binary file was modified by more than one agent.
     let mut conflicted_binaries = Vec::new();
     for (path, agents) in &binary_mods {
         if agents.len() > 1 {
@@ -73,92 +80,34 @@ pub fn integrate(
 
     for (_agent_id, branch_or_sha) in branches {
         let args = ["merge-tree", "--write-tree", &current_tree, branch_or_sha];
-        let (status, stdout, _stderr) = run_git_cmd(repo_dir, &args)
-            .map_err(|e| RouterError::GitError(format!("Failed to run git merge-tree: {}", e)))?;
+        let result = checkpoint::run_git_cmd(repo_dir, &args);
 
-        if status != 0 {
-            // There is a merge conflict! Parse conflicted files from stdout.
-            let mut files = Vec::new();
-            for line in stdout.lines() {
-                if line.starts_with("Conflict") || line.contains("conflict") {
-                    if let Some(idx) = line.find("in ") {
-                        let p = &line[idx + 3..];
-                        files.push(p.trim().to_string());
-                    } else {
-                        let words: Vec<&str> = line.split_whitespace().collect();
-                        if !words.is_empty() {
-                            files.push(words[words.len() - 1].trim().to_string());
-use crate::run::RouterError;
-use serde::{Deserialize, Serialize};
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct ConflictInfo {
-    pub agent_id: String,
-    pub path: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct IntegrateResult {
-    pub merge_sha: String,
-    pub merged_branches: Vec<String>,
-    pub conflicts: Vec<ConflictInfo>,
-}
-
-#[derive(Debug, Clone)]
-pub struct AgentIntegrationSpec {
-    pub id: String,
-    pub branch: String,
-}
-
-async fn run_git_cmd(
-    args: &[&str],
-    current_dir: Option<&std::path::Path>,
-) -> Result<(std::process::ExitStatus, String, String), RouterError> {
-    let mut cmd = tokio::process::Command::new("git");
-    cmd.args(args);
-    if let Some(dir) = current_dir {
-        cmd.current_dir(dir);
-    }
-    let output = cmd.output().await.map_err(|e| {
-        RouterError::GitError(format!("Failed to execute git command {:?}: {}", args, e))
-    })?;
-
-    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-
-    Ok((output.status, stdout, stderr))
-}
-
-pub async fn git_version_supports_merge_tree(repo_path: Option<&std::path::Path>) -> bool {
-    let (_status, stdout, _stderr) = match run_git_cmd(&["--version"], repo_path).await {
-        Ok(res) => res,
-        Err(_) => return false,
-    };
-    let words: Vec<&str> = stdout.split_whitespace().collect();
-    if let Some(pos) = words.iter().position(|&w| w == "version") {
-        if pos + 1 < words.len() {
-            let ver_str = words[pos + 1];
-            let parts: Vec<&str> = ver_str.split('.').collect();
-            if !parts.is_empty() {
-                if let Ok(major) = parts[0].parse::<u32>() {
-                    if major > 2 {
-                        return true;
-                    } else if major == 2 {
-                        if parts.len() > 1 {
-                            if let Ok(minor) = parts[1].parse::<u32>() {
-                                return minor >= 38;
+        match result {
+            Ok(stdout) => {
+                current_tree = stdout.trim().to_string();
+            }
+            Err(e) => {
+                // There is a merge conflict. stdout contains the conflict info.
+                let err_msg = e.to_string();
+                let mut files = Vec::new();
+                for line in err_msg.lines() {
+                    if line.starts_with("Conflict") || line.contains("conflict") {
+                        if let Some(idx) = line.find("in ") {
+                            let p = &line[idx + 3..];
+                            files.push(p.trim().to_string());
+                        } else {
+                            let words: Vec<&str> = line.split_whitespace().collect();
+                            if !words.is_empty() {
+                                files.push(words[words.len() - 1].trim().to_string());
                             }
-
                         }
                     }
                 }
+                if files.is_empty() {
+                    files.push(format!("conflict-in-branch-{}", branch_or_sha));
+                }
+                conflicted_files.extend(files);
             }
-            if files.is_empty() {
-                files.push(format!("conflict-in-branch-{}", branch_or_sha));
-            }
-            conflicted_files.extend(files);
-        } else {
-            current_tree = stdout.trim().to_string();
         }
     }
 
@@ -173,308 +122,45 @@ pub async fn git_version_supports_merge_tree(repo_path: Option<&std::path::Path>
     }
 
     // 3. Create integration commit using git commit-tree
-    // We bypass hooks by running git with "-c core.hooksPath=/dev/null".
-    let mut commit_args = vec![
+    let commit_args = vec![
         "-c",
         "core.hooksPath=/dev/null",
         "commit-tree",
         &current_tree,
         "-p",
         base_sha,
+        "-m",
+        "gestalt: integrate agent branches",
     ];
 
-    for (_, branch_or_sha) in branches {
-        commit_args.push("-p");
-        commit_args.push(branch_or_sha);
-    }
-
-    commit_args.push("-m");
-    commit_args.push("gestalt integration merge [bypassed hooks]");
-
-    let (status, stdout, stderr) = run_git_cmd(repo_dir, &commit_args)
-        .map_err(|e| RouterError::GitError(format!("Failed to run git commit-tree: {}", e)))?;
-
-    if status != 0 {
-        return Err(RouterError::GitError(format!(
-            "git commit-tree failed with code {}: {}",
-            status, stderr
-        )));
-    }
-
-    let merged_commit_sha = stdout.trim().to_string();
-
-    Ok(MergeResult::Success { merged_commit_sha })
-        }
-    }
-    false
-}
-
-fn parse_conflicted_paths(output: &str) -> Vec<String> {
-    let mut paths = std::collections::BTreeSet::new();
-    for line in output.lines() {
-        if line.starts_with("CONFLICT") {
-            if let Some(pos) = line.find("conflict in ") {
-                let path = line[pos + "conflict in ".len()..].trim().to_string();
-                if !path.is_empty() {
-                    paths.insert(path);
-                }
-            }
-        } else if let Some(tab_index) = line.find('\t') {
-            let left = &line[..tab_index];
-            let right = &line[tab_index + 1..];
-            let parts: Vec<&str> = left.split_whitespace().collect();
-            if parts.len() == 3 && (parts[2] == "1" || parts[2] == "2" || parts[2] == "3") {
-                paths.insert(right.trim().to_string());
+    let final_sha = match checkpoint::run_git_cmd(repo_dir, &commit_args) {
+        Ok(sha) => sha.trim().to_string(),
+        Err(e) => {
+            let err_msg = e.to_string();
+            // If commit-tree fails because of missing parent, try without -p
+            if err_msg.contains("unknown parent") || err_msg.contains("not a valid") {
+                let args_no_parent = vec![
+                    "-c",
+                    "core.hooksPath=/dev/null",
+                    "commit-tree",
+                    &current_tree,
+                    "-m",
+                    "gestalt: integrate agent branches",
+                ];
+                checkpoint::run_git_cmd(repo_dir, &args_no_parent)
+                    .map(|sha| sha.trim().to_string())?
+            } else {
+                return Err(RouterError::GitError(format!(
+                    "Failed to create merge commit: {}",
+                    err_msg
+                )));
             }
         }
-    }
-    paths.into_iter().collect()
-}
-
-async fn integrate_fallback(
-    base_sha: &str,
-    agent_changes: &[(AgentIntegrationSpec, usize)],
-    run_id: uuid::Uuid,
-    repo_path: Option<&std::path::Path>,
-) -> Result<IntegrateResult, RouterError> {
-    let temp_dir = std::env::temp_dir().join(format!("gestalt_integrate_{}", uuid::Uuid::new_v4()));
-    let temp_path_str = temp_dir.to_string_lossy().to_string();
-
-    let (_status, _stdout, stderr) = run_git_cmd(
-        &["worktree", "add", "--detach", &temp_path_str, base_sha],
-        repo_path,
-    ).await?;
-    if !_status.success() {
-        return Err(RouterError::GitError(format!(
-            "Fallback failed to add worktree: {}",
-            stderr
-        )));
-    }
-
-    let mut merged_branches = Vec::new();
-    let mut conflicts = Vec::new();
-
-    let cleanup = || async {
-        let _ = run_git_cmd(&["worktree", "remove", "--force", &temp_path_str], repo_path).await;
     };
 
-    for (agent, _count) in agent_changes {
-        let merge_msg = format!("Merge branch {} into integration", agent.branch);
-        let (status, _stdout, _stderr) = run_git_cmd(
-            &["merge", "--no-ff", &agent.branch, "-m", &merge_msg],
-            Some(&temp_dir),
-        ).await?;
+    let merged_branches: Vec<String> = branches.iter().map(|(_, b)| b.clone()).collect();
 
-        if status.success() {
-            merged_branches.push(agent.branch.clone());
-        } else {
-            let (_diff_status, diff_stdout, _diff_stderr) = run_git_cmd(
-                &["diff", "--name-only", "--diff-filter=U"],
-                Some(&temp_dir),
-            ).await?;
-
-            for line in diff_stdout.lines() {
-                let path = line.trim().to_string();
-                if !path.is_empty() {
-                    conflicts.push(ConflictInfo {
-                        agent_id: agent.id.clone(),
-                        path,
-                    });
-                }
-            }
-
-            if conflicts.iter().all(|c| c.agent_id != agent.id) {
-                conflicts.push(ConflictInfo {
-                    agent_id: agent.id.clone(),
-                    path: "unknown_conflict_path".to_string(),
-                });
-            }
-
-            let _ = run_git_cmd(&["merge", "--abort"], Some(&temp_dir)).await;
-        }
-    }
-
-    let (_status, stdout, stderr) = run_git_cmd(&["rev-parse", "HEAD^{tree}"], Some(&temp_dir)).await?;
-    if !_status.success() {
-        cleanup().await;
-        return Err(RouterError::GitError(format!(
-            "Fallback failed to get final tree SHA: {}",
-            stderr
-        )));
-    }
-    let final_tree = stdout.trim().to_string();
-
-    let commit_msg = format!(
-        "gestalt: integrate run {} ({} agents)",
-        run_id,
-        merged_branches.len()
-    );
-
-    let mut commit_args = vec!["commit-tree", &final_tree];
-    commit_args.push("-p");
-    commit_args.push(base_sha);
-    for branch in &merged_branches {
-        commit_args.push("-p");
-        commit_args.push(branch);
-    }
-    commit_args.push("-m");
-    commit_args.push(&commit_msg);
-
-    let (_status, stdout, stderr) = run_git_cmd(&commit_args, repo_path).await?;
-    if !_status.success() {
-        cleanup().await;
-        return Err(RouterError::GitError(format!(
-            "Fallback failed to create integration commit: {}",
-            stderr
-        )));
-    }
-    let final_sha = stdout.trim().to_string();
-
-    let ref_name = format!("refs/heads/gestalt/run_{}", run_id);
-    let (_status, _stdout, stderr) = run_git_cmd(&["update-ref", &ref_name, &final_sha], repo_path).await?;
-    if !_status.success() {
-        cleanup().await;
-        return Err(RouterError::GitError(format!(
-            "Fallback failed to update ref {}: {}",
-            ref_name, stderr
-        )));
-    }
-
-    cleanup().await;
-
-    Ok(IntegrateResult {
-        merge_sha: final_sha,
-        merged_branches,
-        conflicts,
+    Ok(MergeResult::Success {
+        merged_commit_sha: final_sha,
     })
-}
-
-pub async fn integrate(
-    base_sha: &str,
-    agents: &[AgentIntegrationSpec],
-    run_id: uuid::Uuid,
-    force_fallback: bool,
-    repo_path: Option<&std::path::Path>,
-) -> Result<IntegrateResult, RouterError> {
-    let mut agent_changes = Vec::new();
-    for agent in agents {
-        let (_status, stdout, stderr) = run_git_cmd(
-            &["diff", "--name-only", base_sha, &agent.branch],
-            repo_path,
-        ).await?;
-
-        if !_status.success() {
-            return Err(RouterError::GitError(format!(
-                "Failed to diff branch {} with {}: {}",
-                agent.branch, base_sha, stderr
-            )));
-        }
-
-        let count = stdout.lines().filter(|line| !line.trim().is_empty()).count();
-        agent_changes.push((agent.clone(), count));
-    }
-
-    agent_changes.sort_by(|a, b| {
-        a.1.cmp(&b.1).then_with(|| a.0.id.cmp(&b.0.id))
-    });
-
-    if force_fallback || !git_version_supports_merge_tree(repo_path).await {
-        return integrate_fallback(base_sha, &agent_changes, run_id, repo_path).await;
-    }
-
-    let (_status, stdout, stderr) = run_git_cmd(
-        &["rev-parse", &format!("{}^{{tree}}", base_sha)],
-        repo_path,
-    ).await?;
-    if !_status.success() {
-        return Err(RouterError::GitError(format!(
-            "Failed to resolve base tree for {}: {}",
-            base_sha, stderr
-        )));
-    }
-    let mut current_tree = stdout.trim().to_string();
-
-    let mut merged_branches = Vec::new();
-    let mut conflicts = Vec::new();
-
-    for (agent, _count) in &agent_changes {
-        let (status, stdout, stderr) = run_git_cmd(
-            &[
-                "merge-tree",
-                "--write-tree",
-                &format!("--merge-base={}", base_sha),
-                &current_tree,
-                &agent.branch,
-            ],
-            repo_path,
-        ).await?;
-
-        let mut lines = stdout.lines();
-        let merged_tree = lines.next().map(|s| s.trim().to_string()).unwrap_or_default();
-
-        if status.success() && !merged_tree.is_empty() {
-            current_tree = merged_tree;
-            merged_branches.push(agent.branch.clone());
-        } else {
-            let full_output = format!("{}\n{}", stdout, stderr);
-            let conflicted_paths = parse_conflicted_paths(&full_output);
-
-            for path in conflicted_paths {
-                conflicts.push(ConflictInfo {
-                    agent_id: agent.id.clone(),
-                    path,
-                });
-            }
-
-            if conflicts.iter().all(|c| c.agent_id != agent.id) {
-                conflicts.push(ConflictInfo {
-                    agent_id: agent.id.clone(),
-                    path: "unknown_conflict_path".to_string(),
-                });
-            }
-        }
-    }
-
-    let commit_msg = format!(
-        "gestalt: integrate run {} ({} agents)",
-        run_id,
-        merged_branches.len()
-    );
-
-    let mut commit_args = vec!["commit-tree", &current_tree];
-    commit_args.push("-p");
-    commit_args.push(base_sha);
-
-    for branch in &merged_branches {
-        commit_args.push("-p");
-        commit_args.push(branch);
-    }
-
-    commit_args.push("-m");
-    commit_args.push(&commit_msg);
-
-    let (_status, stdout, stderr) = run_git_cmd(&commit_args, repo_path).await?;
-    if !_status.success() {
-        return Err(RouterError::GitError(format!(
-            "Failed to create integration commit: {}",
-            stderr
-        )));
-    }
-    let final_sha = stdout.trim().to_string();
-
-    let ref_name = format!("refs/heads/gestalt/run_{}", run_id);
-    let (_status, _stdout, stderr) = run_git_cmd(&["update-ref", &ref_name, &final_sha], repo_path).await?;
-    if !_status.success() {
-        return Err(RouterError::GitError(format!(
-            "Failed to update ref {}: {}",
-            ref_name, stderr
-        )));
-    }
-
-    Ok(IntegrateResult {
-        merge_sha: final_sha,
-        merged_branches,
-        conflicts,
-    })
-
 }

@@ -1,5 +1,3 @@
-use std::path::{Path, PathBuf};
-use std::sync::Mutex;
 use crate::run::RouterError;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -296,7 +294,7 @@ mod tests {
         let wt_parent_dir = TempDir::new("gestalt_test_wt");
         let wt_path = wt_parent_dir.path.join("wt_subdir");
 
-        let manager = WorktreeManager::new();
+        let manager = WorktreeManager::new(PathBuf::from("/tmp"));
 
         // 1. Create worktree
         manager

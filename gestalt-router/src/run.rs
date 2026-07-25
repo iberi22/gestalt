@@ -342,7 +342,7 @@ impl Router {
         agent_results.sort_by_key(|r| agent_order.get(&r.agent_id).copied().unwrap_or(usize::MAX));
 
         let mut merged_branches = Vec::new();
-        let mut conflicts = Vec::new();
+        let mut conflicts: Vec<ConflictInfo> = Vec::new();
 
         // Checkout integration branch from base_ref
         if let Err(e) = run_git_cmd(&self.repo_path, &[
@@ -380,8 +380,11 @@ impl Router {
                         ]) {
                             for line in conflicted_out.lines() {
                                 let path_str = line.trim().to_string();
-                                if !path_str.is_empty() && !conflicts.contains(&path_str) {
-                                    conflicts.push(path_str);
+                                if !path_str.is_empty() && !conflicts.iter().any(|c| c.path == path_str) {
+                                    conflicts.push(ConflictInfo {
+                                        agent_id: result.agent_id.clone(),
+                                        path: path_str,
+                                    });
                                 }
                             }
                         }

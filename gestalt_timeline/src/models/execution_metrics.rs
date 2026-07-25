@@ -170,14 +170,19 @@ pub fn categorize_error(error: &str) -> Option<ErrorCategory> {
         return Some(ErrorCategory::PermissionDenied);
     }
 
-    if lower.contains("couldn") || lower.contains("connection")
-        || lower.contains("network") || lower.contains("dns")
+    if lower.contains("couldn")
+        || lower.contains("connection")
+        || lower.contains("network")
+        || lower.contains("dns")
     {
         return Some(ErrorCategory::NetworkError);
     }
 
-    if lower.contains("error") && (lower.contains("compilation") || lower.contains("cargo")
-        || lower.contains("rustc") || lower.contains("^"))
+    if lower.contains("error")
+        && (lower.contains("compilation")
+            || lower.contains("cargo")
+            || lower.contains("rustc")
+            || lower.contains("^"))
     {
         return Some(ErrorCategory::RustCompileError);
     }
@@ -186,7 +191,8 @@ pub fn categorize_error(error: &str) -> Option<ErrorCategory> {
         return Some(ErrorCategory::ParseError);
     }
 
-    if lower.contains("out of memory") || lower.contains("disk full")
+    if lower.contains("out of memory")
+        || lower.contains("disk full")
         || lower.contains("no space left")
     {
         return Some(ErrorCategory::ResourceExhausted);
@@ -197,9 +203,7 @@ pub fn categorize_error(error: &str) -> Option<ErrorCategory> {
     }
 
     // Check for non-zero exit code pattern
-    if lower.contains("exit code")
-        || lower.contains("returncode")
-        || lower.contains("return code")
+    if lower.contains("exit code") || lower.contains("returncode") || lower.contains("return code")
     {
         return Some(ErrorCategory::NonZeroExit);
     }
@@ -247,7 +251,7 @@ impl AgentStats {
 /// Priority level for agent types based on failure analysis.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PriorityLevel {
-    Critical = 9,  // >50% failure rate or security-related
+    Critical = 9, // >50% failure rate or security-related
     High = 7,     // 25-50% failure rate
     Medium = 5,   // 10-25% failure rate
     Low = 3,      // <10% failure rate
@@ -324,7 +328,10 @@ impl NextStep {
                     0.9,
                 ),
                 "rust_compile_error" => (
-                    format!("Run cargo check to fix compilation errors in {}", agent_type),
+                    format!(
+                        "Run cargo check to fix compilation errors in {}",
+                        agent_type
+                    ),
                     format!("Failed {} times due to Rust compilation errors", count),
                     0.9,
                 ),

@@ -85,7 +85,8 @@ impl IndexService {
             .await?;
 
         if let Some(repo) = existing.first() {
-            repo.id.as_ref()
+            repo.id
+                .as_ref()
                 .map(|t| t.to_string())
                 .context("Repository record has no ID")
         } else {
@@ -97,7 +98,9 @@ impl IndexService {
                 created_at: Utc::now(),
             };
             let created: RepoRecord = self.db.create("repositories", &new_repo).await?;
-            created.id.as_ref()
+            created
+                .id
+                .as_ref()
                 .map(|t| t.to_string())
                 .context("Created repository has no ID")
         }
@@ -124,7 +127,8 @@ impl IndexService {
             if doc.checksum == record.metadata.checksum {
                 Ok(None) // No update needed
             } else {
-                doc.id.as_ref()
+                doc.id
+                    .as_ref()
                     .map(|t| t.to_string())
                     .context("Document record has no ID")
                     .map(Some)
@@ -141,9 +145,11 @@ impl IndexService {
             };
             let created: DocRecord = self.db.create("documents", &new_doc).await?;
             Ok(Some(
-                created.id.as_ref()
+                created
+                    .id
+                    .as_ref()
                     .map(|t| t.to_string())
-                    .context("Created document has no ID")?
+                    .context("Created document has no ID")?,
             ))
         }
     }

@@ -1,87 +1,51 @@
-# Gestalt — Agent Developer Guide
+# AGENTS.md — Gestalt Agent Design Non-Negotiables
 
-## Project Overview
+Welcome! This document outlines the absolute design non-negotiables (reglas inquebrantables de diseño) for developers creating, extending, or maintaining agents within the Gestalt framework.
 
-Gestalt is a **multi-agent orchestration framework** written in Rust. It provides:
-- A REPL/CLI interface (`gestalt_cli`)
-- Core agent framework (`gestalt_core`)
-- Timeline tracking (`gestalt_timeline`)
-- Swarm capabilities (`gestalt_swarm`)
+## 🛑 Design Non-Negotiables
 
-## Key Packages
+### 1. VFS Isolation & Sandboxing
+- **Always Use OverlayFs:** Agents must never write directly to the local host filesystem outside of their designated, isolated VFS overlay. All reads and writes must go through the VFS port (`gestalt_core::ports::outbound::vfs`).
+- **No Path Escaping:** Path traversal or escaping above the virtual root is strictly prohibited. Security and sandboxing are foundational design goals.
 
-| Package | Purpose | Entry Point |
-|---|---|---|
-| `gestalt_cli` | CLI binary & REPL | `gestalt_cli/src/main.rs` |
-| `gestalt_core` | Core agent tools, tools, context | `gestalt_core/src/` |
-| `gestalt_timeline` | Event timeline tracking | `gestalt_timeline/src/` |
-| `gestalt_swarm` | Multi-agent swarm logic | `gestalt_swarm/src/` |
-| `synapse-agentic` | Agentic primitives | `synapse-agentic/src/` |
+### 2. Deterministic State Management
+- **Strict State Transitions:** Every agent execution run must map cleanly onto `AgentState` enum values (`Pending`, `Running`, `Success`, `Timeout`, `Crashed`, `NoChanges`, `Quarantined`).
+- **Run Manifests:** Agent state changes must be updated deterministically inside the central `RunManifest`. State must never be kept solely in-memory or in local transient variables.
 
-## Building
+### 3. Isolated Code Integration
+- **Feature Branch Integration:** Agents work in isolated feature/worktree branches. Integration to the target or `integration_branch` must go through the proper router merge flow (`gestalt-merge` or orchestration router).
+- **No Direct Main Commits:** Direct unvalidated commits to production/main branches of primary workspaces are prohibited.
 
+### 4. LLM Provider Resilience & Failover
+- **Automatic Fallbacks:** Any LLM caller must utilize the resilience layer to gracefully fall back (e.g., from OpenAI to Anthropic/DeepSeek) on credential errors or API timeouts.
+- **Fail Gracefully:** Never panic or crash due to rate-limiting or service-down events; always capture structured error logs and return a clean failure/timeout agent state.
+
+### 5. Workspace Crate Exclusion
+- **No gestalt_swarm workspace inclusion:** The `gestalt_swarm` package is explicitly excluded from the Cargo workspace members in `Cargo.toml` to prevent compilation/link errors regarding `GroqProvider` or `synapse-agentic`. Keep it excluded.
+
+---
+
+## 🚀 Key Framework Packages
+
+| Package | Purpose | Path |
+|---------|---------|------|
+| `gestalt_core` | Core domain, VFS, LLM adapters, registry | `gestalt_core/` |
+| `gestalt_cli` | CLI REPL and agent commands | `gestalt_cli/` |
+| `gestalt-router` | Orchestration specs, routing, run states | `gestalt-router/` |
+| `gestalt-merge` | Isolated branch merging and conflict resolution | `gestalt-merge/` |
+| `synapse-agentic` | Primitive agent tools and provider clients | `synapse-agentic/` |
+
+## 🛠️ Essential Development Tasks
+
+### Running Router Tests
+Ensure all orchestration router unit and integration tests are passing:
 ```bash
-# Full project (all crates)
-cargo build --release
-
-# CLI only (most common)
-cargo build --release -p gestalt_cli
-
-# Run the CLI
-cargo run --release -p gestalt_cli -- serve --host 0.0.0.0 --port 10000
+cargo test -p gestalt-router
 ```
 
-## Running
-
+### Formatting & Linting
+Enforce style guidelines across the workspace:
 ```bash
-# REPL mode
-cargo run --release -p gestalt_cli
-
-# Serve mode (HTTP API)
-cargo run --release -p gestalt_cli -- serve --host 0.0.0.0 --port 10000
-```
-
-## Environment Variables
-
-| Variable | Required | Description |
-|---|---|---|
-| `DEEPSEEK_API_KEY` | Yes | DeepSeek API key for LLM calls |
-| `RUST_LOG` | No | Log level, e.g. `info` or `debug` |
-
-## Common Tasks
-
-### Run Tests
-```bash
-cargo test -p gestalt_core --all-targets
-cargo test -p gestalt_cli --all-targets
-cargo test -p gestalt_timeline --lib
-```
-
-### Format & Lint
-```bash
-cargo fmt --all
+cargo fmt --all --check
 cargo clippy --all-targets -- -D warnings
 ```
-
-### Check for Security Vulnerabilities
-```bash
-cargo audit
-```
-
-## Build Errors
-
-If you see `async fn is not permitted in Rust 2015`, the crate is using Rust 2021 edition. Make sure your toolchain supports 2021:
-```bash
-rustup update stable
-```
-
-## Render Deployment
-
-The `render.yaml` file defines the Render blueprint. Build/start commands for the service:
-
-```
-Build: cargo build --release -p gestalt_cli
-Start: ./target/release/gestalt_cli serve --host 0.0.0.0 --port 10000
-```
-
-Required environment variable: `DEEPSEEK_API_KEY`

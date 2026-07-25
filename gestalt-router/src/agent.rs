@@ -1,9 +1,9 @@
-use std::path::{Path, PathBuf};
-use std::time::{Duration, Instant};
-use async_trait::async_trait;
 use crate::run::{AgentResult, AgentSpec, RouterError};
 use crate::timeline::{Event, EventLog};
+use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
+use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentOutcome {
@@ -50,8 +50,10 @@ impl AgentRunner for SubprocessRunner {
 
         // 1. Generate unique stdout and stderr file paths
         let run_id = uuid::Uuid::new_v4();
-        let stdout_path = std::env::temp_dir().join(format!("agent_stdout_{}_{}.log", spec.id, run_id));
-        let stderr_path = std::env::temp_dir().join(format!("agent_stderr_{}_{}.log", spec.id, run_id));
+        let stdout_path =
+            std::env::temp_dir().join(format!("agent_stdout_{}_{}.log", spec.id, run_id));
+        let stderr_path =
+            std::env::temp_dir().join(format!("agent_stderr_{}_{}.log", spec.id, run_id));
 
         // Create the files
         let mut stdout_file = tokio::fs::File::create(&stdout_path)
@@ -97,28 +99,28 @@ impl AgentRunner for SubprocessRunner {
         cmd.stderr(std::process::Stdio::piped());
 
         // 3. Spawn the child process
-        let mut child = cmd
-            .spawn()
-            .map_err(|e| RouterError::AgentError(format!("Failed to spawn agent process: {}", e)))?;
+        let mut child = cmd.spawn().map_err(|e| {
+            RouterError::AgentError(format!("Failed to spawn agent process: {}", e))
+        })?;
 
         // Extract pid immediately to avoid borrow issues later
         let pid = child.id();
 
         // Extract stdout/stderr pipes
-        let mut child_stdout = child.stdout.take().ok_or_else(|| {
-            RouterError::AgentError("Failed to open stdout pipe".to_string())
-        })?;
-        let mut child_stderr = child.stderr.take().ok_or_else(|| {
-            RouterError::AgentError("Failed to open stderr pipe".to_string())
-        })?;
+        let mut child_stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| RouterError::AgentError("Failed to open stdout pipe".to_string()))?;
+        let mut child_stderr = child
+            .stderr
+            .take()
+            .ok_or_else(|| RouterError::AgentError("Failed to open stderr pipe".to_string()))?;
 
         // Copy stdout/stderr to files concurrently
-        let stdout_handle = tokio::spawn(async move {
-            tokio::io::copy(&mut child_stdout, &mut stdout_file).await
-        });
-        let stderr_handle = tokio::spawn(async move {
-            tokio::io::copy(&mut child_stderr, &mut stderr_file).await
-        });
+        let stdout_handle =
+            tokio::spawn(async move { tokio::io::copy(&mut child_stdout, &mut stdout_file).await });
+        let stderr_handle =
+            tokio::spawn(async move { tokio::io::copy(&mut child_stderr, &mut stderr_file).await });
 
         // 4. Wait with timeout and graceful termination/SIGKILL pattern
         let wait_fut = child.wait();
@@ -132,7 +134,10 @@ impl AgentRunner for SubprocessRunner {
                 exit_code = status.code();
             }
             Ok(Err(e)) => {
-                return Err(RouterError::AgentError(format!("Process wait error: {}", e)));
+                return Err(RouterError::AgentError(format!(
+                    "Process wait error: {}",
+                    e
+                )));
             }
             Err(_) => {
                 // Timeout occurred!
@@ -153,7 +158,10 @@ impl AgentRunner for SubprocessRunner {
                 match tokio::time::timeout(grace_duration, &mut wait_fut).await {
                     Ok(Ok(_status)) => {}
                     Ok(Err(e)) => {
-                        return Err(RouterError::AgentError(format!("Process wait error after SIGTERM: {}", e)));
+                        return Err(RouterError::AgentError(format!(
+                            "Process wait error after SIGTERM: {}",
+                            e
+                        )));
                     }
                     Err(_) => {
                         // Grace period expired! Send SIGKILL to the process group
@@ -168,7 +176,10 @@ impl AgentRunner for SubprocessRunner {
 
                         // Final wait to reap the process
                         if let Err(e) = wait_fut.await {
-                            return Err(RouterError::AgentError(format!("Process reap error after SIGKILL: {}", e)));
+                            return Err(RouterError::AgentError(format!(
+                                "Process reap error after SIGKILL: {}",
+                                e
+                            )));
                         }
                     }
                 }
@@ -188,7 +199,10 @@ impl AgentRunner for SubprocessRunner {
         // 5. Gather files changed via git status --porcelain
         let mut files_changed = Vec::new();
         let mut git_cmd = tokio::process::Command::new("git");
-        git_cmd.arg("status").arg("--porcelain").current_dir(worktree);
+        git_cmd
+            .arg("status")
+            .arg("--porcelain")
+            .current_dir(worktree);
         if let Ok(output) = git_cmd.output().await {
             if output.status.success() {
                 let stdout = String::from_utf8_lossy(&output.stdout);
@@ -205,9 +219,16 @@ impl AgentRunner for SubprocessRunner {
             agent_id: spec.id.clone(),
             state: crate::run_state::AgentState::Success,
             output: None,
-            error: if exit_code.map_or(false, |c| c != 0) { Some("Process exited with non-zero".to_string()) } else { None },
+            error: if exit_code.map_or(false, |c| c != 0) {
+                Some("Process exited with non-zero".to_string())
+            } else {
+                None
+            },
             branch: None,
-            changed_files: files_changed.iter().map(|p| p.to_string_lossy().to_string()).collect(),
+            changed_files: files_changed
+                .iter()
+                .map(|p| p.to_string_lossy().to_string())
+                .collect(),
             duration_ms: duration.as_millis() as u64,
             run_id: None,
             worktree_path: Some(worktree.to_string_lossy().to_string()),

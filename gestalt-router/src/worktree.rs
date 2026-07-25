@@ -43,9 +43,9 @@ impl WorktreeManager {
         let repo_dir = std::env::current_dir()
             .map_err(|e| RouterError::GitError(format!("Failed to get current dir: {}", e)))?;
 
-        let path_str = wt_path.to_str().ok_or_else(|| {
-            RouterError::GitError("Invalid worktree path".to_string())
-        })?;
+        let path_str = wt_path
+            .to_str()
+            .ok_or_else(|| RouterError::GitError("Invalid worktree path".to_string()))?;
 
         self.run_git_command(
             &repo_dir,
@@ -67,20 +67,20 @@ impl WorktreeManager {
         let output = std::process::Command::new("git")
             .arg("--version")
             .output()
-            .map_err(|e| RouterError::GitError(format!("Git not found or failed to execute: {e}")))?;
+            .map_err(|e| {
+                RouterError::GitError(format!("Git not found or failed to execute: {e}"))
+            })?;
 
         if !output.status.success() {
-            return Err(RouterError::GitError("Git command returned non-zero exit code on --version".to_string()));
+            return Err(RouterError::GitError(
+                "Git command returned non-zero exit code on --version".to_string(),
+            ));
         }
         Ok(())
     }
 
     /// Helper to run a git command in the context of a repository path.
-    fn run_git_command(
-        &self,
-        repo_path: &Path,
-        args: &[&str],
-    ) -> Result<String, RouterError> {
+    fn run_git_command(&self, repo_path: &Path, args: &[&str]) -> Result<String, RouterError> {
         Self::verify_git()?;
 
         let output = std::process::Command::new("git")
@@ -109,9 +109,9 @@ impl WorktreeManager {
     ) -> Result<(), RouterError> {
         let _lock = self.lock.lock().unwrap();
 
-        let path_str = worktree_path.to_str().ok_or_else(|| {
-            RouterError::GitError("Invalid worktree path".to_string())
-        })?;
+        let path_str = worktree_path
+            .to_str()
+            .ok_or_else(|| RouterError::GitError("Invalid worktree path".to_string()))?;
 
         self.run_git_command(
             repo_path,
@@ -130,28 +130,19 @@ impl WorktreeManager {
     ) -> Result<(), RouterError> {
         let _lock = self.lock.lock().unwrap();
 
-        let path_str = worktree_path.to_str().ok_or_else(|| {
-            RouterError::GitError("Invalid worktree path".to_string())
-        })?;
+        let path_str = worktree_path
+            .to_str()
+            .ok_or_else(|| RouterError::GitError("Invalid worktree path".to_string()))?;
 
-        self.run_git_command(
-            repo_path,
-            &["worktree", "remove", path_str],
-        )?;
+        self.run_git_command(repo_path, &["worktree", "remove", path_str])?;
 
         Ok(())
     }
 
     /// Lists all worktrees in the given repository.
     /// Maps to: git worktree list --porcelain
-    pub fn list_worktrees(
-        &self,
-        repo_path: &Path,
-    ) -> Result<Vec<WorktreeInfo>, RouterError> {
-        let output_str = self.run_git_command(
-            repo_path,
-            &["worktree", "list", "--porcelain"],
-        )?;
+    pub fn list_worktrees(&self, repo_path: &Path) -> Result<Vec<WorktreeInfo>, RouterError> {
+        let output_str = self.run_git_command(repo_path, &["worktree", "list", "--porcelain"])?;
 
         struct TempWorktreeInfo {
             path: PathBuf,
@@ -217,16 +208,10 @@ impl WorktreeManager {
 
     /// Prunes stale worktree administrative files.
     /// Maps to: git worktree prune
-    pub fn prune_worktrees(
-        &self,
-        repo_path: &Path,
-    ) -> Result<(), RouterError> {
+    pub fn prune_worktrees(&self, repo_path: &Path) -> Result<(), RouterError> {
         let _lock = self.lock.lock().unwrap();
 
-        self.run_git_command(
-            repo_path,
-            &["worktree", "prune"],
-        )?;
+        self.run_git_command(repo_path, &["worktree", "prune"])?;
 
         Ok(())
     }
@@ -326,7 +311,10 @@ mod tests {
             .list_worktrees(&repo_dir.path)
             .expect("Failed to list worktrees post-removal");
         let maybe_removed_wt = post_remove_list.iter().find(|wt| wt.path == wt_path);
-        assert!(maybe_removed_wt.is_none(), "Worktree should not be in the list");
+        assert!(
+            maybe_removed_wt.is_none(),
+            "Worktree should not be in the list"
+        );
 
         // 5. Prune
         manager

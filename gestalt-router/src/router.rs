@@ -1,17 +1,17 @@
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::Command;
-use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
 use uuid::Uuid;
 
-use crate::run::{RunSpec, RunReport, RouterError, AgentResult};
-use crate::run_state::{AgentState, RunManifest};
-use crate::worktree::WorktreeManager;
 use crate::agent::AgentRunner;
+use crate::run::{AgentResult, RouterError, RunReport, RunSpec};
+use crate::run_state::{AgentState, RunManifest};
 use crate::timeline::{Event, EventLog};
+use crate::worktree::WorktreeManager;
 
 pub struct Router {
     pub worktrees: WorktreeManager,
@@ -20,8 +20,16 @@ pub struct Router {
 }
 
 impl Router {
-    pub fn new(worktrees: WorktreeManager, runner: Box<dyn AgentRunner>, log: Box<dyn EventLog>) -> Self {
-        Self { worktrees, runner, log }
+    pub fn new(
+        worktrees: WorktreeManager,
+        runner: Box<dyn AgentRunner>,
+        log: Box<dyn EventLog>,
+    ) -> Self {
+        Self {
+            worktrees,
+            runner,
+            log,
+        }
     }
 
     /// Resolves the base_ref to a git commit SHA.
@@ -35,7 +43,8 @@ impl Router {
             let stderr = String::from_utf8_lossy(&output.stderr);
             return Err(RouterError::InvalidSpec(format!(
                 "Failed to resolve base_ref '{}' to commit SHA: {}",
-                base_ref, stderr.trim()
+                base_ref,
+                stderr.trim()
             )));
         }
 
@@ -51,22 +60,29 @@ impl Router {
     }
 
     /// Writes the RunManifest atomically to manifest.json.
-    pub fn write_manifest_atomically(&self, run_id: Uuid, manifest: &RunManifest) -> Result<PathBuf, RouterError> {
+    pub fn write_manifest_atomically(
+        &self,
+        run_id: Uuid,
+        manifest: &RunManifest,
+    ) -> Result<PathBuf, RouterError> {
         let manifest_dir = self.worktrees.base_dir.join(run_id.to_string());
-        std::fs::create_dir_all(&manifest_dir)
-            .map_err(|e| RouterError::GitError(format!("Failed to create manifest directory: {}", e)))?;
+        std::fs::create_dir_all(&manifest_dir).map_err(|e| {
+            RouterError::GitError(format!("Failed to create manifest directory: {}", e))
+        })?;
 
         let manifest_path = manifest_dir.join("manifest.json");
         let temp_path = manifest_dir.join("manifest.json.tmp");
 
-        let serialized = serde_json::to_string_pretty(manifest)
-            .map_err(|e| RouterError::InvalidSpec(format!("Failed to serialize manifest: {}", e)))?;
+        let serialized = serde_json::to_string_pretty(manifest).map_err(|e| {
+            RouterError::InvalidSpec(format!("Failed to serialize manifest: {}", e))
+        })?;
 
         std::fs::write(&temp_path, serialized)
             .map_err(|e| RouterError::GitError(format!("Failed to write temp manifest: {}", e)))?;
 
-        std::fs::rename(&temp_path, &manifest_path)
-            .map_err(|e| RouterError::GitError(format!("Failed to rename manifest file atomically: {}", e)))?;
+        std::fs::rename(&temp_path, &manifest_path).map_err(|e| {
+            RouterError::GitError(format!("Failed to rename manifest file atomically: {}", e))
+        })?;
 
         Ok(manifest_path)
     }
@@ -75,7 +91,9 @@ impl Router {
     pub async fn execute(&self, spec: RunSpec) -> Result<RunReport, RouterError> {
         // 1. Validate spec
         if spec.agents.is_empty() {
-            return Err(RouterError::InvalidSpec("No agents specified in RunSpec".to_string()));
+            return Err(RouterError::InvalidSpec(
+                "No agents specified in RunSpec".to_string(),
+            ));
         }
 
         let base_sha = self.resolve_base_sha(&spec.base_ref)?;
@@ -155,7 +173,10 @@ impl Router {
                 // Transition state to Running
                 {
                     let mut m = manifest_lock.lock().await;
-                    let old_state = m.agent_states.insert(agent_id.clone(), AgentState::Running).unwrap_or(AgentState::Pending);
+                    let old_state = m
+                        .agent_states
+                        .insert(agent_id.clone(), AgentState::Running)
+                        .unwrap_or(AgentState::Pending);
                     static_self.write_manifest_atomically(run_id_clone, &m)?;
                     let _ = static_self.log.log(Event::AgentStateChanged {
                         run_id: run_id_clone,
@@ -166,21 +187,22 @@ impl Router {
                 }
 
                 // Run Agent
-                let mut run_result = static_self.runner.run(&agent_spec, &wt_path, &task_desc, timeout).await?;
+                let mut run_result = static_self
+                    .runner
+                    .run(&agent_spec, &wt_path, &task_desc, timeout)
+                    .await?;
                 // Run Checkpoint
                 let checkpoint_res = crate::checkpoint::run_checkpoint(&wt_path, &agent_id);
 
                 let final_state = match run_result.state {
-                    AgentState::Success => {
-                        match checkpoint_res {
-                            Ok(true) => AgentState::Success,
-                            Ok(false) => AgentState::NoChanges,
-                            Err(e) => {
-                                run_result.error = Some(format!("Checkpoint failed: {}", e));
-                                AgentState::Crashed
-                            }
+                    AgentState::Success => match checkpoint_res {
+                        Ok(true) => AgentState::Success,
+                        Ok(false) => AgentState::NoChanges,
+                        Err(e) => {
+                            run_result.error = Some(format!("Checkpoint failed: {}", e));
+                            AgentState::Crashed
                         }
-                    }
+                    },
                     AgentState::Crashed => {
                         let _ = checkpoint_res;
                         AgentState::Crashed
@@ -197,7 +219,10 @@ impl Router {
                 // Update final state in manifest
                 {
                     let mut m = manifest_lock.lock().await;
-                    let old_state = m.agent_states.insert(agent_id.clone(), final_state).unwrap_or(AgentState::Running);
+                    let old_state = m
+                        .agent_states
+                        .insert(agent_id.clone(), final_state)
+                        .unwrap_or(AgentState::Running);
                     static_self.write_manifest_atomically(run_id_clone, &m)?;
                     let _ = static_self.log.log(Event::AgentStateChanged {
                         run_id: run_id_clone,
@@ -230,7 +255,10 @@ impl Router {
                     for wt in &created_wts {
                         let _ = self.worktrees.cleanup_worktree(wt);
                     }
-                    return Err(RouterError::AgentError(format!("Agent task panicked or cancelled: {}", e)));
+                    return Err(RouterError::AgentError(format!(
+                        "Agent task panicked or cancelled: {}",
+                        e
+                    )));
                 }
             }
         }
@@ -239,7 +267,12 @@ impl Router {
         let active_branches: Vec<(String, String)> = agent_results
             .iter()
             .filter(|r| r.state == AgentState::Success || r.state == AgentState::Crashed)
-            .map(|r| (r.agent_id.clone(), format!("gestalt/{}/{}", run_id, r.agent_id)))
+            .map(|r| {
+                (
+                    r.agent_id.clone(),
+                    format!("gestalt/{}/{}", run_id, r.agent_id),
+                )
+            })
             .collect();
 
         let overlaps = crate::overlap::find_overlaps(&base_sha, &active_branches)?;
@@ -248,7 +281,11 @@ impl Router {
                 run_id,
                 agent_a: overlap.agent_a.clone(),
                 agent_b: overlap.agent_b.clone(),
-                files: overlap.files.iter().map(|p| p.to_string_lossy().to_string()).collect(),
+                files: overlap
+                    .files
+                    .iter()
+                    .map(|p| p.to_string_lossy().to_string())
+                    .collect(),
             });
         }
 
@@ -256,14 +293,22 @@ impl Router {
         let branches_to_merge: Vec<(String, String)> = agent_results
             .iter()
             .filter(|r| r.state == AgentState::Success)
-            .map(|r| (r.agent_id.clone(), format!("gestalt/{}/{}", run_id, r.agent_id)))
+            .map(|r| {
+                (
+                    r.agent_id.clone(),
+                    format!("gestalt/{}/{}", run_id, r.agent_id),
+                )
+            })
             .collect();
 
         let mut merged_branches = Vec::new();
         let mut conflicts = Vec::new();
 
         if !branches_to_merge.is_empty() {
-            match self.worktrees.create_worktree(run_id, "_integrate", &base_sha) {
+            match self
+                .worktrees
+                .create_worktree(run_id, "_integrate", &base_sha)
+            {
                 Ok(integrate_wt_path) => {
                     match crate::integrate::integrate_branches(
                         &integrate_wt_path,
@@ -319,7 +364,9 @@ impl Router {
         );
         let _ = self.log.log(Event::RunFinished { run_id, summary });
 
-        let events_path = self.worktrees.base_dir
+        let events_path = self
+            .worktrees
+            .base_dir
             .join(run_id.to_string())
             .join("events.jsonl")
             .to_string_lossy()

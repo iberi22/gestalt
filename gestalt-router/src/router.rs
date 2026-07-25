@@ -275,7 +275,9 @@ impl Router {
             })
             .collect();
 
-        let overlaps = crate::overlap::find_overlaps(&base_sha, &active_branches)?;
+        let repo_dir = std::env::current_dir()
+            .map_err(|e| RouterError::GitError(format!("Failed to get current dir: {}", e)))?;
+        let overlaps = crate::overlap::find_overlaps(&repo_dir, &base_sha, &active_branches)?;
         for overlap in &overlaps {
             let _ = self.log.log(Event::OverlapDetected {
                 run_id,

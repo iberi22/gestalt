@@ -1,5 +1,4 @@
 use crate::run::{AgentResult, AgentSpec, RouterError};
-use crate::timeline::{Event, EventLog};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -70,11 +69,19 @@ impl AgentRunner for SubprocessRunner {
 
         // Sanitize environment variables: clear everything, then add safe essential variables plus user-specified ones.
         cmd.env_clear();
+        let mut has_path = false;
         for var in &["PATH", "HOME", "USER", "TERM", "LANG", "LC_ALL"] {
             if let Ok(val) = std::env::var(var) {
                 cmd.env(var, val);
+                if *var == "PATH" {
+                    has_path = true;
+                }
             }
         }
+        if !has_path {
+            cmd.env("PATH", "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin");
+        }
+
         if let Some(ref env) = spec.env {
             for (k, v) in env.iter() {
                 cmd.env(k, v);
@@ -129,7 +136,7 @@ impl AgentRunner for SubprocessRunner {
         let mut exit_code = None;
         let mut is_timeout = false;
 
-        match tokio::time::timeout(self.timeout, &mut wait_fut).await {
+        match tokio::time::timeout(timeout, &mut wait_fut).await {
             Ok(Ok(status)) => {
                 exit_code = status.code();
             }
@@ -147,8 +154,10 @@ impl AgentRunner for SubprocessRunner {
                 #[cfg(unix)]
                 {
                     if let Some(p) = pid {
-                        unsafe {
-                            libc::kill(-(p as libc::pid_t), libc::SIGTERM);
+                        if p > 1 {
+                            unsafe {
+                                libc::kill(-(p as libc::pid_t), libc::SIGTERM);
+                            }
                         }
                     }
                 }
@@ -168,8 +177,10 @@ impl AgentRunner for SubprocessRunner {
                         #[cfg(unix)]
                         {
                             if let Some(p) = pid {
-                                unsafe {
-                                    libc::kill(-(p as libc::pid_t), libc::SIGKILL);
+                                if p > 1 {
+                                    unsafe {
+                                        libc::kill(-(p as libc::pid_t), libc::SIGKILL);
+                                    }
                                 }
                             }
                         }
@@ -190,11 +201,46 @@ impl AgentRunner for SubprocessRunner {
         let _ = stdout_handle.await;
         let _ = stderr_handle.await;
 
+        // Cleanup process group to kill orphan grandchildren
+        #[cfg(unix)]
+        {
+            if let Some(p) = pid {
+                if p > 1 {
+                    unsafe {
+                        libc::kill(-(p as libc::pid_t), libc::SIGKILL);
+                    }
+                }
+            }
+        }
+
         let duration = start_time.elapsed();
 
         if is_timeout {
             exit_code = Some(-1);
         }
+
+        // Read captured output and delete temporary files to avoid disk leaks
+        let stdout_content = tokio::fs::read_to_string(&stdout_path).await.unwrap_or_default();
+        let stderr_content = tokio::fs::read_to_string(&stderr_path).await.unwrap_or_default();
+        let _ = tokio::fs::remove_file(&stdout_path).await;
+        let _ = tokio::fs::remove_file(&stderr_path).await;
+
+        let mut full_output = String::new();
+        if !stdout_content.is_empty() {
+            full_output.push_str(&stdout_content);
+        }
+        if !stderr_content.is_empty() {
+            if !full_output.is_empty() {
+                full_output.push('\n');
+            }
+            full_output.push_str(&stderr_content);
+        }
+
+        let output_opt = if full_output.is_empty() {
+            None
+        } else {
+            Some(full_output)
+        };
 
         // 5. Gather files changed via git status --porcelain
         let mut files_changed = Vec::new();
@@ -215,15 +261,27 @@ impl AgentRunner for SubprocessRunner {
             }
         }
 
+        let state = if is_timeout {
+            crate::run_state::AgentState::Timeout
+        } else if exit_code.map_or(false, |c| c != 0) {
+            crate::run_state::AgentState::Crashed
+        } else {
+            crate::run_state::AgentState::Success
+        };
+
+        let error = if is_timeout {
+            Some("Agent process timed out".to_string())
+        } else if exit_code.map_or(false, |c| c != 0) {
+            Some(format!("Process exited with non-zero code: {:?}", exit_code))
+        } else {
+            None
+        };
+
         Ok(crate::run::AgentResult {
             agent_id: spec.id.clone(),
-            state: crate::run_state::AgentState::Success,
-            output: None,
-            error: if exit_code.map_or(false, |c| c != 0) {
-                Some("Process exited with non-zero".to_string())
-            } else {
-                None
-            },
+            state,
+            output: output_opt,
+            error,
             branch: None,
             changed_files: files_changed
                 .iter()

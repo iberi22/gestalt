@@ -18,7 +18,5 @@ dirs = "5.0.1"
 gestalt_core = { path = "../gestalt_core" }
 
 [dev-dependencies]
-tempfile = "3.8"
-tempfile = "3"
 tempfile = "3.10.1"
 

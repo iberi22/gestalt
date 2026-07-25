@@ -48,7 +48,7 @@ pub enum Event {
     MergeConflict {
         run_id: Uuid,
         agent: String,
-        file: String,
+        path: String,
     },
     MergeComputed {
         target_branch: String,
@@ -79,13 +79,9 @@ pub struct VersionedEvent {
 
 /// Trait defining the operations on an append-only timeline log.
 pub trait EventLog {
-    /// Appends an event to the log.
+    fn log(&self, event: Event) -> Result<(), crate::run::RouterError>;
     fn append(&self, event: Event) -> Result<(), crate::run::RouterError>;
-
-    /// Reads all successfully parsed events for a specific run.
     fn read_events(&self, run_id: Uuid) -> Result<Vec<Event>, crate::run::RouterError>;
-
-    /// Lists all run IDs that have logs in the directory.
     fn list_runs(&self) -> Result<Vec<Uuid>, crate::run::RouterError>;
 }
 

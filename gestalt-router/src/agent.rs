@@ -1,12 +1,9 @@
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 use async_trait::async_trait;
-use crate::run::{AgentSpec, RouterError};
-use serde::{Serialize, Deserialize};
-
-pub trait EventLog: Send + Sync {
-    // Basic placeholder trait as specified.
-}
+use crate::run::{AgentResult, AgentSpec, RouterError};
+use crate::timeline::{Event, EventLog};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentOutcome {

@@ -223,6 +223,11 @@ impl Router {
                             state: AgentState::Crashed,
                             output: None,
                             error: Some(format!("Failed to spawn agent process: {}", e)),
+                            branch: None,
+                            changed_files: vec![],
+                            duration_ms: 0,
+                            run_id: None,
+                            worktree_path: None,
                         };
                     }
                 };
@@ -314,6 +319,11 @@ impl Router {
                     state,
                     output,
                     error,
+                    branch: None,
+                    changed_files: vec![],
+                    duration_ms: 0,
+                    run_id: None,
+                    worktree_path: None,
                 }
             });
         }

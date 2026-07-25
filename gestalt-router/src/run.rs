@@ -204,7 +204,7 @@ impl Router {
                 // Execute agent process
                 let mut cmd = tokio::process::Command::new(&agent.command);
                 cmd.args(&agent.args)
-                    .current_dir(&worktree_path);
+                    .current_dir(&worktree_path)
                     .stdout(std::process::Stdio::piped())
                     .stderr(std::process::Stdio::piped());
 

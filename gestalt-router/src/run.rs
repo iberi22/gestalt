@@ -71,7 +71,6 @@ pub struct ConflictInfo {
 pub struct RunReport {
     pub run_id: Uuid,
     pub agents: Vec<AgentResult>,
-    pub results: Vec<AgentResult>,
     pub merged_branches: Vec<String>,
     pub conflicts: Vec<ConflictInfo>,
     pub events_path: String,
@@ -194,14 +193,18 @@ impl Router {
                         state: AgentState::Crashed,
                         output: None,
                         error: Some(format!("Failed to create git worktree: {}", e)),
+                        branch: None,
+                        changed_files: vec![],
+                        duration_ms: 0,
+                        run_id: None,
+                        worktree_path: None,
                     };
                 }
 
                 // Execute agent process
                 let mut cmd = tokio::process::Command::new(&agent.command);
                 cmd.args(&agent.args)
-                    .current_dir(&worktree_path)
-                    .envs(&agent.env)
+                    .current_dir(&worktree_path);
                     .stdout(std::process::Stdio::piped())
                     .stderr(std::process::Stdio::piped());
 
@@ -395,6 +398,7 @@ impl Router {
             merged_branches,
             conflicts,
             events_path,
+            success: true,
         })
     }
 }

@@ -14,16 +14,16 @@ use crate::timeline::{Event, EventLog};
 use crate::worktree::WorktreeManager;
 
 pub struct Router {
-    pub worktrees: WorktreeManager,
-    pub runner: Box<dyn AgentRunner>,
-    pub log: Box<dyn EventLog>,
+    pub worktrees: Arc<WorktreeManager>,
+    pub runner: Arc<dyn AgentRunner>,
+    pub log: Arc<dyn EventLog>,
 }
 
 impl Router {
     pub fn new(
-        worktrees: WorktreeManager,
-        runner: Box<dyn AgentRunner>,
-        log: Box<dyn EventLog>,
+        worktrees: Arc<WorktreeManager>,
+        runner: Arc<dyn AgentRunner>,
+        log: Arc<dyn EventLog>,
     ) -> Self {
         Self {
             worktrees,
@@ -152,9 +152,12 @@ impl Router {
         let manifest_mutex = Arc::new(Mutex::new(manifest));
         let mut join_set = JoinSet::new();
 
-        // Cast self to static lifetime safely because we await all spawned tasks
-        // in this method and don't leak them.
-        let static_self: &'static Router = unsafe { std::mem::transmute(self) };
+        // Share Router via Arc for spawned tasks
+        let router = Arc::new(Router {
+            worktrees: self.worktrees.clone(),
+            runner: self.runner.clone(),
+            log: self.log.clone(),
+        });
 
         for agent in spec.agents {
             let sem_clone = semaphore.clone();
@@ -166,6 +169,7 @@ impl Router {
             let run_id_clone = run_id;
             let wt_path = wt_paths.get(&agent_id).cloned().unwrap();
             let timeout = std::time::Duration::from_secs(spec.timeout);
+            let router = router.clone();
 
             join_set.spawn(async move {
                 let _permit = sem_clone.acquire_owned().await.unwrap();
@@ -177,8 +181,8 @@ impl Router {
                         .agent_states
                         .insert(agent_id.clone(), AgentState::Running)
                         .unwrap_or(AgentState::Pending);
-                    static_self.write_manifest_atomically(run_id_clone, &m)?;
-                    let _ = static_self.log.log(Event::AgentStateChanged {
+                    router.write_manifest_atomically(run_id_clone, &m)?;
+                    let _ = router.log.log(Event::AgentStateChanged {
                         run_id: run_id_clone,
                         agent_id: agent_id.clone(),
                         from: old_state,
@@ -187,7 +191,7 @@ impl Router {
                 }
 
                 // Run Agent
-                let mut run_result = static_self
+                let mut run_result = router
                     .runner
                     .run(&agent_spec, &wt_path, &task_desc, timeout)
                     .await?;
@@ -223,8 +227,8 @@ impl Router {
                         .agent_states
                         .insert(agent_id.clone(), final_state)
                         .unwrap_or(AgentState::Running);
-                    static_self.write_manifest_atomically(run_id_clone, &m)?;
-                    let _ = static_self.log.log(Event::AgentStateChanged {
+                    router.write_manifest_atomically(run_id_clone, &m)?;
+                    let _ = router.log.log(Event::AgentStateChanged {
                         run_id: run_id_clone,
                         agent_id: agent_id.clone(),
                         from: old_state,

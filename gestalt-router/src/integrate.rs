@@ -22,14 +22,13 @@ pub struct IntegrateResult {
     pub conflicts: Vec<ConflictInfo>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentIntegrationSpec {
     pub id: String,
     pub branch: String,
 }
 
 /// Integration implementation.
-/// Integrates changes from multiple agent branches sequentially using in-memory git merge-tree.
 pub fn integrate_branches(
     repo_dir: &Path,
     base_sha: &str,

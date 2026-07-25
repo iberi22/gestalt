@@ -3,8 +3,8 @@ members = [
     "gestalt_core",
     "gestalt_cli",
     "gestalt_timeline",
-    "gestalt_swarm",
     "synapse-agentic",
+    "gestalt-router",
     ]
 resolver = "2"
 

@@ -150,10 +150,8 @@ impl FeedbackLoopService {
 
         if let Some(agent_stats) = stats.get(agent_type) {
             if agent_stats.failed_runs > 0 {
-                all_steps = NextStep::generate_from_patterns(
-                    agent_type,
-                    &agent_stats.error_patterns,
-                );
+                all_steps =
+                    NextStep::generate_from_patterns(agent_type, &agent_stats.error_patterns);
             }
         }
 
@@ -323,17 +321,14 @@ impl FeedbackLoopService {
             let error_patterns = self.get_error_patterns(&raw.agent_type).await?;
 
             // Generate next steps
-            let recommended_next_steps: Vec<String> = NextStep::generate_from_patterns(
-                &raw.agent_type,
-                &error_patterns,
-            )
-            .into_iter()
-            .map(|s| s.action)
-            .take(3)
-            .collect();
+            let recommended_next_steps: Vec<String> =
+                NextStep::generate_from_patterns(&raw.agent_type, &error_patterns)
+                    .into_iter()
+                    .map(|s| s.action)
+                    .take(3)
+                    .collect();
 
-            let priority_level =
-                PriorityLevel::from_failure_rate(failure_rate, false);
+            let priority_level = PriorityLevel::from_failure_rate(failure_rate, false);
 
             let stats = AgentStats {
                 agent_type: raw.agent_type.clone(),
@@ -406,13 +401,14 @@ impl From<serde_json::Value> for SwarmAgentResult {
         Self {
             agent_id: json["id"].as_str().unwrap_or("unknown").to_string(),
             agent_type: json["name"].as_str().unwrap_or("unknown").to_string(),
-            success: json["status"].as_str().map(|s| s == "success").unwrap_or(false),
+            success: json["status"]
+                .as_str()
+                .map(|s| s == "success")
+                .unwrap_or(false),
             duration_ms: json["duration_ms"].as_u64().unwrap_or(0),
             return_code: json["returncode"].as_i64().map(|c| c as i32),
             error: json["stderr"].as_str().map(|s| s.to_string()),
-            output_lines: json["lines"]
-                .as_array()
-                .map(|arr| arr.len() as u32),
+            output_lines: json["lines"].as_array().map(|arr| arr.len() as u32),
             project_id: "default".to_string(),
         }
     }
@@ -459,7 +455,10 @@ mod tests {
             PriorityLevel::from_failure_rate(0.05, false),
             PriorityLevel::Low
         );
-        assert_eq!(PriorityLevel::from_failure_rate(0.0, false), PriorityLevel::Healthy);
+        assert_eq!(
+            PriorityLevel::from_failure_rate(0.0, false),
+            PriorityLevel::Healthy
+        );
     }
 
     #[test]

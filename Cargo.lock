@@ -1928,6 +1928,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "gestalt-router"
+version = "0.1.0"
+dependencies = [
+ "gestalt_core",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "gestalt_cli"
 version = "1.0.0"
 dependencies = [
@@ -1982,23 +1995,6 @@ dependencies = [
  "url",
  "uuid",
  "walkdir",
-]
-
-[[package]]
-name = "gestalt_swarm"
-version = "1.0.0"
-dependencies = [
- "anyhow",
- "clap",
- "gestalt_core",
- "gestalt_timeline",
- "reqwest 0.12.28",
- "serde",
- "serde_json",
- "synapse-agentic",
- "tokio",
- "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]

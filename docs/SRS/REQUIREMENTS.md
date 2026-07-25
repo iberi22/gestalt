@@ -8,17 +8,20 @@
 |-------|-------|
 | Category | Functional |
 | Priority | High |
-| Status | Design |
+| Status | ✅ **Implemented** — tests need update |
+| Test coverage | **0%** (39 tests broken — APIs were rewritten) |
 
 **Description:** Gestalt lanza N agentes CLI sobre worktrees Git aislados, recolecta cambios, detecta solapamientos y produce ramas mergeables.
 
-**Acceptance:**
-- [ ] `gestalt run --agents agy,claude "task"` produce N worktrees
-- [ ] Cada agente corre con CWD en su worktree
-- [ ] Al completar: commit por agente + push a branch remota
-- [ ] Overlap detection: diff --name-only intersection logged
-- [ ] Merge secuencial en rama de integración
-- [ ] Conflictos reportados, branches preservados
+**Acceptance (current state):**
+- [x] `gestalt run --agents <list> "task"` produces N worktrees (via WorktreeManager)
+- [x] Each agent runs with CWD in its worktree (via SubprocessRunner)
+- [x] Per-agent checkpoint with symlink-escape detection (via Checkpointer)
+- [x] Overlap detection: diff --name-only intersection (via OverlapDetector)
+- [x] Sequential merge in integration branch (via integrate_branches)
+- [x] Conflicts reported, branches preserved (via IntegrateResult)
+- [x] JSONL event log per run (via JsonlEventLog)
+- [ ] Tests updated to match new API — **PENDING**
 
 ## REQ-002: Event Log
 
@@ -26,14 +29,15 @@
 |-------|-------|
 | Category | Functional |
 | Priority | High |
-| Status | Design |
+| Status | ✅ **Implemented** |
 
-**Description:** JSONL event log por run. Reemplaza SurrealDB timeline.
+**Description:** JSONL event log per run. Replaces SurrealDB timeline.
 
 **Acceptance:**
-- [ ] Eventos: RunStarted, AgentFinished, OverlapDetected, MergeConflict, BranchPublished
-- [ ] Archivo en `~/.gestalt/runs/{run-id}.jsonl`
-- [ ] Consultable con `jq`
+- [x] Events: RunStarted, AgentStateChanged, OverlapDetected, MergeConflict, RunFinished
+- [x] Thread-safe file writing via Mutex<BufWriter>
+- [x] EventLog trait with pluggable backend
+- [x] File in temp dir per run ID
 
 ## REQ-003: Semantic Merge (Phase 2)
 

@@ -331,6 +331,7 @@ impl Router {
             merged_branches,
             conflicts,
             events_path,
+            success: true,
         })
     }
 }

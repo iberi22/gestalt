@@ -1,5 +1,6 @@
 pub mod run;
 pub mod run_state;
+pub mod process;
 
 // Structure of commented-out modules:
 // pub mod worktree;

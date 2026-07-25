@@ -1,0 +1,8 @@
+[package]
+name = "gestalt-merge"
+version = "0.1.0"
+edition = "2021"
+description = "Gestalt Merge — 3-way merge engine (Phase 2)"
+
+[dependencies]
+thiserror = "2"

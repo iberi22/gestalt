@@ -46,6 +46,8 @@ pub enum Event {
         files: Vec<String>,
     },
     MergeConflict {
+        run_id: Uuid,
+        agent: String,
         file: String,
     },
     MergeComputed {
@@ -128,6 +130,10 @@ impl JsonlEventLog {
 }
 
 impl EventLog for JsonlEventLog {
+    fn log(&self, event: Event) -> Result<(), crate::run::RouterError> {
+        self.append(event)
+    }
+
     fn append(&self, event: Event) -> Result<(), crate::run::RouterError> {
         let versioned = VersionedEvent { v: 1, event };
 

@@ -40,7 +40,7 @@ pub fn integrate_branches(
     base_sha: &str,
     integration_branch: &str,
     branches: &[(String, String)],
-) -> Result<MergeResult, RouterError> {
+) -> Result<IntegrateResult, RouterError> {
     let _ = integration_branch; // will be used when updating the integration branch ref
     // 1. Detect binary files modified by each agent and check for binary conflicts.
     let mut binary_mods: std::collections::HashMap<String, Vec<String>> =
@@ -70,9 +70,13 @@ pub fn integrate_branches(
     if !conflicted_binaries.is_empty() {
         conflicted_binaries.sort();
         let branch_names: Vec<String> = branches.iter().map(|(_, b)| b.clone()).collect();
-        return Ok(MergeResult::HardConflict {
-            conflicted_files: conflicted_binaries,
-            branches_preserved: branch_names,
+        return Ok(IntegrateResult {
+            merge_sha: String::new(),
+            merged_branches: branch_names,
+            conflicts: conflicted_binaries.iter().map(|f| ConflictInfo {
+                agent_id: String::new(),
+                path: f.clone(),
+            }).collect(),
         });
     }
 
@@ -117,9 +121,13 @@ pub fn integrate_branches(
         conflicted_files.sort();
         conflicted_files.dedup();
         let branch_names: Vec<String> = branches.iter().map(|(_, b)| b.clone()).collect();
-        return Ok(MergeResult::HardConflict {
-            conflicted_files,
-            branches_preserved: branch_names,
+        return Ok(IntegrateResult {
+            merge_sha: String::new(),
+            merged_branches: branch_names,
+            conflicts: conflicted_files.iter().map(|f| ConflictInfo {
+                agent_id: String::new(),
+                path: f.clone(),
+            }).collect(),
         });
     }
 
@@ -162,7 +170,9 @@ pub fn integrate_branches(
 
     let merged_branches: Vec<String> = branches.iter().map(|(_, b)| b.clone()).collect();
 
-    Ok(MergeResult::Success {
-        merged_commit_sha: final_sha,
+    Ok(IntegrateResult {
+        merge_sha: final_sha,
+        merged_branches,
+        conflicts: vec![],
     })
 }

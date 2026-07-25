@@ -1,5 +1,4 @@
 use crate::run::{AgentResult, AgentSpec, RouterError};
-use crate::timeline::{Event, EventLog};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -44,7 +43,7 @@ impl AgentRunner for SubprocessRunner {
         spec: &AgentSpec,
         worktree: &Path,
         task: &str,
-        timeout: Duration,
+        _timeout: Duration,
     ) -> Result<AgentResult, RouterError> {
         let start_time = Instant::now();
 

@@ -1,6 +1,5 @@
 use gestalt_router::checkpoint::{checkpoint, clean_path, is_symlink_escape};
 use gestalt_router::checkpoint::{CheckpointResult, SymlinkEscape, ExcludedFile};
-use gestalt_router::run::RouterError;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use uuid::Uuid;

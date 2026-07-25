@@ -23,222 +23,31 @@ pub struct ExcludedFile {
     pub reason: String,
 }
 
-/// Helper function to execute git commands within a given directory.
-pub fn run_git_cmd(dir: &Path, args: &[&str]) -> Result<(i32, String, String), String> {
-    let output = Command::new("git")
-        .current_dir(dir)
-        .args(args)
-        .output()
-        .map_err(|e| format!("Failed to execute git command: {}", e))?;
-
-    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
-    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
-    let status = output.status.code().unwrap_or(-1);
-
-    Ok((status, stdout, stderr))
-}
-
 /// Lexically cleans/normalizes a path by resolving '.' and '..' components.
 pub fn clean_path(path: &Path) -> PathBuf {
-use std::path::{Path, PathBuf};
-use serde::{Serialize, Deserialize};
-use crate::run::RouterError;
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CheckpointResult {
-    pub sha: String,
-    pub files_changed: Vec<String>,
-    pub warnings: Vec<String>,
-}
-
-pub struct Checkpointer;
-
-impl Checkpointer {
-    pub fn checkpoint(
-        repo_path: impl AsRef<Path>,
-        agent_id: &str,
-        run_id: uuid::Uuid,
-    ) -> Result<CheckpointResult, RouterError> {
-        let repo_path = repo_path.as_ref();
-        let canonical_repo_path = repo_path.canonicalize().map_err(|e| {
-            RouterError::GitError(format!("Failed to canonicalize repo_path: {}", e))
-        })?;
-
-        // 1. Run git status --porcelain --ignored to list modified, created, deleted, or ignored files
-        let status_output = run_git_cmd(&canonical_repo_path, &["status", "--porcelain", "--ignored"])?;
-
-        let mut files_to_stage = Vec::new();
-        let mut files_changed = Vec::new();
-        let mut warnings = Vec::new();
-
-        for line in status_output.lines() {
-            let line = line.trim();
-            if line.is_empty() {
-                continue;
+    let mut components = Vec::new();
+    for component in path.components() {
+        match component {
+            Component::ParentDir => {
+                components.pop();
             }
-
-            // In porcelain v1, first 2 characters are status codes, then a space, then the path.
-            if line.len() < 4 {
-                continue;
+            Component::CurDir => {}
+            Component::Normal(c) => {
+                components.push(c);
             }
-
-            let status_code = &line[0..2];
-            let raw_path = &line[3..];
-
-            // Handle rename: "R  orig -> new"
-            let path_str = if raw_path.contains(" -> ") {
-                raw_path.split(" -> ").last().unwrap_or(raw_path)
-            } else {
-                raw_path
-            };
-
-            let path_str = unquote_path(path_str);
-            if path_str.is_empty() {
-                continue;
+            Component::Prefix(p) => {
+                components.push(p.as_os_str());
             }
-
-            if status_code == "!!" {
-                // Ignored file
-                warnings.push(format!("ExcludedFile: {}", path_str));
-                continue;
-            }
-
-            let full_path = canonical_repo_path.join(path_str);
-
-            // Check if it's deleted (status contains 'D' or 'D' in X or Y)
-            let is_deleted = status_code.contains('D');
-
-            if is_deleted {
-                files_to_stage.push(path_str.to_string());
-                files_changed.push(path_str.to_string());
-                continue;
-            }
-
-            // Check if it is a symlink on the filesystem
-            let is_symlink = match std::fs::symlink_metadata(&full_path) {
-                Ok(meta) => meta.is_symlink(),
-                Err(_) => false,
-            };
-
-            if is_symlink {
-                // Read symlink target
-                match std::fs::read_link(&full_path) {
-                    Ok(target) => {
-                        let symlink_dir = full_path.parent().unwrap_or(&canonical_repo_path);
-                        let absolute_target = if target.is_absolute() {
-                            target.clone()
-                        } else {
-                            symlink_dir.join(&target)
-                        };
-                        let normalized_target = normalize_path(&absolute_target);
-
-                        // Symlink escape check: target outside worktree
-                        if !normalized_target.starts_with(&canonical_repo_path) {
-                            warnings.push(format!("SymlinkEscape: {}", path_str));
-                            continue;
-                        }
-                    }
-                    Err(e) => {
-                        warnings.push(format!("Failed to read symlink {}: {}", path_str, e));
-                        continue;
-                    }
-                }
-            }
-
-            files_to_stage.push(path_str.to_string());
-            files_changed.push(path_str.to_string());
-        }
-
-        // 2. git add INDIVIDUAL of each file (NO git add -A)
-        for file in &files_to_stage {
-            run_git_cmd(&canonical_repo_path, &["add", file])?;
-        }
-
-        // 3. Double-check for symlink escapes in git index via git ls-files -s
-        let ls_files_output = run_git_cmd(&canonical_repo_path, &["ls-files", "-s"])?;
-        for line in ls_files_output.lines() {
-            let line = line.trim();
-            if line.is_empty() {
-                continue;
-            }
-            // Format: <mode> <sha> <stage>\t<path>
-            if line.starts_with("120000 ") {
-                if let Some(tab_idx) = line.find('\t') {
-                    let path_str = unquote_path(&line[tab_idx + 1..]);
-                    let full_path = canonical_repo_path.join(path_str);
-                    if let Ok(target) = std::fs::read_link(&full_path) {
-                        let symlink_dir = full_path.parent().unwrap_or(&canonical_repo_path);
-                        let absolute_target = if target.is_absolute() {
-                            target.clone()
-                        } else {
-                            symlink_dir.join(&target)
-                        };
-                        let normalized_target = normalize_path(&absolute_target);
-                        if !normalized_target.starts_with(&canonical_repo_path) {
-                            // Escape! Unstage it
-                            let _ = run_git_cmd(&canonical_repo_path, &["reset", "HEAD", path_str]);
-                            // Ensure it's not in files_changed
-                            files_changed.retain(|f| f != path_str);
-                            if !warnings.iter().any(|w| w.contains("SymlinkEscape") && w.contains(path_str)) {
-                                warnings.push(format!("SymlinkEscape: {}", path_str));
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // 4. git commit -m "gestalt: checkpoint {agent} {run_id}" --no-verify -c core.hooksPath=/dev/null
-        if files_changed.is_empty() {
-            warnings.push("NoChanges".to_string());
-            return Ok(CheckpointResult {
-                sha: String::new(),
-                files_changed: Vec::new(),
-                warnings,
-            });
-        }
-
-        let commit_msg = format!("gestalt: checkpoint {} {}", agent_id, run_id);
-
-        let commit_res = run_git_commit_cmd(
-            &canonical_repo_path,
-            &[
-                "-c",
-                "core.hooksPath=/dev/null",
-                "commit",
-                "-m",
-                &commit_msg,
-                "--no-verify",
-            ]
-        );
-
-        match commit_res {
-            Ok(_) => {
-                let sha_output = run_git_cmd(&canonical_repo_path, &["rev-parse", "HEAD"])?;
-                let sha = sha_output.trim().to_string();
-                Ok(CheckpointResult {
-                    sha,
-                    files_changed,
-                    warnings,
-                })
-            }
-            Err(e) => {
-                let err_msg = e.to_string();
-                if err_msg.contains("nothing to commit") || err_msg.contains("no changes added to commit") || err_msg.contains("clean") {
-                    warnings.push("NoChanges".to_string());
-                    Ok(CheckpointResult {
-                        sha: String::new(),
-                        files_changed: Vec::new(),
-                        warnings,
-                    })
-                } else {
-                    Err(e)
-                }
+            Component::RootDir => {
+                components.clear();
+                components.push(component.as_os_str());
             }
         }
     }
+    components.iter().collect()
 }
 
+/// Execute a git command and return stdout as String on success.
 fn run_git_cmd(repo_path: &Path, args: &[&str]) -> Result<String, RouterError> {
     let output = std::process::Command::new("git")
         .current_dir(repo_path)
@@ -257,6 +66,7 @@ fn run_git_cmd(repo_path: &Path, args: &[&str]) -> Result<String, RouterError> {
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
+/// Execute a git commit command with custom error handling.
 fn run_git_commit_cmd(repo_path: &Path, args: &[&str]) -> Result<String, RouterError> {
     let output = std::process::Command::new("git")
         .current_dir(repo_path)
@@ -274,6 +84,7 @@ fn run_git_commit_cmd(repo_path: &Path, args: &[&str]) -> Result<String, RouterE
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
+/// Unquote a path string if it is wrapped in double quotes.
 fn unquote_path(path_str: &str) -> &str {
     let mut s = path_str.trim();
     if s.starts_with('"') && s.ends_with('"') && s.len() >= 2 {
@@ -282,9 +93,8 @@ fn unquote_path(path_str: &str) -> &str {
     s
 }
 
+/// Normalize a path by resolving '.', '..', and duplicate separators.
 fn normalize_path(path: &Path) -> PathBuf {
-    use std::path::Component;
-
     let mut components = Vec::new();
     for component in path.components() {
         match component {
@@ -299,21 +109,9 @@ fn normalize_path(path: &Path) -> PathBuf {
                 components.push(p.as_os_str());
             }
             Component::RootDir => {
-                components.push(component.as_os_str());
-            }
-            Component::Normal(c) => {
-                components.push(c);
-            }
-            Component::CurDir => {}
-            Component::RootDir => {
                 components.clear();
                 components.push(component.as_os_str());
             }
-            Component::Prefix(p) => {
-                components.clear();
-                components.push(p.as_os_str());
-            }
-
         }
     }
     components.iter().collect()
@@ -347,16 +145,8 @@ pub fn checkpoint(
     commit_message: &str,
 ) -> Result<CheckpointResult, RouterError> {
     // 1. Run git status --porcelain --ignored to identify modified and untracked files.
-    let (status, stdout, stderr) =
-        run_git_cmd(worktree_dir, &["status", "--porcelain", "--ignored"])
-            .map_err(|e| RouterError::GitError(format!("Failed to check git status: {}", e)))?;
-
-    if status != 0 {
-        return Err(RouterError::GitError(format!(
-            "git status returned {}: {}",
-            status, stderr
-        )));
-    }
+    let stdout = run_git_cmd(worktree_dir, &["status", "--porcelain", "--ignored"])
+        .map_err(|e| RouterError::GitError(format!("Failed to check git status: {}", e)))?;
 
     let mut excluded_files = Vec::new();
     let mut files_to_add = Vec::new();
@@ -377,10 +167,8 @@ pub fn checkpoint(
         // If status code is "!!" (ignored) or if git check-ignore returns 0, it's ignored.
         let mut is_ignored = status_code == "!!";
         if !is_ignored {
-            if let Ok((ignore_status, _, _)) =
-                run_git_cmd(worktree_dir, &["check-ignore", "-q", path_str])
-            {
-                if ignore_status == 0 {
+            if let Ok(ignore_stdout) = run_git_cmd(worktree_dir, &["check-ignore", "-q", path_str]) {
+                if ignore_stdout.is_empty() {
                     is_ignored = true;
                 }
             }
@@ -398,31 +186,16 @@ pub fn checkpoint(
 
     // 2. Stage the valid files individually.
     for path_str in &files_to_add {
-        // Run git add with core.hooksPath=/dev/null (not strictly needed for add, but safe)
-        let (add_status, _, add_stderr) = run_git_cmd(
+        run_git_cmd(
             worktree_dir,
             &["-c", "core.hooksPath=/dev/null", "add", path_str],
         )
         .map_err(|e| RouterError::GitError(format!("Failed to stage file: {}", e)))?;
-
-        if add_status != 0 {
-            return Err(RouterError::GitError(format!(
-                "Failed to stage file {}: {}",
-                path_str, add_stderr
-            )));
-        }
     }
 
     // 3. Scan staged files for symlink escapes using git ls-files -s.
-    let (ls_status, ls_stdout, ls_stderr) = run_git_cmd(worktree_dir, &["ls-files", "-s"])
+    let ls_stdout = run_git_cmd(worktree_dir, &["ls-files", "-s"])
         .map_err(|e| RouterError::GitError(format!("Failed to run git ls-files: {}", e)))?;
-
-    if ls_status != 0 {
-        return Err(RouterError::GitError(format!(
-            "git ls-files failed with code {}: {}",
-            ls_status, ls_stderr
-        )));
-    }
 
     let mut symlink_escapes = Vec::new();
     let mut files_committed = Vec::new();
@@ -451,7 +224,7 @@ pub fn checkpoint(
                     });
 
                     // Unstage the escaped symlink so it is not in the commit.
-                    let (reset_status, _, _reset_stderr) = run_git_cmd(
+                    let reset_result = run_git_cmd(
                         worktree_dir,
                         &[
                             "-c",
@@ -461,14 +234,11 @@ pub fn checkpoint(
                             "--",
                             path_str,
                         ],
-                    )
-                    .map_err(|e| {
-                        RouterError::GitError(format!("Failed to unstage escaped symlink: {}", e))
-                    })?;
+                    );
 
-                    if reset_status != 0 {
+                    if reset_result.is_err() {
                         // If HEAD doesn't exist (empty repo), reset HEAD -- <file> might fail.
-                        // We can use git rm --cached <file> as a fallback.
+                        // Use git rm --cached <file> as a fallback.
                         let _ = run_git_cmd(worktree_dir, &["rm", "--cached", path_str]);
                     }
                 } else {
@@ -493,30 +263,24 @@ pub fn checkpoint(
         "--no-verify",
     ];
 
-    let (commit_status, _, commit_stderr) = run_git_cmd(worktree_dir, commit_args)
-        .map_err(|e| RouterError::GitError(format!("Failed to commit: {}", e)))?;
+    let commit_result = run_git_commit_cmd(worktree_dir, commit_args);
 
-    let commit_sha = if commit_status == 0 {
-        // Get the commit SHA
-        let (rev_status, rev_stdout, _) = run_git_cmd(worktree_dir, &["rev-parse", "HEAD"])
-            .map_err(|e| RouterError::GitError(format!("Failed to resolve commit SHA: {}", e)))?;
-        if rev_status == 0 {
-            Some(rev_stdout.trim().to_string())
-        } else {
-            None
+    let commit_sha = match commit_result {
+        Ok(_) => {
+            match run_git_cmd(worktree_dir, &["rev-parse", "HEAD"]) {
+                Ok(sha) => Some(sha.trim().to_string()),
+                Err(_) => None,
+            }
         }
-    } else {
-        // If the commit failed because there is nothing to commit, that's fine.
-        // Check if working tree is clean.
-        if commit_stderr.contains("nothing to commit")
-            || commit_stderr.contains("nothing added to commit")
-        {
-            None
-        } else {
-            return Err(RouterError::GitError(format!(
-                "git commit failed with code {}: {}",
-                commit_status, commit_stderr
-            )));
+        Err(e) => {
+            let err_msg = e.to_string();
+            if err_msg.contains("nothing to commit")
+                || err_msg.contains("nothing added to commit")
+            {
+                None
+            } else {
+                return Err(e);
+            }
         }
     };
 
@@ -528,4 +292,3 @@ pub fn checkpoint(
         files_committed,
     })
 }
-

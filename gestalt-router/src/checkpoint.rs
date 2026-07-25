@@ -292,3 +292,21 @@ pub fn checkpoint(
         files_committed,
     })
 }
+
+/// Run checkpoint and return a boolean indicating whether changes were committed.
+pub fn run_checkpoint(
+    worktree_dir: &Path,
+    agent_id: &str,
+) -> Result<bool, RouterError> {
+    let commit_msg = format!("gestalt: checkpoint {}", agent_id);
+    match checkpoint(worktree_dir, &commit_msg) {
+        Ok(result) => {
+            if result.commit_sha.is_some() {
+                Ok(true)
+            } else {
+                Ok(false)
+            }
+        }
+        Err(e) => Err(e),
+    }
+}

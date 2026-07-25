@@ -25,6 +25,40 @@ pub struct ConflictInfo {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OverlapInfo {
+    pub agent_a: String,
+    pub agent_b: String,
+    pub files: Vec<PathBuf>,
+}
+
+/// Find overlaps between multiple agent branches.
+pub fn find_overlaps(
+    base_sha: &str,
+    active_branches: &[(String, String)],
+) -> Result<Vec<OverlapInfo>, RouterError> {
+    let mut overlaps = Vec::new();
+    for i in 0..active_branches.len() {
+        for j in (i + 1)..active_branches.len() {
+            let (id_a, branch_a) = &active_branches[i];
+            let (id_b, branch_b) = &active_branches[j];
+
+            let files_a = get_modified_files(Path::new("."), base_sha, branch_a)?;
+            let files_b = get_modified_files(Path::new("."), base_sha, branch_b)?;
+
+            let result = detect_overlap(&files_a, &files_b);
+            if !result.disjoint {
+                overlaps.push(OverlapInfo {
+                    agent_a: id_a.clone(),
+                    agent_b: id_b.clone(),
+                    files: result.shared_paths,
+                });
+            }
+        }
+    }
+    Ok(overlaps)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MergeTestResult {
     Clean,
     Conflicts(Vec<ConflictInfo>),

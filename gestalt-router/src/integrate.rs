@@ -35,11 +35,13 @@ pub struct AgentIntegrationSpec {
 
 /// Integration implementation.
 /// Integrates changes from multiple agent branches sequentially using in-memory git merge-tree.
-pub fn integrate(
+pub fn integrate_branches(
     repo_dir: &Path,
     base_sha: &str,
+    integration_branch: &str,
     branches: &[(String, String)],
 ) -> Result<MergeResult, RouterError> {
+    let _ = integration_branch; // will be used when updating the integration branch ref
     // 1. Detect binary files modified by each agent and check for binary conflicts.
     let mut binary_mods: std::collections::HashMap<String, Vec<String>> =
         std::collections::HashMap::new();

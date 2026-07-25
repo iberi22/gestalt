@@ -24,16 +24,26 @@ pub fn get_base_dir() -> PathBuf {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "type", content = "payload")]
 pub enum Event {
-    RunStarted,
+    RunStarted {
+        run_id: Uuid,
+        task: String,
+        agents: Vec<String>,
+        sha_base: String,
+    },
     AgentStateChanged {
+        run_id: Uuid,
         agent_id: String,
-        state: AgentState,
+        from: AgentState,
+        to: AgentState,
     },
     CheckpointCommitted {
         commit_hash: String,
     },
     OverlapDetected {
-        paths: Vec<String>,
+        run_id: Uuid,
+        agent_a: String,
+        agent_b: String,
+        files: Vec<String>,
     },
     MergeComputed {
         target_branch: String,
@@ -48,7 +58,10 @@ pub enum Event {
     ExcludedFile {
         path: String,
     },
-    RunFinished,
+    RunFinished {
+        run_id: Uuid,
+        summary: String,
+    },
 }
 
 /// A wrapper to include a schema version in each logged event.

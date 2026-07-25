@@ -83,6 +83,7 @@ pub enum RouterErrorKind {
     AgentError,
     Timeout,
     InvalidSpec,
+    TimelineError,
 }
 
 #[derive(Debug, Error)]
@@ -104,6 +105,38 @@ impl RouterError {
             kind,
             message: message.into(),
             source,
+        }
+    }
+
+    pub fn TimelineError(msg: impl Into<String>) -> Self {
+        Self {
+            kind: RouterErrorKind::TimelineError,
+            message: msg.into(),
+            source: None,
+        }
+    }
+
+    pub fn GitError(msg: impl Into<String>) -> Self {
+        Self {
+            kind: RouterErrorKind::GitError,
+            message: msg.into(),
+            source: None,
+        }
+    }
+
+    pub fn AgentError(msg: impl Into<String>) -> Self {
+        Self {
+            kind: RouterErrorKind::AgentError,
+            message: msg.into(),
+            source: None,
+        }
+    }
+
+    pub fn InvalidSpec(msg: impl Into<String>) -> Self {
+        Self {
+            kind: RouterErrorKind::InvalidSpec,
+            message: msg.into(),
+            source: None,
         }
     }
 }

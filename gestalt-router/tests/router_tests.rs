@@ -430,7 +430,9 @@ fn test_checkpoint_with_gitignored_files() {
     std::fs::write(dir.join("build.log"), "some build output").unwrap();
 
     // Also create a real file to commit
-    std::fs::write(dir.join("src/lib.rs"), "pub fn f() {}").unwrap();
+    let src_dir = dir.join("src");
+    std::fs::create_dir_all(&src_dir).unwrap();
+    std::fs::write(src_dir.join("lib.rs"), "pub fn f() {}").unwrap();
 
     let res = checkpoint(dir, "feat: add lib").unwrap();
     assert!(res.success);
@@ -517,7 +519,7 @@ fn test_find_overlaps_disjoint_branches() {
         ("agent-b".to_string(), "branch-b".to_string()),
     ];
 
-    let overlaps = find_overlaps(&base_sha, &active_branches).unwrap();
+    let overlaps = find_overlaps(dir, &base_sha, &active_branches).unwrap();
     assert!(
         overlaps.is_empty(),
         "expected no overlaps for disjoint branches, got {:?}",
@@ -549,7 +551,7 @@ fn test_find_overlaps_with_shared_paths() {
         ("agent-b".to_string(), "branch-b".to_string()),
     ];
 
-    let overlaps = find_overlaps(&base_sha, &active_branches).unwrap();
+    let overlaps = find_overlaps(dir, &base_sha, &active_branches).unwrap();
     assert_eq!(overlaps.len(), 1, "expected one overlap pair");
     assert_eq!(overlaps[0].agent_a, "agent-a");
     assert_eq!(overlaps[0].agent_b, "agent-b");

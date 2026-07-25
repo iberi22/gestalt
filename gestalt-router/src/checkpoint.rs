@@ -1,6 +1,5 @@
 use crate::run::RouterError;
 use std::path::{Component, Path, PathBuf};
-use std::process::Command;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct CheckpointResult {
@@ -75,46 +74,16 @@ fn run_git_commit_cmd(repo_path: &Path, args: &[&str]) -> Result<String, RouterE
         .map_err(|e| RouterError::GitError(format!("Failed to execute git commit: {}", e)))?;
 
     if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stdout = String::from_utf8_lossy(&output.stdout);
         return Err(RouterError::GitError(format!(
-            "git commit failed: {}",
-            String::from_utf8_lossy(&output.stderr)
+            "git commit failed: stdout: {}, stderr: {}",
+            stdout,
+            stderr
         )));
     }
 
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
-}
-
-/// Unquote a path string if it is wrapped in double quotes.
-fn unquote_path(path_str: &str) -> &str {
-    let mut s = path_str.trim();
-    if s.starts_with('"') && s.ends_with('"') && s.len() >= 2 {
-        s = &s[1..s.len() - 1];
-    }
-    s
-}
-
-/// Normalize a path by resolving '.', '..', and duplicate separators.
-fn normalize_path(path: &Path) -> PathBuf {
-    let mut components = Vec::new();
-    for component in path.components() {
-        match component {
-            Component::ParentDir => {
-                components.pop();
-            }
-            Component::CurDir => {}
-            Component::Normal(c) => {
-                components.push(c);
-            }
-            Component::Prefix(p) => {
-                components.push(p.as_os_str());
-            }
-            Component::RootDir => {
-                components.clear();
-                components.push(component.as_os_str());
-            }
-        }
-    }
-    components.iter().collect()
 }
 
 /// Checks if a symlink target points to a location outside the worktree.
@@ -144,8 +113,8 @@ pub fn checkpoint(
     worktree_dir: &Path,
     commit_message: &str,
 ) -> Result<CheckpointResult, RouterError> {
-    // 1. Run git status --porcelain --ignored to identify modified and untracked files.
-    let stdout = run_git_cmd(worktree_dir, &["status", "--porcelain", "--ignored"])
+    // 1. Run git status --porcelain --ignored -uall to identify modified and untracked files.
+    let stdout = run_git_cmd(worktree_dir, &["status", "--porcelain", "--ignored", "-uall"])
         .map_err(|e| RouterError::GitError(format!("Failed to check git status: {}", e)))?;
 
     let mut excluded_files = Vec::new();
@@ -251,8 +220,8 @@ pub fn checkpoint(
         }
     }
 
-    // Filter out files_committed that were actually unstaged.
-    files_committed.retain(|f| !symlink_escapes.iter().any(|se| &se.path == f));
+    // Filter out files_committed that were actually unstaged or not in files_to_add.
+    files_committed.retain(|f| files_to_add.contains(f) && !symlink_escapes.iter().any(|se| &se.path == f));
 
     // 4. Commit changes with hooks bypassed.
     let commit_args = &[

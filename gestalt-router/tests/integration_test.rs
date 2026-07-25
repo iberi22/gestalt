@@ -191,7 +191,7 @@ fn test_event_log_read_events() {
 #[test]
 fn test_integrate_result_construction() {
     let result = IntegrateResult {
-        merge_sha: "abc123def".to_string(),
+        merge_sha: "abc123de".to_string(),
         merged_branches: vec!["feat/a".to_string(), "feat/b".to_string()],
         conflicts: vec![],
     };

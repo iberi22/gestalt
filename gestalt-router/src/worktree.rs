@@ -1,5 +1,4 @@
 use crate::run::RouterError;
-use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use uuid::Uuid;
@@ -43,11 +42,22 @@ impl WorktreeManager {
         let repo_dir = std::env::current_dir()
             .map_err(|e| RouterError::GitError(format!("Failed to get current dir: {}", e)))?;
 
+        // Idempotency: cleanup existing worktree at wt_path if registered
+        if let Ok(list) = self.list_worktrees(&repo_dir) {
+            if list.iter().any(|wt| wt.path == wt_path) {
+                let _ = self.remove_worktree_locked(&repo_dir, &wt_path);
+            }
+        }
+        let _ = self.run_git_command_locked(&repo_dir, &["worktree", "prune"]);
+
+        // Idempotency: delete branch if it already exists
+        let _ = self.run_git_command_locked(&repo_dir, &["branch", "-D", &branch]);
+
         let path_str = wt_path
             .to_str()
             .ok_or_else(|| RouterError::GitError("Invalid worktree path".to_string()))?;
 
-        self.run_git_command(
+        self.run_git_command_locked(
             &repo_dir,
             &["worktree", "add", "-b", &branch, path_str, base_sha],
         )?;
@@ -79,24 +89,47 @@ impl WorktreeManager {
         Ok(())
     }
 
-    /// Helper to run a git command in the context of a repository path.
-    fn run_git_command(&self, repo_path: &Path, args: &[&str]) -> Result<String, RouterError> {
+    /// Helper to run a git command in the context of a repository path with locks.
+    pub fn run_git_command(&self, repo_path: &Path, args: &[&str]) -> Result<String, RouterError> {
+        let _lock = self.lock.lock().unwrap();
+        self.run_git_command_locked(repo_path, args)
+    }
+
+    /// Internal git executor with automatic retry for lock/concurrency conflicts.
+    fn run_git_command_locked(&self, repo_path: &Path, args: &[&str]) -> Result<String, RouterError> {
         Self::verify_git()?;
 
-        let output = std::process::Command::new("git")
-            .current_dir(repo_path)
-            .args(args)
-            .output()
-            .map_err(|e| RouterError::GitError(format!("Failed to execute git command: {e}")))?;
+        let mut retries = 5;
+        let mut delay = std::time::Duration::from_millis(50);
 
-        if !output.status.success() {
+        loop {
+            let output = std::process::Command::new("git")
+                .current_dir(repo_path)
+                .args(args)
+                .output()
+                .map_err(|e| RouterError::GitError(format!("Failed to execute git command: {e}")))?;
+
+            if output.status.success() {
+                return Ok(String::from_utf8_lossy(&output.stdout).into_owned());
+            }
+
             let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+            let is_lock_error = stderr.contains("index.lock")
+                || stderr.contains("another git process is running")
+                || stderr.contains("Lock exists")
+                || stderr.contains("lock");
+
+            if is_lock_error && retries > 0 {
+                retries -= 1;
+                std::thread::sleep(delay);
+                delay *= 2;
+                continue;
+            }
+
             return Err(RouterError::GitError(format!(
                 "Git command failed (args: {args:?}): {stderr}"
             )));
         }
-
-        Ok(String::from_utf8_lossy(&output.stdout).into_owned())
     }
 
     /// Low-level create_worktree: creates a worktree at a specific path.
@@ -109,11 +142,22 @@ impl WorktreeManager {
     ) -> Result<(), RouterError> {
         let _lock = self.lock.lock().unwrap();
 
+        // Idempotency: cleanup existing worktree at worktree_path if registered
+        if let Ok(list) = self.list_worktrees_locked(repo_path) {
+            if list.iter().any(|wt| wt.path == worktree_path) {
+                let _ = self.remove_worktree_locked(repo_path, worktree_path);
+            }
+        }
+        let _ = self.run_git_command_locked(repo_path, &["worktree", "prune"]);
+
+        // Idempotency: delete branch if it already exists
+        let _ = self.run_git_command_locked(repo_path, &["branch", "-D", branch]);
+
         let path_str = worktree_path
             .to_str()
             .ok_or_else(|| RouterError::GitError("Invalid worktree path".to_string()))?;
 
-        self.run_git_command(
+        self.run_git_command_locked(
             repo_path,
             &["worktree", "add", "-b", branch, path_str, base_sha],
         )?;
@@ -129,12 +173,38 @@ impl WorktreeManager {
         worktree_path: &Path,
     ) -> Result<(), RouterError> {
         let _lock = self.lock.lock().unwrap();
+        self.remove_worktree_locked(repo_path, worktree_path)
+    }
 
+    fn remove_worktree_locked(
+        &self,
+        repo_path: &Path,
+        worktree_path: &Path,
+    ) -> Result<(), RouterError> {
         let path_str = worktree_path
             .to_str()
             .ok_or_else(|| RouterError::GitError("Invalid worktree path".to_string()))?;
 
-        self.run_git_command(repo_path, &["worktree", "remove", path_str])?;
+        // Use --force to remove even with untracked/modified files or deleted path
+        let res = self.run_git_command_locked(repo_path, &["worktree", "remove", "--force", path_str]);
+
+        match res {
+            Ok(_) => {}
+            Err(e) => {
+                let err_str = e.to_string();
+                if err_str.contains("not a valid worktree")
+                    || err_str.contains("is not a worktree")
+                    || err_str.contains("not a working tree")
+                    || err_str.contains("is not a working tree")
+                {
+                    // Already removed, treat as success (idempotent)
+                } else {
+                    return Err(e);
+                }
+            }
+        }
+
+        let _ = self.run_git_command_locked(repo_path, &["worktree", "prune"]);
 
         Ok(())
     }
@@ -142,7 +212,12 @@ impl WorktreeManager {
     /// Lists all worktrees in the given repository.
     /// Maps to: git worktree list --porcelain
     pub fn list_worktrees(&self, repo_path: &Path) -> Result<Vec<WorktreeInfo>, RouterError> {
-        let output_str = self.run_git_command(repo_path, &["worktree", "list", "--porcelain"])?;
+        let _lock = self.lock.lock().unwrap();
+        self.list_worktrees_locked(repo_path)
+    }
+
+    fn list_worktrees_locked(&self, repo_path: &Path) -> Result<Vec<WorktreeInfo>, RouterError> {
+        let output_str = self.run_git_command_locked(repo_path, &["worktree", "list", "--porcelain"])?;
 
         struct TempWorktreeInfo {
             path: PathBuf,
@@ -211,7 +286,7 @@ impl WorktreeManager {
     pub fn prune_worktrees(&self, repo_path: &Path) -> Result<(), RouterError> {
         let _lock = self.lock.lock().unwrap();
 
-        self.run_git_command(repo_path, &["worktree", "prune"])?;
+        self.run_git_command_locked(repo_path, &["worktree", "prune"])?;
 
         Ok(())
     }

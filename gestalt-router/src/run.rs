@@ -60,11 +60,8 @@ pub enum ConflictKind {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConflictInfo {
+    pub agent_id: String,
     pub path: String,
-    pub agent_a: String,
-    pub agent_b: String,
-    pub kind: ConflictKind,
-
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -351,7 +348,7 @@ impl Router {
         if let Err(e) = run_git_cmd(&self.repo_path, &[
             "checkout",
             "-B",
-            &spec.integration_branch,
+            &spec.integration_branch.as_deref().unwrap_or("main"),
             &spec.base_ref,
         ]) {
             return Err(RouterError::GitError(format!(

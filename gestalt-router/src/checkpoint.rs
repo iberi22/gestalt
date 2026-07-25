@@ -167,7 +167,8 @@ pub fn checkpoint(
         // If status code is "!!" (ignored) or if git check-ignore returns 0, it's ignored.
         let mut is_ignored = status_code == "!!";
         if !is_ignored {
-            if let Ok(ignore_stdout) = run_git_cmd(worktree_dir, &["check-ignore", "-q", path_str]) {
+            if let Ok(ignore_stdout) = run_git_cmd(worktree_dir, &["check-ignore", "-q", path_str])
+            {
                 if ignore_stdout.is_empty() {
                     is_ignored = true;
                 }
@@ -266,16 +267,13 @@ pub fn checkpoint(
     let commit_result = run_git_commit_cmd(worktree_dir, commit_args);
 
     let commit_sha = match commit_result {
-        Ok(_) => {
-            match run_git_cmd(worktree_dir, &["rev-parse", "HEAD"]) {
-                Ok(sha) => Some(sha.trim().to_string()),
-                Err(_) => None,
-            }
-        }
+        Ok(_) => match run_git_cmd(worktree_dir, &["rev-parse", "HEAD"]) {
+            Ok(sha) => Some(sha.trim().to_string()),
+            Err(_) => None,
+        },
         Err(e) => {
             let err_msg = e.to_string();
-            if err_msg.contains("nothing to commit")
-                || err_msg.contains("nothing added to commit")
+            if err_msg.contains("nothing to commit") || err_msg.contains("nothing added to commit")
             {
                 None
             } else {
@@ -294,10 +292,7 @@ pub fn checkpoint(
 }
 
 /// Run checkpoint and return a boolean indicating whether changes were committed.
-pub fn run_checkpoint(
-    worktree_dir: &Path,
-    agent_id: &str,
-) -> Result<bool, RouterError> {
+pub fn run_checkpoint(worktree_dir: &Path, agent_id: &str) -> Result<bool, RouterError> {
     let commit_msg = format!("gestalt: checkpoint {}", agent_id);
     match checkpoint(worktree_dir, &commit_msg) {
         Ok(result) => {

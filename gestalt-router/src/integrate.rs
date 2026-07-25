@@ -1,6 +1,6 @@
 use crate::checkpoint;
-use crate::run::{self, RouterError};
 use crate::run::ConflictInfo;
+use crate::run::{self, RouterError};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
@@ -37,14 +37,15 @@ pub fn integrate_branches(
     branches: &[(String, String)],
 ) -> Result<IntegrateResult, RouterError> {
     let _ = integration_branch; // will be used when updating the integration branch ref
-    // 1. Detect binary files modified by each agent and check for binary conflicts.
+                                // 1. Detect binary files modified by each agent and check for binary conflicts.
     let mut binary_mods: std::collections::HashMap<String, Vec<String>> =
         std::collections::HashMap::new();
 
     for (agent_id, branch_or_sha) in branches {
         let args = ["diff", "--numstat", base_sha, branch_or_sha];
-        let stdout = checkpoint::run_git_cmd(repo_dir, &args)
-            .map_err(|e| RouterError::GitError(format!("Failed to run git diff --numstat: {}", e)))?;
+        let stdout = checkpoint::run_git_cmd(repo_dir, &args).map_err(|e| {
+            RouterError::GitError(format!("Failed to run git diff --numstat: {}", e))
+        })?;
 
         for line in stdout.lines() {
             let parts: Vec<&str> = line.split('\t').collect();
@@ -68,10 +69,13 @@ pub fn integrate_branches(
         return Ok(IntegrateResult {
             merge_sha: String::new(),
             merged_branches: branch_names,
-            conflicts: conflicted_binaries.iter().map(|f| ConflictInfo {
-                agent_id: String::new(),
-                path: f.clone(),
-            }).collect(),
+            conflicts: conflicted_binaries
+                .iter()
+                .map(|f| ConflictInfo {
+                    agent_id: String::new(),
+                    path: f.clone(),
+                })
+                .collect(),
         });
     }
 
@@ -119,10 +123,13 @@ pub fn integrate_branches(
         return Ok(IntegrateResult {
             merge_sha: String::new(),
             merged_branches: branch_names,
-            conflicts: conflicted_files.iter().map(|f| ConflictInfo {
-                agent_id: String::new(),
-                path: f.clone(),
-            }).collect(),
+            conflicts: conflicted_files
+                .iter()
+                .map(|f| ConflictInfo {
+                    agent_id: String::new(),
+                    path: f.clone(),
+                })
+                .collect(),
         });
     }
 

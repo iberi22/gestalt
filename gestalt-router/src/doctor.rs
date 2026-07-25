@@ -1,7 +1,7 @@
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
-use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -59,9 +59,15 @@ impl Doctor {
         };
 
         let runs_dir_canonical = runs_dir.canonicalize().unwrap_or_else(|_| runs_dir.clone());
-        let _repo_path_canonical = repo_path.canonicalize().unwrap_or_else(|_| repo_path.to_path_buf());
+        let _repo_path_canonical = repo_path
+            .canonicalize()
+            .unwrap_or_else(|_| repo_path.to_path_buf());
 
-        log(&format!("Scanning for runs. runs_dir: {}, repo_path: {}", runs_dir.display(), repo_path.display()));
+        log(&format!(
+            "Scanning for runs. runs_dir: {}, repo_path: {}",
+            runs_dir.display(),
+            repo_path.display()
+        ));
 
         // 1. Parse git worktree list --porcelain
         let mut physical_worktrees_by_run: HashMap<String, Vec<PathBuf>> = HashMap::new();
@@ -84,22 +90,30 @@ impl Doctor {
                         current_worktree = Some(path);
                     } else if let Some(branch_ref) = line.strip_prefix("branch ") {
                         let branch_ref = branch_ref.trim();
-                        let branch_name = if let Some(short) = branch_ref.strip_prefix("refs/heads/") {
-                            short.to_string()
-                        } else {
-                            branch_ref.to_string()
-                        };
+                        let branch_name =
+                            if let Some(short) = branch_ref.strip_prefix("refs/heads/") {
+                                short.to_string()
+                            } else {
+                                branch_ref.to_string()
+                            };
 
                         if let Some(ref path) = current_worktree {
                             // Try to extract run ID from path or branch name
-                            let mut extracted_run_id = extract_run_id_from_path(path, &runs_dir_canonical);
+                            let mut extracted_run_id =
+                                extract_run_id_from_path(path, &runs_dir_canonical);
                             if extracted_run_id.is_none() {
                                 extracted_run_id = extract_run_id_from_branch(&branch_name);
                             }
 
                             if let Some(run_id) = extracted_run_id {
-                                physical_worktrees_by_run.entry(run_id.clone()).or_default().push(path.clone());
-                                physical_branches_by_run.entry(run_id).or_default().push(branch_name);
+                                physical_worktrees_by_run
+                                    .entry(run_id.clone())
+                                    .or_default()
+                                    .push(path.clone());
+                                physical_branches_by_run
+                                    .entry(run_id)
+                                    .or_default()
+                                    .push(branch_name);
                             }
                         }
                     }
@@ -122,29 +136,37 @@ impl Doctor {
                             let manifest_file = entry.path().join("manifest.json");
                             if manifest_file.exists() {
                                 if let Ok(content) = fs::read_to_string(&manifest_file) {
-                                    if let Ok(manifest) = serde_json::from_str::<ManifestJson>(&content) {
+                                    if let Ok(manifest) =
+                                        serde_json::from_str::<ManifestJson>(&content)
+                                    {
                                         manifest_runs.insert(manifest.run_id.clone(), manifest);
                                     } else {
                                         // Malformed JSON: insert a placeholder manifest so we know it exists
-                                        manifest_runs.insert(dir_name.clone(), ManifestJson {
-                                            run_id: dir_name.clone(),
-                                            sha_base: None,
-                                            worktrees: None,
-                                            branches: None,
-                                            created_at: None,
-                                        });
+                                        manifest_runs.insert(
+                                            dir_name.clone(),
+                                            ManifestJson {
+                                                run_id: dir_name.clone(),
+                                                sha_base: None,
+                                                worktrees: None,
+                                                branches: None,
+                                                created_at: None,
+                                            },
+                                        );
                                     }
                                 }
                             } else {
                                 // Directory exists but no manifest.json file inside it
                                 // This is a manifest/dir candidate without manifest.json
-                                manifest_runs.insert(dir_name.clone(), ManifestJson {
-                                    run_id: dir_name.clone(),
-                                    sha_base: None,
-                                    worktrees: None,
-                                    branches: None,
-                                    created_at: None,
-                                });
+                                manifest_runs.insert(
+                                    dir_name.clone(),
+                                    ManifestJson {
+                                        run_id: dir_name.clone(),
+                                        sha_base: None,
+                                        worktrees: None,
+                                        branches: None,
+                                        created_at: None,
+                                    },
+                                );
                             }
                         }
                     }
@@ -155,7 +177,12 @@ impl Doctor {
         // 3. Query all local/remote branches starting with "gestalt/"
         let mut branches_by_run: HashMap<String, Vec<String>> = HashMap::new();
         match std::process::Command::new("git")
-            .args(["for-each-ref", "--format=%(refname)", "refs/heads/", "refs/remotes/"])
+            .args([
+                "for-each-ref",
+                "--format=%(refname)",
+                "refs/heads/",
+                "refs/remotes/",
+            ])
             .current_dir(repo_path)
             .output()
         {
@@ -178,7 +205,10 @@ impl Doctor {
 
                     if let Some(ref name) = branch_name {
                         if let Some(run_id) = extract_run_id_from_branch(name) {
-                            branches_by_run.entry(run_id).or_default().push(name.clone());
+                            branches_by_run
+                                .entry(run_id)
+                                .or_default()
+                                .push(name.clone());
                         }
                     }
                 }
@@ -282,7 +312,9 @@ impl Doctor {
             None => PathBuf::from(".gestalt").join("runs"),
         };
         let runs_dir_canonical = runs_dir.canonicalize().unwrap_or_else(|_| runs_dir.clone());
-        let repo_path_canonical = repo_path.canonicalize().unwrap_or_else(|_| repo_path.to_path_buf());
+        let repo_path_canonical = repo_path
+            .canonicalize()
+            .unwrap_or_else(|_| repo_path.to_path_buf());
 
         log(&format!("Pruning run_id: {}", run_id));
 
@@ -293,7 +325,10 @@ impl Doctor {
         if let Some(info) = run_info {
             // Anti-Hallucination Guard: Active runs cannot be deleted without --force
             if info.status == "Active" && !self.force {
-                log(&format!("Skipping active run {} (requires --force)", run_id));
+                log(&format!(
+                    "Skipping active run {} (requires --force)",
+                    run_id
+                ));
                 return Err(DoctorError::Other(format!(
                     "Cannot prune active run {} without force flag",
                     run_id
@@ -318,17 +353,26 @@ impl Doctor {
                         };
 
                         if !success {
-                            log(&format!("git worktree remove failed for {}, trying --force", wt_str));
+                            log(&format!(
+                                "git worktree remove failed for {}, trying --force",
+                                wt_str
+                            ));
                             let _ = std::process::Command::new("git")
                                 .args(["worktree", "remove", "--force", &wt_str])
                                 .current_dir(repo_path)
                                 .status();
                         }
                     } else {
-                        log(&format!("Worktree path {} does not exist physically, skipping git removal", wt.display()));
+                        log(&format!(
+                            "Worktree path {} does not exist physically, skipping git removal",
+                            wt.display()
+                        ));
                     }
                 } else {
-                    log(&format!("DANGEROUS: Worktree path {} is NOT safe to delete! Skipping.", wt.display()));
+                    log(&format!(
+                        "DANGEROUS: Worktree path {} is NOT safe to delete! Skipping.",
+                        wt.display()
+                    ));
                 }
             }
 
@@ -345,7 +389,10 @@ impl Doctor {
                         log(&format!("Deleted local branch {}", branch));
                     }
                     _ => {
-                        log(&format!("Failed to delete local branch {} (might not exist)", branch));
+                        log(&format!(
+                            "Failed to delete local branch {} (might not exist)",
+                            branch
+                        ));
                     }
                 }
 
@@ -374,8 +421,15 @@ impl Doctor {
         let run_dir = runs_dir.join(run_id);
         if run_dir.exists() {
             let archive_dir = match dirs::home_dir() {
-                Some(home) => home.join(".gestalt").join("archive").join("runs").join(run_id),
-                None => PathBuf::from(".gestalt").join("archive").join("runs").join(run_id),
+                Some(home) => home
+                    .join(".gestalt")
+                    .join("archive")
+                    .join("runs")
+                    .join(run_id),
+                None => PathBuf::from(".gestalt")
+                    .join("archive")
+                    .join("runs")
+                    .join(run_id),
             };
 
             // Look for events file (e.g., events.jsonl)
@@ -399,7 +453,10 @@ impl Doctor {
             }
 
             if events_dir.exists() {
-                log(&format!("Archiving events directory: {}", events_dir.display()));
+                log(&format!(
+                    "Archiving events directory: {}",
+                    events_dir.display()
+                ));
                 if let Err(e) = fs::create_dir_all(&archive_dir) {
                     log(&format!("Failed to create archive directory: {:?}", e));
                 } else {
@@ -413,7 +470,10 @@ impl Doctor {
             }
 
             if archived {
-                log(&format!("Events successfully archived to {}", archive_dir.display()));
+                log(&format!(
+                    "Events successfully archived to {}",
+                    archive_dir.display()
+                ));
             } else {
                 log("No events found to archive.");
             }
@@ -445,7 +505,10 @@ impl Doctor {
                     }
                 }
             } else {
-                log(&format!("Run {} is Active, skipping in prune_all (requires --force)", run.run_id));
+                log(&format!(
+                    "Run {} is Active, skipping in prune_all (requires --force)",
+                    run.run_id
+                ));
             }
         }
 
@@ -456,7 +519,10 @@ impl Doctor {
 // Helpers
 
 fn extract_run_id_from_path(path: &Path, runs_dir_canonical: &Path) -> Option<String> {
-    let path_canonical = path.canonicalize().ok().unwrap_or_else(|| path.to_path_buf());
+    let path_canonical = path
+        .canonicalize()
+        .ok()
+        .unwrap_or_else(|| path.to_path_buf());
     if path_canonical.starts_with(runs_dir_canonical) {
         let relative = path_canonical.strip_prefix(runs_dir_canonical).ok()?;
         let mut components = relative.components();
@@ -477,7 +543,11 @@ fn extract_run_id_from_branch(branch: &str) -> Option<String> {
     None
 }
 
-fn is_safe_to_delete_worktree(path: &Path, runs_dir_canonical: &Path, repo_path_canonical: &Path) -> bool {
+fn is_safe_to_delete_worktree(
+    path: &Path,
+    runs_dir_canonical: &Path,
+    repo_path_canonical: &Path,
+) -> bool {
     let path_canonical = match path.canonicalize() {
         Ok(p) => p,
         Err(_) => path.to_path_buf(), // If it doesn't exist, we might not canonicalize it, but let's check prefix

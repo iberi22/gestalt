@@ -138,18 +138,19 @@ impl EventLog for JsonlEventLog {
         })?;
         serialized.push('\n');
 
-        let mut guard = self.writer.lock().map_err(|_| {
-            crate::run::RouterError::TimelineError("Mutex poisoned".to_string())
-        })?;
+        let mut guard = self
+            .writer
+            .lock()
+            .map_err(|_| crate::run::RouterError::TimelineError("Mutex poisoned".to_string()))?;
 
-        guard.write_all(serialized.as_bytes()).map_err(|e| {
-            crate::run::RouterError::TimelineError(format!("Write error: {}", e))
-        })?;
+        guard
+            .write_all(serialized.as_bytes())
+            .map_err(|e| crate::run::RouterError::TimelineError(format!("Write error: {}", e)))?;
 
         // Atomic/Durability pattern: flush BufWriter to file descriptor
-        guard.flush().map_err(|e| {
-            crate::run::RouterError::TimelineError(format!("Flush error: {}", e))
-        })?;
+        guard
+            .flush()
+            .map_err(|e| crate::run::RouterError::TimelineError(format!("Flush error: {}", e)))?;
 
         // Fsync pattern: persist to disk
         let file = guard.get_ref();

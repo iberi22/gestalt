@@ -1,3 +1,4 @@
+use crate::run_state::AgentState;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Component, Path, PathBuf};
@@ -5,7 +6,6 @@ use std::sync::Arc;
 use thiserror::Error;
 use tokio::sync::Semaphore;
 use uuid::Uuid;
-use crate::run_state::AgentState;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentSpec {
@@ -345,12 +345,15 @@ impl Router {
         let mut conflicts: Vec<ConflictInfo> = Vec::new();
 
         // Checkout integration branch from base_ref
-        if let Err(e) = run_git_cmd(&self.repo_path, &[
-            "checkout",
-            "-B",
-            &spec.integration_branch.as_deref().unwrap_or("main"),
-            &spec.base_ref,
-        ]) {
+        if let Err(e) = run_git_cmd(
+            &self.repo_path,
+            &[
+                "checkout",
+                "-B",
+                &spec.integration_branch.as_deref().unwrap_or("main"),
+                &spec.base_ref,
+            ],
+        ) {
             return Err(RouterError::GitError(format!(
                 "Failed to checkout integration branch: {}",
                 e
@@ -362,25 +365,29 @@ impl Router {
             if result.state == AgentState::Success || result.state == AgentState::Quarantined {
                 let branch_name = format!("gestalt/run-{}/{}", run_id, result.agent_id);
 
-                match run_git_cmd(&self.repo_path, &[
-                    "merge",
-                    "--no-ff",
-                    "-m",
-                    &format!("Merge agent-{}", result.agent_id),
-                    &branch_name,
-                ]) {
+                match run_git_cmd(
+                    &self.repo_path,
+                    &[
+                        "merge",
+                        "--no-ff",
+                        "-m",
+                        &format!("Merge agent-{}", result.agent_id),
+                        &branch_name,
+                    ],
+                ) {
                     Ok(_) => {
                         merged_branches.push(branch_name);
                     }
                     Err(_) => {
-                        if let Ok(conflicted_out) = run_git_cmd(&self.repo_path, &[
-                            "diff",
-                            "--name-only",
-                            "--diff-filter=U",
-                        ]) {
+                        if let Ok(conflicted_out) = run_git_cmd(
+                            &self.repo_path,
+                            &["diff", "--name-only", "--diff-filter=U"],
+                        ) {
                             for line in conflicted_out.lines() {
                                 let path_str = line.trim().to_string();
-                                if !path_str.is_empty() && !conflicts.iter().any(|c| c.path == path_str) {
+                                if !path_str.is_empty()
+                                    && !conflicts.iter().any(|c| c.path == path_str)
+                                {
                                     conflicts.push(ConflictInfo {
                                         agent_id: result.agent_id.clone(),
                                         path: path_str,

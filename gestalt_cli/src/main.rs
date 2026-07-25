@@ -25,9 +25,9 @@ use uuid::Uuid;
 
 // gestalt-router types
 use gestalt_router::agent::SubprocessRunner;
+use gestalt_router::router::Router;
 use gestalt_router::run::{AgentSpec, RunSpec};
 use gestalt_router::run_state::AgentState;
-use gestalt_router::router::Router;
 use gestalt_router::timeline::JsonlEventLog;
 use gestalt_router::worktree::WorktreeManager;
 
@@ -998,10 +998,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             AgentState::Pending => "⏳",
                             AgentState::Running => "🔄",
                         };
-                        println!(
-                            "   {} [{}] {:?}",
-                            icon, agent.agent_id, agent.state
-                        );
+                        println!("   {} [{}] {:?}", icon, agent.agent_id, agent.state);
                         if let Some(ref err) = agent.error {
                             println!("      Error: {}", err);
                         }
@@ -1013,10 +1010,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         if !agent.changed_files.is_empty() {
                             println!("      Changed files: {}", agent.changed_files.len());
                         }
-                        println!(
-                            "      Duration: {}ms",
-                            agent.duration_ms
-                        );
+                        println!("      Duration: {}ms", agent.duration_ms);
                     }
 
                     // Print conflicts if any

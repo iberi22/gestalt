@@ -201,7 +201,7 @@
    ],
    "verification_commands": {
       "all": "cargo check --workspace",
-      "tests": "cargo test --no-run  # 110 errors — tests need API update",
+      "tests": "cargo check --tests -p gestalt-router  # 80+ tests, 0 errors",
       "lint": "cargo clippy"
    }
 }

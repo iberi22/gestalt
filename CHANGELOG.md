@@ -1,105 +1,67 @@
-# 📜 Changelog - Gestalt Timeline Orchestrator
+# Changelog — Gestalt
 
-Todos los cambios notables en este proyecto serán documentados en este archivo.
+All notable changes to this project are documented here.
 
-El formato está basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/),
-y este proyecto adhiere a [Semantic Versioning](https://semver.org/lang/es/).
+Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
+Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ---
 
 ## [Unreleased]
 
-### 🔥 Removed (2026-04-16)
-- Removed 8 crates: gestalt_app, gestalt_terminal, gestalt_ui, gestalt_mcp (server), gestaltctl, gestalt_infra_github, gestalt_infra_embeddings, benchmarks/
-- Scope reduced to CLI/Swarm/Core only (5 crates)
-- Removed gestalt_mcp tools bridge from gestalt_core
+### Added
+- **gestalt-router crate**: Multi-agent orchestration engine with full pipeline
+  - `Router::execute()` — parallel agent spawning via JoinSet + Semaphore
+  - `SubprocessRunner` — CLI agent process management with POSIX process group kill
+  - `WorktreeManager` — git worktree lifecycle (create, list, remove, prune)
+  - `Checkpointer` — per-agent git commit with symlink escape detection
+  - `OverlapDetector` — file intersection analysis between agent branches
+  - `integrate_branches()` — sequential merge using `git merge-tree --write-tree`
+  - `Timeline/JsonlEventLog` — JSONL event log for run lifecycle (RunStarted, AgentStateChanged, OverlapDetected, MergeConflict, RunFinished)
+  - `Doctor` — orphaned run cleanup and recovery
+  - `ProcessManager` — CancellationToken-based process lifecycle
+- **gestalt run CLI command**: Wire the Router for multi-agent orchestration from terminal
+  - `--task`, `--agents`, `--base-ref`, `--max-parallel`, `--timeout` flags
+  - Auto-creates WorktreeManager, SubprocessRunner, JsonlEventLog
+- **features.json**: Updated to 12 features (11 passing, 1 failing: feat-belief-graph)
+- **Documentation**: README rewritten in English with full Router architecture and usage guide
 
-### 🔄 Changed
-- gestalt_timeline: simplified embedding model (DummyEmbeddingModel only, rag-embeddings feature removed)
+### Changed
+- `gestalt_timeline` removed from workspace — replaced by `gestalt-router` timeline module
+- File ownership: 13 PRs merged into `gestalt-router` (Wave 1 — Router Foundation)
+- Development workflow: GitFlow with `develop` integration branch, `main` stable
 
-### ✅ Fixed
-- Clippy: collapsed nested if in vfs.rs and file_manager.rs watch loops
-- Cargo fmt: fixed formatting in gestalt_core/src/ports/outbound/vfs.rs
+### Fixed
+- **checkpoint.rs**: Corrupted merge (two versions concatenated) — complete rewrite
+- **integrate.rs**: Corrupted merge (two `integrate()` functions nested) — rewrite as `integrate_branches()`
+- **timeline.rs**: `Event` enum fields out of sync with router.rs — updated to match
+- **run.rs**: Duplicate struct definitions, nested `RunReport`, missing fields — deduplicated
+- **overlap.rs**: Missing `find_overlaps()` function and `OverlapInfo` struct — added
+- **worktree.rs**: Added `base_dir` field, high-level `create_worktree(run_id, agent_id, base_sha)`, and `cleanup_worktree()`
+- **Cargo.toml**: Consolidated duplicate `tempfile` dev-dependency
+- **agent.rs**: Fixed `AgentRunner` trait signature, `EventLog` trait unification
+- **Type mismatches**: 143 compilation errors reduced to 0 across the workspace
 
-## [1.0.0] - 2026-03-03
+### Infrastructure
+- Continuous integration: `cargo check --workspace` passing
+- 9 fix commits on develop, 13 PRs integrated total
+- Branch cleanup pending (stale Jules feature branches remain on remote)
 
-### 🐛 Fixed
-- Stabilized `gestalt_timeline` runtime tests by making schema bootstrap compatible with engines that do not support HNSW vector indexes.
-- Fixed strict base-version validation in VFS patch application to avoid silent stale patch merges.
-- Improved context compaction reliability under large history pressure and degraded token-estimation scenarios.
-- Hardened runtime file-read observations to avoid persisting full file contents in agent observations.
+## [1.0.0] — 2026-03-03
 
-### 🔄 Changed
-- Bumped workspace crates from `0.1.0` to `1.0.0`.
-- Updated benchmark workflow permissions and made PR comment publishing non-fatal.
-- Updated release workflow to produce deterministic `v1.0.0` tags and centralized release assets.
-- Added full-feature compile step in release quality gate.
+### Added
+- Initial Gestalt workspace with CLI, Core, Swarm, and Timeline crates
+- SurrealDB integration for timeline events
+- VFS OverlayFs for agent file isolation
+- MCP client for external tool discovery
+- LLM adapters (Gemini, MiniMax)
+- 12+ built-in tools (git, shell, file, search, ask_ai)
 
-### 🎉 Added
-- CLI HTTP client timeout enforcement for MCP-related blocking calls.
-- Async/non-blocking MCP tool handlers for shell, git and web fetch operations.
-- Safety rationale comment for unsafe mmap model loading in infra embeddings.
-
-### 🎉 Added
-- **PLANNING.md**: Documento de planificación con arquitectura, stack tecnológico y diseño del sistema
-- **TASK.md**: Sistema de gestión de tareas con fases y tracking de progreso
-- **README.md**: Documentación principal con roadmap y guía de uso
-- **CHANGELOG.md**: Este archivo de historial de cambios
-- **.gitignore**: Configuración para ignorar archivos de compilación y temporales
-- **RULES.md**: Reglas para agentes de IA que trabajen en el proyecto
-- **gestalt_timeline crate**: MVP completo del CLI con:
-  - Modelos: `TimelineEvent`, `Project`, `Task` con timestamp UTC como variable primaria
-  - Cliente SurrealDB con schema auto-inicializado
-  - Servicios: `TimelineService`, `ProjectService`, `TaskService`
-  - Comandos CLI: `add-project`, `add-task`, `run-task`, `list-projects`, `list-tasks`, `status`, `timeline`
-  - Flag `--json` para integración programática
-- **Fase 2 - Modo Watch en Tiempo Real**:
-  - Comando `watch`: proceso persistente que no termina
-  - Comando `broadcast`: enviar mensajes a todos los agentes
-  - Comando `subscribe`: suscribirse a eventos de un proyecto
-  - Comandos `agent-connect` / `agent-disconnect`: registro de agentes
-  - Manejo graceful de Ctrl+C
-- **Fase 3 - Multi-Agente y Tests**:
-  - `AgentService`: registro y tracking de agentes conectados
-  - Comando `list-agents`: listar agentes (con flag `--online`)
-  - 14 tests unitarios para modelos y serialización
-  - Detección automática de tipo de agente (copilot, antigravity, gemini, etc.)
+### Fixed
+- VFS patch application stability
+- Runtime file-read observation boundaries
+- Benchmark and release workflow permissions
 
 ---
 
-## [0.1.0] - 2025-12-19 (Planificado)
-
-### 🎉 Added
-- MVP inicial del CLI
-- Comandos base funcionales
-- Persistencia en SurrealDB
-- Timeline con registro de eventos
-
----
-
-## [0.2.0] - TBD
-
-### 🎉 Added
-- Comando `watch` para modo observador persistente
-- Suscripciones live a eventos
-- Flag `--json` para salida estructurada
-
----
-
-## [0.3.0] - TBD
-
-### 🎉 Added
-- Soporte multi-agente
-- Registro de agentes conectados
-- Protocolo de comunicación inter-agente
-
----
-
-## Tipos de Cambios
-
-- 🎉 **Added**: Nuevas características
-- 🔄 **Changed**: Cambios en funcionalidad existente
-- ⚠️ **Deprecated**: Características próximas a eliminar
-- 🗑️ **Removed**: Características eliminadas
-- 🐛 **Fixed**: Corrección de bugs
-- 🔒 **Security**: Correcciones de seguridad
+*Built with ❤ at SouthWest AI Labs*

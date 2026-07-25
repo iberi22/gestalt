@@ -300,8 +300,8 @@ impl Router {
         for conflict in &conflicts {
             let _ = self.log.log(Event::MergeConflict {
                 run_id,
-                agent: conflict.clone(),
-                path: conflict.clone(),
+                agent: conflict.agent_id.clone(),
+                path: conflict.path.clone(),
             });
         }
 

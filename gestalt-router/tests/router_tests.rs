@@ -8,7 +8,7 @@
 use gestalt_router::checkpoint::{checkpoint, clean_path, is_symlink_escape, CheckpointResult};
 use gestalt_router::integrate::{integrate_branches, AgentIntegrationSpec, IntegrateResult, MergeResult};
 use gestalt_router::overlap::{
-    detect_overlap, find_overlaps, get_modified_files, test_mergeability, ConflictKind as OverlapConflictKind,
+    detect_overlap, find_overlaps_in_repo, get_modified_files, ConflictKind as OverlapConflictKind,
     ConflictInfo as OverlapConflictInfo, MergeTestResult, OverlapInfo, OverlapResult,
 };
 use gestalt_router::run::{

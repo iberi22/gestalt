@@ -1,6 +1,6 @@
 use crate::checkpoint;
 use crate::run::ConflictInfo;
-use crate::run::{self, RouterError};
+use crate::run::RouterError;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
@@ -78,24 +78,38 @@ pub fn integrate_branches(
         });
     }
 
-    // 2. Perform sequential merge using git merge-tree with an explicit merge-base
-    let mut current_tree = base_sha.to_string();
+    // 2. Perform sequential merge using git merge-tree
+    let mut current_commit = base_sha.to_string();
     let mut conflicted_files = Vec::new();
 
     for (_agent_id, branch_or_sha) in branches {
-        let merge_base_arg = format!("--merge-base={}", base_sha);
-        let args = vec![
-            "merge-tree",
-            "--write-tree",
-            merge_base_arg.as_str(),
-            current_tree.as_str(),
-            branch_or_sha.as_str(),
-        ];
+        let args = vec!["merge-tree", "--write-tree", &current_commit, branch_or_sha];
         let result = checkpoint::run_git_cmd(repo_dir, &args);
 
         match result {
             Ok(stdout) => {
-                current_tree = stdout.trim().to_string();
+                let merged_tree = stdout.trim().to_string();
+                // Create an intermediate commit so that we have a commit object for the next merge-tree
+                let intermediate_args = [
+                    "-c",
+                    "core.hooksPath=/dev/null",
+                    "commit-tree",
+                    &merged_tree,
+                    "-p",
+                    &current_commit,
+                    "-p",
+                    branch_or_sha,
+                    "-m",
+                    "gestalt: intermediate merge",
+                ];
+                match checkpoint::run_git_cmd(repo_dir, &intermediate_args) {
+                    Ok(sha) => {
+                        current_commit = sha.trim().to_string();
+                    }
+                    Err(e) => {
+                        conflicted_files.push(format!("commit-tree-failed: {}", e));
+                    }
+                }
             }
             Err(e) => {
                 // There is a merge conflict. stdout contains the conflict info.
@@ -144,7 +158,7 @@ pub fn integrate_branches(
         "-c",
         "core.hooksPath=/dev/null",
         "commit-tree",
-        &current_tree,
+        &current_commit,
         "-p",
         base_sha,
         "-m",
@@ -161,7 +175,7 @@ pub fn integrate_branches(
                     "-c",
                     "core.hooksPath=/dev/null",
                     "commit-tree",
-                    &current_tree,
+                    &current_commit,
                     "-m",
                     "gestalt: integrate agent branches",
                 ];

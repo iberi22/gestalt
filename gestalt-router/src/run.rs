@@ -105,7 +105,7 @@ impl RouterError {
         }
     }
 
-    pub fn TimelineError(msg: impl Into<String>) -> Self {
+    pub fn timeline_error(msg: impl Into<String>) -> Self {
         Self {
             kind: RouterErrorKind::TimelineError,
             message: msg.into(),
@@ -113,7 +113,7 @@ impl RouterError {
         }
     }
 
-    pub fn GitError(msg: impl Into<String>) -> Self {
+    pub fn git_error(msg: impl Into<String>) -> Self {
         Self {
             kind: RouterErrorKind::GitError,
             message: msg.into(),
@@ -121,7 +121,7 @@ impl RouterError {
         }
     }
 
-    pub fn AgentError(msg: impl Into<String>) -> Self {
+    pub fn agent_error(msg: impl Into<String>) -> Self {
         Self {
             kind: RouterErrorKind::AgentError,
             message: msg.into(),
@@ -129,7 +129,7 @@ impl RouterError {
         }
     }
 
-    pub fn InvalidSpec(msg: impl Into<String>) -> Self {
+    pub fn invalid_spec(msg: impl Into<String>) -> Self {
         Self {
             kind: RouterErrorKind::InvalidSpec,
             message: msg.into(),
@@ -137,12 +137,37 @@ impl RouterError {
         }
     }
 
-    pub fn Timeout(msg: impl Into<String>) -> Self {
+    pub fn timeout(msg: impl Into<String>) -> Self {
         Self {
             kind: RouterErrorKind::Timeout,
             message: msg.into(),
             source: None,
         }
+    }
+
+    #[allow(non_snake_case)]
+    pub fn TimelineError(msg: impl Into<String>) -> Self {
+        Self::timeline_error(msg)
+    }
+
+    #[allow(non_snake_case)]
+    pub fn GitError(msg: impl Into<String>) -> Self {
+        Self::git_error(msg)
+    }
+
+    #[allow(non_snake_case)]
+    pub fn AgentError(msg: impl Into<String>) -> Self {
+        Self::agent_error(msg)
+    }
+
+    #[allow(non_snake_case)]
+    pub fn InvalidSpec(msg: impl Into<String>) -> Self {
+        Self::invalid_spec(msg)
+    }
+
+    #[allow(non_snake_case)]
+    pub fn Timeout(msg: impl Into<String>) -> Self {
+        Self::timeout(msg)
     }
 }
 

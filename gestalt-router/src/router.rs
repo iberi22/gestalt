@@ -248,7 +248,7 @@ impl Router {
                 run_id,
                 agent_a: overlap.agent_a.clone(),
                 agent_b: overlap.agent_b.clone(),
-                files: overlap.files.clone(),
+                files: overlap.files.iter().map(|p| p.to_string_lossy().to_string()).collect(),
             });
         }
 
@@ -268,7 +268,7 @@ impl Router {
                     match crate::integrate::integrate_branches(
                         &integrate_wt_path,
                         &base_sha,
-                        &spec.integration_branch,
+                        &spec.integration_branch.as_deref().unwrap_or("main"),
                         &branches_to_merge,
                     ) {
                         Ok(integration_res) => {

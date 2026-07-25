@@ -1,5 +1,6 @@
 use crate::checkpoint;
-use crate::run::RouterError;
+use crate::run::{self, RouterError};
+use crate::run::ConflictInfo;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
@@ -12,12 +13,6 @@ pub enum MergeResult {
         conflicted_files: Vec<String>,
         branches_preserved: Vec<String>,
     },
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct ConflictInfo {
-    pub agent_id: String,
-    pub path: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

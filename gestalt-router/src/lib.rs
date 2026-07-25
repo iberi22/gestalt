@@ -8,4 +8,4 @@ pub mod worktree;
 // pub mod overlap;
 pub mod integrate;
 // pub mod timeline;
-// pub mod doctor;
+pub mod doctor;

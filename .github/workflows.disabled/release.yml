@@ -1,0 +1,213 @@
+name: Build and Release
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  quality-gate:
+    name: Quality Gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Cargo Fmt
+        run: cargo fmt --all --check
+
+      - name: Cargo Test And Check
+        run: |
+          cargo test -p gestalt_core --all-targets
+          cargo test -p gestalt_cli --all-targets
+          cargo test -p gestalt_timeline --lib -- --test-threads=1
+          cargo check \
+            -p synapse-agentic \
+            -p gestalt_mcp \
+            -p gestaltctl \
+            -p gestalt_infra_github \
+            -p gestalt_infra_embeddings \
+            --all-targets
+
+      - name: Cargo Build All Features
+        run: cargo build --workspace --all-features --all-targets
+
+  build-backend:
+    name: Build Backend (Windows)
+    runs-on: windows-latest
+    needs: [quality-gate]
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build Backend
+        run: cargo build --release -p gestalt_timeline
+
+      - name: Upload Backend Artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: neural-link-backend-windows
+          path: target/release/gestalt.exe
+          if-no-files-found: error
+
+  build-cli:
+    name: Build CLI
+    runs-on: ${{ matrix.os }}
+    needs: [quality-gate]
+    strategy:
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+        include:
+          - os: windows-latest
+            artifact_name: gestalt-cli-windows
+            binary_path: target/release/gestalt_cli.exe
+            rename_binary: gestalt-cli-windows.exe
+          - os: ubuntu-latest
+            artifact_name: gestalt-cli-linux
+            binary_path: target/release/gestalt_cli
+            rename_binary: gestalt-cli-linux
+          - os: macos-latest
+            artifact_name: gestalt-cli-macos
+            binary_path: target/release/gestalt_cli
+            rename_binary: gestalt-cli-macos
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+      - name: Build CLI
+        run: cargo build --release -p gestalt_cli
+      - name: Rename CLI Binary
+        run: |
+          mv ${{ matrix.binary_path }} ${{ matrix.binary_path }}.tmp
+          mv ${{ matrix.binary_path }}.tmp target/release/${{ matrix.rename_binary }}
+        shell: bash
+      - name: Upload CLI Artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: target/release/${{ matrix.rename_binary }}
+
+  build-mobile:
+    name: Build Mobile (Android)
+    runs-on: ubuntu-latest
+    needs: [quality-gate]
+    defaults:
+      run:
+        working-directory: ./gestalt_app
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          flutter-version: '3.41.3'
+
+      - name: Install Dependencies
+        run: flutter pub get
+
+      - name: Build APK
+        run: flutter build apk --release
+
+      - name: Upload Mobile Artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: neural-link-app-android
+          path: gestalt_app/build/app/outputs/flutter-apk/app-release.apk
+
+  create-release:
+    name: Create Release
+    needs: [quality-gate, build-backend, build-cli, build-mobile]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download Windows Backend
+        uses: actions/download-artifact@v8
+        with:
+          name: neural-link-backend-windows
+          path: release-assets
+
+      - name: Download Android App
+        uses: actions/download-artifact@v8
+        with:
+          name: neural-link-app-android
+          path: release-assets
+
+      - name: Download Windows CLI
+        uses: actions/download-artifact@v8
+        with:
+          name: gestalt-cli-windows
+          path: release-assets
+
+      - name: Download Linux CLI
+        uses: actions/download-artifact@v8
+        with:
+          name: gestalt-cli-linux
+          path: release-assets
+
+      - name: Download macOS CLI
+        uses: actions/download-artifact@v8
+        with:
+          name: gestalt-cli-macos
+          path: release-assets
+
+      - name: Generate Release Tag
+        id: tag
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            TAG_NAME="${{ github.ref_name }}"
+          else
+            TAG_NAME="v1.0.0-${{ github.sha }}"
+          fi
+          echo "release_tag=$TAG_NAME" >> $GITHUB_OUTPUT
+
+      - name: Prepare Release Binaries
+        run: |
+          cp release-assets/gestalt.exe release-assets/gestalt_timeline.exe
+          mkdir -p release-assets/neural-link-app-android
+          cp release-assets/app-release.apk release-assets/neural-link-app-android/app-release.apk
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ steps.tag.outputs.release_tag }}
+          name: Gestalt ${{ steps.tag.outputs.release_tag }}
+          draft: false
+          prerelease: false
+          files: |
+            release-assets/gestalt_timeline.exe
+            release-assets/neural-link-app-android/app-release.apk
+            release-assets/gestalt-cli-windows/gestalt-cli-windows.exe
+            release-assets/gestalt-cli-linux/gestalt-cli-linux
+            release-assets/gestalt-cli-macos/gestalt-cli-macos
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

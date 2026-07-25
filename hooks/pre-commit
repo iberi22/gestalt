@@ -1,0 +1,104 @@
+#!/usr/bin/env pwsh
+# Gestalt Pre-Commit Hook
+# Validates code quality, formatting, and security before every commit.
+# Part of GitCore Protocol — release quality gate.
+#
+# Install: Copy to .git/hooks/pre-commit (or run hooks/install.ps1)
+
+$ErrorActionPreference = "Stop"
+$repoRoot = Split-Path -Parent (Split-Path -Parent $PSCommandPath)
+Set-Location $repoRoot
+
+$exitCode = 0
+$startTime = Get-Date
+
+Write-Host "`n═══════════════════════════════════════════" -ForegroundColor Cyan
+Write-Host "  🔍 GitCore Pre-Commit Validation" -ForegroundColor Cyan
+Write-Host "  $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" -ForegroundColor Gray
+Write-Host "═══════════════════════════════════════════`n" -ForegroundColor Cyan
+
+# ─── Stage 1: Format Check ───────────────────────────────────────
+Write-Host "📐 [1/4] Cargo Format Check..." -ForegroundColor Yellow
+$fmtResult = cargo fmt --check 2>&1
+if ($LASTEXITCODE -eq 0) {
+    Write-Host "  ✅ Cargo fmt: PASS" -ForegroundColor Green
+} else {
+    Write-Host "  ❌ Cargo fmt: FAIL — Run 'cargo fmt' to fix" -ForegroundColor Red
+    $exitCode = 1
+}
+
+# ─── Stage 2: Clippy Lint ───────────────────────────────────────
+Write-Host "`n🔎 [2/4] Clippy Lint Check..." -ForegroundColor Yellow
+$clippyResult = cargo clippy --all --all-targets -- -D warnings 2>&1
+if ($LASTEXITCODE -eq 0) {
+    Write-Host "  ✅ Clippy: PASS" -ForegroundColor Green
+} else {
+    Write-Host "  ❌ Clippy: FAIL — Fix warnings before commit" -ForegroundColor Red
+    $exitCode = 1
+}
+
+# ─── Stage 3: Build Check ───────────────────────────────────────
+Write-Host "`n📦 [3/4] Cargo Build Check..." -ForegroundColor Yellow
+$buildResult = cargo check --workspace 2>&1
+if ($LASTEXITCODE -eq 0) {
+    Write-Host "  ✅ Build: PASS" -ForegroundColor Green
+} else {
+    Write-Host "  ❌ Build: FAIL — Fix compilation errors" -ForegroundColor Red
+    $exitCode = 1
+}
+
+# ─── Stage 4: Security & Sanity ─────────────────────────────────
+Write-Host "`n🔒 [4/4] Security & Sanity Checks..." -ForegroundColor Yellow
+$allGood = $true
+
+# 4a. No secrets in staged files
+$stagedFiles = git diff --cached --name-only 2>$null
+foreach ($file in $stagedFiles) {
+    if ($file -match '\.env$' -and $file -ne '.env.example') {
+        Write-Host "  ❌ SECURITY: .env files should not be committed ($file)" -ForegroundColor Red
+        $allGood = $false
+    }
+    if ($file -match '(api.?key|token|secret|password|credential)') {
+        Write-Host "  ⚠️  WARNING: $file may contain credentials" -ForegroundColor Yellow
+    }
+}
+
+# 4b. No large binary files
+foreach ($file in $stagedFiles) {
+    $fullPath = Join-Path $repoRoot $file
+    if (Test-Path $fullPath) {
+        $size = (Get-Item $fullPath).Length
+        if ($size -gt 1MB) {
+            Write-Host "  ⚠️  WARNING: Large file staged ($file: $([math]::Round($size/1MB, 2)) MB)" -ForegroundColor Yellow
+        }
+    }
+}
+
+# 4c. CHANGELOG updated check (unless it's a chore/docs-only commit)
+$commitMsg = git log --format=%s -1 2>$null
+if ($commitMsg -notmatch '^(chore|docs)') {
+    $changelogChanged = git diff --cached --name-only | Select-String -Pattern 'CHANGELOG\.md'
+    if (-not $changelogChanged) {
+        Write-Host "  ⚠️  WARNING: CHANGELOG.md not updated in this commit" -ForegroundColor Yellow
+        Write-Host "       Add a changelog entry for user-facing changes." -ForegroundColor Gray
+    }
+}
+
+if ($allGood) {
+    Write-Host "  ✅ Security: PASS" -ForegroundColor Green
+} else {
+    $exitCode = 1
+}
+
+# ─── Summary ─────────────────────────────────────────────────────
+$elapsed = (Get-Date) - $startTime
+Write-Host "`n═══════════════════════════════════════════" -ForegroundColor Cyan
+if ($exitCode -eq 0) {
+    Write-Host "  ✅ ALL CHECKS PASSED ($([math]::Round($elapsed.TotalSeconds, 1))s)" -ForegroundColor Green
+} else {
+    Write-Host "  ❌ SOME CHECKS FAILED ($([math]::Round($elapsed.TotalSeconds, 1))s)" -ForegroundColor Red
+    Write-Host "     Fix issues above and stage changes again." -ForegroundColor Yellow
+}
+Write-Host "═══════════════════════════════════════════`n" -ForegroundColor Cyan
+
+exit $exitCode

@@ -1,0 +1,27 @@
+{
+  "project": "gestalt",
+  "path": "E:\\proyectosSWAL\\gestalt",
+  "generated_at": "2026-07-17T23:08:28.4991889-05:00",
+  "protocol_version": "3.8.0",
+  "overall_pct": 80.8,
+  "breakdown": {
+    "protocol_pct": 85,
+    "src_pct": 100.0,
+    "srs_pct": 100,
+    "features_pct": 0,
+    "features_count": 0,
+    "features_source": "parse error: Conversion from JSON failed with error: Bad JSON escape sequence: \\s. Path 'features[0].notes', line 28, position 42.",
+    "swal_compliance": 100
+  },
+  "weights": {
+    "protocol": 0.28,
+    "src": 0.21,
+    "srs": 0.26,
+    "features": 0.15,
+    "swal": 0.1
+  },
+  "gaps": [
+    "AGENTS.md missing"
+  ],
+  "grade": "B"
+}

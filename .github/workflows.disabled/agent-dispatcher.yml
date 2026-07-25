@@ -1,0 +1,88 @@
+# Git-Core Agent Dispatcher v3.5.1
+# Routes issues to best-fit executor agents
+
+name: "Agent Dispatcher"
+
+on:
+  issues:
+    types: [opened]
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: 'Issue number to dispatch'
+        required: false
+        type: string
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      contents: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+
+    steps:
+      - name: Analyze Issue
+        id: analyze
+        run: |
+          echo "Analyzing issue for routing..."
+
+          ISSUE_NUMBER="${{ github.event.issue.number }}"
+          if [ -z "$ISSUE_NUMBER" ]; then
+            ISSUE_NUMBER="${{ github.event.inputs.issue_number }}"
+          fi
+
+          if [ -z "$ISSUE_NUMBER" ]; then
+            echo "No issue number provided."
+            exit 1
+          fi
+
+          echo "issue_number=$ISSUE_NUMBER" >> $GITHUB_OUTPUT
+
+          # Get issue labels
+          LABELS=$(gh issue view "$ISSUE_NUMBER" --json labels -q '.labels[].name')
+          echo "Labels: $LABELS"
+
+          # Route based on labels
+          if echo "$LABELS" | grep -Eiq "^jules$|^ai-agent$"; then
+            echo "route=jules" >> $GITHUB_OUTPUT
+          elif echo "$LABELS" | grep -q "bug"; then
+            echo "route=fixer" >> $GITHUB_OUTPUT
+          elif echo "$LABELS" | grep -q "enhancement\|feature"; then
+            echo "route=feature" >> $GITHUB_OUTPUT
+          else
+            echo "route=default" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Dispatch to Agent
+        run: |
+          ROUTE=${{ steps.analyze.outputs.route }}
+          ISSUE=${{ steps.analyze.outputs.issue_number }}
+
+          echo "Routing issue #$ISSUE to: $ROUTE"
+
+          case $ROUTE in
+            jules)
+              echo "Delegating to Jules CLI agent..."
+              gh issue edit $ISSUE --add-assignee jules
+              ;;
+            fixer)
+              echo "Routing to bug fixer..."
+              ;;
+            feature)
+              echo "Routing to feature developer..."
+              ;;
+            *)
+              echo "Default routing - requires manual assignment"
+              ;;
+          esac
+
+      - name: Comment on Issue
+        run: |
+          ISSUE=${{ steps.analyze.outputs.issue_number }}
+          ROUTE=${{ steps.analyze.outputs.route }}
+
+          gh issue comment $ISSUE \
+            --body "Issue routed to: $ROUTE agent. Dispatch source: \`agent-dispatcher.yml\`."

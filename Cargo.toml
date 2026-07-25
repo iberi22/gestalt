@@ -2,10 +2,10 @@
 members = [
     "gestalt_core",
     "gestalt_cli",
-    "gestalt_timeline",
     "synapse-agentic",
     "gestalt-router",
-    ]
+    "gestalt-merge",
+]
 resolver = "2"
 
 [profile.dev-fast]

@@ -116,3 +116,108 @@ fn test_agent_result_and_report() {
     assert_eq!(report.merged_branches[0], "feature-1");
     assert_eq!(report.events_path, "/tmp/events");
 }
+
+use gestalt_router::timeline::{Event, EventLog, JsonlEventLog, VersionedEvent};
+use std::fs::File;
+use std::io::Write;
+
+fn get_test_temp_dir() -> std::path::PathBuf {
+    let mut path = std::env::temp_dir();
+    path.push(format!("gestalt_test_{}", Uuid::new_v4()));
+    path
+}
+
+#[test]
+fn test_event_serialization_schema_and_adjacent_tagging() {
+    let event = Event::AgentStateChanged {
+        agent_id: "agent-1".to_string(),
+        state: AgentState::Running,
+    };
+    let versioned = VersionedEvent { v: 1, event };
+
+    let serialized = serde_json::to_string(&versioned).unwrap();
+    // It must contain `"v":1`, `"type":"AgentStateChanged"`, and `"payload"`
+    assert!(serialized.contains("\"v\":1"));
+    assert!(serialized.contains("\"type\":\"AgentStateChanged\""));
+    assert!(serialized.contains("\"payload\""));
+    assert!(serialized.contains("\"agent_id\":\"agent-1\""));
+
+    let deserialized: VersionedEvent = serde_json::from_str(&serialized).unwrap();
+    assert_eq!(deserialized.v, 1);
+    match deserialized.event {
+        Event::AgentStateChanged { agent_id, state } => {
+            assert_eq!(agent_id, "agent-1");
+            assert_eq!(state, AgentState::Running);
+        }
+        _ => panic!("Expected AgentStateChanged variant"),
+    }
+}
+
+#[test]
+fn test_jsonl_event_log_roundtrip_and_list_runs() {
+    let temp_dir = get_test_temp_dir();
+    let run_id = Uuid::new_v4();
+
+    let log = JsonlEventLog::new_with_dir(run_id, temp_dir.clone()).unwrap();
+
+    // Appending a few events
+    log.append(Event::RunStarted).unwrap();
+    log.append(Event::AgentStateChanged {
+        agent_id: "agent-abc".to_string(),
+        state: AgentState::Success,
+    }).unwrap();
+    log.append(Event::RunFinished).unwrap();
+
+    // Read events back and verify
+    let events = log.read_events(run_id).unwrap();
+    assert_eq!(events.len(), 3);
+    assert_eq!(events[0], Event::RunStarted);
+    assert!(matches!(events[1], Event::AgentStateChanged { .. }));
+    assert_eq!(events[2], Event::RunFinished);
+
+    // List runs and verify
+    let runs = log.list_runs().unwrap();
+    assert_eq!(runs.len(), 1);
+    assert_eq!(runs[0], run_id);
+
+    // Clean up
+    let _ = std::fs::remove_dir_all(temp_dir);
+}
+
+#[test]
+fn test_jsonl_event_log_truncation_recovery() {
+    let temp_dir = get_test_temp_dir();
+    let run_id = Uuid::new_v4();
+
+    // Setup: manually write some valid events and a truncated/malformed last line
+    let run_dir = temp_dir.join(run_id.to_string());
+    std::fs::create_dir_all(&run_dir).unwrap();
+    let file_path = run_dir.join("events.jsonl");
+
+    let mut file = File::create(&file_path).unwrap();
+
+    // Line 1: Valid event
+    let ev1 = VersionedEvent { v: 1, event: Event::RunStarted };
+    let ser1 = serde_json::to_string(&ev1).unwrap();
+    writeln!(file, "{}", ser1).unwrap();
+
+    // Line 2: Valid event
+    let ev2 = VersionedEvent { v: 1, event: Event::SymlinkEscape { path: "/etc/passwd".to_string() } };
+    let ser2 = serde_json::to_string(&ev2).unwrap();
+    writeln!(file, "{}", ser2).unwrap();
+
+    // Line 3: Truncated last line (not valid JSON)
+    writeln!(file, "{{\"v\":1,\"type\":\"RunFinished\"").unwrap(); // missing closing brace
+
+    // Initialize log and read events
+    let log = JsonlEventLog::new_with_dir(run_id, temp_dir.clone()).unwrap();
+    let events = log.read_events(run_id).unwrap();
+
+    // It should tolerate the truncated last line, log a warning, and successfully return the first 2 events!
+    assert_eq!(events.len(), 2);
+    assert_eq!(events[0], Event::RunStarted);
+    assert_eq!(events[1], Event::SymlinkEscape { path: "/etc/passwd".to_string() });
+
+    // Clean up
+    let _ = std::fs::remove_dir_all(temp_dir);
+}

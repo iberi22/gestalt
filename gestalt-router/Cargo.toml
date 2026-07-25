@@ -11,3 +11,4 @@ thiserror = "1.0.69"
 uuid = { version = "1.15.1", features = ["v4", "serde"] }
 tracing = "0.1.44"
 gestalt_core = { path = "../gestalt_core" }
+dirs = "5.0.1"

@@ -52,4 +52,7 @@ pub enum RouterError {
 
     #[error("Invalid specification: {0}")]
     InvalidSpec(String),
+
+    #[error("Timeline error: {0}")]
+    TimelineError(String),
 }

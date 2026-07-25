@@ -10,4 +10,7 @@ serde_json = "1.0.149"
 thiserror = "1.0.69"
 uuid = { version = "1.15.1", features = ["v4", "serde"] }
 tracing = "0.1.44"
+async-trait = "0.1.89"
+libc = "0.2"
+tempfile = "3"
 gestalt_core = { path = "../gestalt_core" }

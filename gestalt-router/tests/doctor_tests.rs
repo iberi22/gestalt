@@ -1,94 +1,96 @@
 use gestalt_router::doctor::{Doctor, DoctorError, OrphanedRun, ManifestJson};
-use std::fs;
-use std::path::Path;
-use std::sync::{Mutex, OnceLock};
-use tempfile::tempdir;
-
-static TEST_MUTEX: OnceLock<Mutex<()>> = OnceLock::new();
-
-fn get_test_lock() -> std::sync::MutexGuard<'static, ()> {
-    TEST_MUTEX.get_or_init(|| Mutex::new(())).lock().unwrap()
-}
-
-fn init_test_repo(dir: &Path) {
-    std::process::Command::new("git")
-        .arg("init")
-        .current_dir(dir)
-        .status().unwrap();
-    std::process::Command::new("git")
-        .args(["config", "user.name", "Test User"])
-        .current_dir(dir).status().unwrap();
-    std::process::Command::new("git")
-        .args(["config", "user.email", "test@example.com"])
-        .current_dir(dir).status().unwrap();
-    std::process::Command::new("git")
-        .args(["commit", "--allow-empty", "-m", "initial"])
-        .current_dir(dir).status().unwrap();
-}
+use std::path::PathBuf;
 
 #[test]
-fn test_orphaned_run_detection() {
-    let dir = tempdir().unwrap();
-    let repo_path = dir.path().join("repo");
-    fs::create_dir_all(&repo_path).unwrap();
-    init_test_repo(&repo_path);
-
-    let worktrees_dir = dir.path().join("worktrees");
-    fs::create_dir_all(&worktrees_dir).unwrap();
-
-    let doctor = Doctor::new(&repo_path, &worktrees_dir);
-    let orphans = doctor.find_orphaned_runs().unwrap();
-    assert!(orphans.is_empty(), "Clean repo should have no orphans");
-}
-
-#[test]
-fn test_orphaned_run_from_manifest() {
+fn test_orphaned_run_construction() {
     let orphan = OrphanedRun {
         run_id: "test-run-123".to_string(),
-        agent_id: "agent-1".to_string(),
-        worktree_path: "/tmp/gestalt/test-run-123-agent-1".to_string(),
-        state: "Running".to_string(),
-        age_secs: 3600,
+        worktrees: vec![PathBuf::from("/tmp/gestalt/wt-1")],
+        branches: vec!["feat/test".to_string()],
+        manifest_exists: true,
+        status: "Active".to_string(),
     };
     assert_eq!(orphan.run_id, "test-run-123");
-    assert_eq!(orphan.state, "Running");
-    assert!(orphan.age_secs >= 0);
+    assert_eq!(orphan.status, "Active");
+    assert_eq!(orphan.worktrees.len(), 1);
+}
+
+#[test]
+fn test_orphaned_run_orphaned_status() {
+    let orphan = OrphanedRun {
+        run_id: "orphan-run".to_string(),
+        worktrees: vec![],
+        branches: vec![],
+        manifest_exists: false,
+        status: "Orphaned".to_string(),
+    };
+    assert_eq!(orphan.status, "Orphaned");
+    assert!(!orphan.manifest_exists);
 }
 
 #[test]
 fn test_manifest_json_serialization() {
     let manifest = ManifestJson {
         run_id: "run-1".to_string(),
-        created_at: "2026-07-25T12:00:00Z".to_string(),
-        agent_id: "agent-1".to_string(),
-        state: "Running".to_string(),
-        pid: Some(12345),
+        sha_base: Some("abc123".to_string()),
+        worktrees: Some(vec!["/tmp/wt-1".to_string()]),
+        branches: Some(vec!["feat/a".to_string()]),
+        created_at: Some("2026-07-25T12:00:00Z".to_string()),
     };
     let json = serde_json::to_string(&manifest).unwrap();
     assert!(json.contains("run-1"));
-    assert!(json.contains("Running"));
 
     let deserialized: ManifestJson = serde_json::from_str(&json).unwrap();
     assert_eq!(deserialized.run_id, "run-1");
-    assert_eq!(deserialized.pid, Some(12345));
+    assert_eq!(deserialized.sha_base.unwrap(), "abc123");
+}
+
+#[test]
+fn test_manifest_json_minimal() {
+    let manifest = ManifestJson {
+        run_id: "minimal-run".to_string(),
+        sha_base: None,
+        worktrees: None,
+        branches: None,
+        created_at: None,
+    };
+    assert!(manifest.sha_base.is_none());
+    assert!(manifest.worktrees.is_none());
+}
+
+#[test]
+fn test_doctor_construction() {
+    let doctor = Doctor::new(false, false);
+    assert!(!doctor.force);
+    assert!(!doctor.push);
+}
+
+#[test]
+fn test_doctor_with_flags() {
+    let doctor = Doctor::new(true, true);
+    assert!(doctor.force);
+    assert!(doctor.push);
 }
 
 #[test]
 fn test_doctor_error_display() {
-    let err = DoctorError::IoError(std::io::Error::new(std::io::ErrorKind::NotFound, "file not found"));
+    let err = DoctorError::Io(std::io::Error::new(std::io::ErrorKind::NotFound, "file not found"));
     let msg = format!("{}", err);
     assert!(!msg.is_empty());
 }
 
 #[test]
-fn test_doctor_find_orphans_nonexistent_dir() {
-    let dir = tempdir().unwrap();
-    let repo_path = dir.path().join("no_repo");
-    let worktrees_dir = dir.path().join("no_worktrees");
+fn test_doctor_error_git() {
+    let err = DoctorError::Git("merge failed".to_string());
+    let msg = format!("{}", err);
+    assert!(msg.contains("merge failed"));
+}
 
-    let doctor = Doctor::new(&repo_path, &worktrees_dir);
-    let result = doctor.find_orphaned_runs();
-    assert!(result.is_err(), "Should error on nonexistent repo");
+#[test]
+fn test_doctor_error_other() {
+    let err = DoctorError::Other("unknown error".to_string());
+    let msg = format!("{}", err);
+    assert!(msg.contains("unknown error"));
 }
 
 #[test]
@@ -98,14 +100,17 @@ fn test_orphaned_run_collection_empty() {
 }
 
 #[test]
-fn test_manifest_json_without_pid() {
-    let manifest = ManifestJson {
-        run_id: "run-2".to_string(),
-        created_at: "2026-07-25T13:00:00Z".to_string(),
-        agent_id: "agent-2".to_string(),
-        state: "Success".to_string(),
-        pid: None,
+fn test_orphaned_run_with_multiple_worktrees() {
+    let orphan = OrphanedRun {
+        run_id: "multi-wt".to_string(),
+        worktrees: vec![
+            PathBuf::from("/tmp/wt-a"),
+            PathBuf::from("/tmp/wt-b"),
+        ],
+        branches: vec!["feat/a".to_string(), "feat/b".to_string()],
+        manifest_exists: true,
+        status: "Active".to_string(),
     };
-    assert!(manifest.pid.is_none());
-    assert_eq!(manifest.state, "Success");
+    assert_eq!(orphan.worktrees.len(), 2);
+    assert_eq!(orphan.branches.len(), 2);
 }

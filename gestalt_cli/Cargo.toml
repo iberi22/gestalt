@@ -21,3 +21,5 @@ chrono = { version = "0.4", features = ["serde"] }
 ulid = "1.1"
 home = "0.5"
 reqwest = { version = "0.12", features = ["blocking", "json"] }
+gestalt-router = { path = "../gestalt-router" }
+uuid = { version = "1.15", features = ["v4", "serde"] }

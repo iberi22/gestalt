@@ -36,6 +36,9 @@ fn create_branch(repo_path: &Path, branch: &str, content_changes: &[(&str, &str)
     run_git(repo_path, &["checkout", "-b", branch]);
     for (file, content) in content_changes {
         let path = repo_path.join(file);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).unwrap();
+        }
         std::fs::write(&path, content).unwrap();
         run_git(repo_path, &["add", file]);
     }

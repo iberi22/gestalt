@@ -4,6 +4,26 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
 
+fn get_runs_dir() -> PathBuf {
+    if let Some(gestalt_home) = std::env::var_os("GESTALT_HOME") {
+        PathBuf::from(gestalt_home).join("runs")
+    } else if let Some(home) = dirs::home_dir() {
+        home.join(".gestalt").join("runs")
+    } else {
+        PathBuf::from(".gestalt").join("runs")
+    }
+}
+
+fn get_archive_dir(run_id: &str) -> PathBuf {
+    if let Some(gestalt_home) = std::env::var_os("GESTALT_HOME") {
+        PathBuf::from(gestalt_home).join("archive").join("runs").join(run_id)
+    } else if let Some(home) = dirs::home_dir() {
+        home.join(".gestalt").join("archive").join("runs").join(run_id)
+    } else {
+        PathBuf::from(".gestalt").join("archive").join("runs").join(run_id)
+    }
+}
+
 #[derive(Debug, Error)]
 pub enum DoctorError {
     #[error("IO error: {0}")]
@@ -53,10 +73,7 @@ impl Doctor {
 
     /// List all runs (both active and orphaned).
     pub fn list_orphaned(&self, log: &dyn Fn(&str), repo_path: &Path) -> Vec<OrphanedRun> {
-        let runs_dir = match dirs::home_dir() {
-            Some(home) => home.join(".gestalt").join("runs"),
-            None => PathBuf::from(".gestalt").join("runs"),
-        };
+        let runs_dir = get_runs_dir();
 
         let runs_dir_canonical = runs_dir.canonicalize().unwrap_or_else(|_| runs_dir.clone());
         let _repo_path_canonical = repo_path
@@ -305,12 +322,17 @@ impl Doctor {
         orphaned_runs
     }
 
+    /// List only orphaned runs.
+    pub fn find_orphaned_runs(&self, log: &dyn Fn(&str), repo_path: &Path) -> Vec<OrphanedRun> {
+        self.list_orphaned(log, repo_path)
+            .into_iter()
+            .filter(|r| r.status == "Orphaned")
+            .collect()
+    }
+
     /// Prune a specific run resources.
     pub fn prune_run(&self, run_id: &str, log: &dyn Fn(&str), repo_path: &Path) -> Result<()> {
-        let runs_dir = match dirs::home_dir() {
-            Some(home) => home.join(".gestalt").join("runs"),
-            None => PathBuf::from(".gestalt").join("runs"),
-        };
+        let runs_dir = get_runs_dir();
         let runs_dir_canonical = runs_dir.canonicalize().unwrap_or_else(|_| runs_dir.clone());
         let repo_path_canonical = repo_path
             .canonicalize()
@@ -420,17 +442,7 @@ impl Doctor {
         // Archive events
         let run_dir = runs_dir.join(run_id);
         if run_dir.exists() {
-            let archive_dir = match dirs::home_dir() {
-                Some(home) => home
-                    .join(".gestalt")
-                    .join("archive")
-                    .join("runs")
-                    .join(run_id),
-                None => PathBuf::from(".gestalt")
-                    .join("archive")
-                    .join("runs")
-                    .join(run_id),
-            };
+            let archive_dir = get_archive_dir(run_id);
 
             // Look for events file (e.g., events.jsonl)
             let events_file = run_dir.join("events.jsonl");

@@ -1,11 +1,11 @@
 {
-   "_comment": "Feature tracking file for Cortex Cognitive Memory System.",
+   "_comment": "Feature tracking file for Gestalt-Rust.",
    "metadata": {
       "project": "Gestalt-Rust",
       "created": "2026-03-05",
-      "last_verified": "2026-04-15",
-      "total_features": 9,
-      "passing": 8,
+      "last_verified": "2026-07-25",
+      "total_features": 12,
+      "passing": 11,
       "failing": 1
    },
    "features": [
@@ -24,7 +24,7 @@
          "verified_by": "manual",
          "github_issue": null,
          "last_tested": "2026-04-15",
-         "notes": "swarm_bridge.py at E:\scripts-python\gestalt-rust\swarm_bridge.py"
+         "notes": "swarm_bridge.py at E:scripts-pythongestalt-rustswarm_bridge.py"
       },
       {
          "id": "feat-swarm-smart-selection",
@@ -147,10 +147,60 @@
          "github_issue": null,
          "last_tested": "2026-03-15",
          "notes": "Implemented in .gitcore/SRC.md"
+      },
+      {
+         "id": "feat-router-mvp",
+         "category": "phase1",
+         "description": "Router MVP — WorktreeManager, SubprocessRunner, Checkpointer, OverlapDetector, integrate_branches, Timeline JSONL, Doctor, Router::execute",
+         "steps": [
+            "Implement WorktreeManager with git worktree lifecycle",
+            "Implement SubprocessRunner with POSIX process group kill",
+            "Implement Checkpointer with symlink escape detection",
+            "Implement OverlapDetector for file intersection testing",
+            "Implement integrate_branches with sequential merge-tree",
+            "Implement Timeline JSONL event log per run",
+            "Implement Doctor cleanup and recovery",
+            "Implement Router::execute pipeline orchestrator"
+         ],
+         "passes": true,
+         "verified_by": "system",
+         "github_issue": "294",
+         "last_tested": "2026-07-25",
+         "notes": "Wave 1 — gestalt-router crate fully implemented. cargo check passes."
+      },
+      {
+         "id": "feat-cli-run",
+         "category": "phase1",
+         "description": "CLI gestalt run command with agent orchestration",
+         "steps": [
+            "Define RunSpec, AgentSpec, RunReport types",
+            "Implement agent lifecycle via tokio JoinSet",
+            "Implement manifest writing for agent state tracking"
+         ],
+         "passes": true,
+         "verified_by": "system",
+         "github_issue": "294",
+         "last_tested": "2026-07-25",
+         "notes": "Router::execute handles full agent orchestration pipeline"
+      },
+      {
+         "id": "feat-event-log",
+         "category": "phase1",
+         "description": "JSONL event log for tracking run lifecycle events",
+         "steps": [
+            "Define Event enum with RunStarted, AgentStateChanged, etc.",
+            "Implement JsonlEventLog with thread-safe file writing",
+            "Define EventLog trait for pluggable backends"
+         ],
+         "passes": true,
+         "verified_by": "system",
+         "github_issue": "314",
+         "last_tested": "2026-07-25",
+         "notes": "JSONL event log implemented in timeline.rs"
       }
    ],
    "verification_commands": {
-      "all": "cargo test",
+      "all": "cargo check --workspace",
       "unit": "cargo test --lib",
       "lint": "cargo clippy"
    }

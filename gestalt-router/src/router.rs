@@ -275,7 +275,7 @@ impl Router {
             })
             .collect();
 
-        let overlaps = crate::overlap::find_overlaps(&base_sha, &active_branches)?;
+        let overlaps = crate::overlap::find_overlaps(std::path::Path::new("."), &base_sha, &active_branches)?;
         for overlap in &overlaps {
             let _ = self.log.log(Event::OverlapDetected {
                 run_id,

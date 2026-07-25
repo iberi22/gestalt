@@ -10,6 +10,8 @@ pub trait EventLog: Send + Sync {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentOutcome {
+    pub state: crate::run_state::AgentState,
+    pub error: Option<String>,
     pub exit_code: Option<i32>,
     pub stdout_path: PathBuf,
     pub stderr_path: PathBuf,
@@ -74,8 +76,10 @@ impl AgentRunner for SubprocessRunner {
                 cmd.env(var, val);
             }
         }
-        for (k, v) in &spec.env {
-            cmd.env(k, v);
+        if let Some(ref env) = spec.env {
+            for (k, v) in env.iter() {
+                cmd.env(k, v);
+            }
         }
 
         // Add the task itself as an environment variable or context if needed, but the main thing is sanitizing env
@@ -200,12 +204,16 @@ impl AgentRunner for SubprocessRunner {
             }
         }
 
-        Ok(AgentOutcome {
-            exit_code,
-            stdout_path,
-            stderr_path,
-            duration,
-            files_changed,
+        Ok(crate::run::AgentResult {
+            agent_id: spec.id.clone(),
+            state: crate::run_state::AgentState::Success,
+            output: None,
+            error: if exit_code.map_or(false, |c| c != 0) { Some("Process exited with non-zero".to_string()) } else { None },
+            branch: None,
+            changed_files: files_changed.iter().map(|p| p.to_string_lossy().to_string()).collect(),
+            duration_ms: duration.as_millis() as u64,
+            run_id: None,
+            worktree_path: Some(worktree.to_string_lossy().to_string()),
         })
     }
 }

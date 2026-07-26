@@ -196,7 +196,7 @@ fn test_integrate_result_construction() {
         conflicts: vec![],
     };
     assert_eq!(result.merged_branches.len(), 2);
-    assert_eq!(result.merge_sha.len(), 8);
+    assert_eq!(result.merge_sha.len(), 9);
 }
 
 #[test]

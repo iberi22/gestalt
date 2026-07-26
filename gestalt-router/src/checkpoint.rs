@@ -74,12 +74,11 @@ fn run_git_commit_cmd(repo_path: &Path, args: &[&str]) -> Result<String, RouterE
         .map_err(|e| RouterError::GitError(format!("Failed to execute git commit: {}", e)))?;
 
     if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
         let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(RouterError::GitError(format!(
-            "git commit failed: {} {}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
+            "git commit failed: {}\n{}",
+            stdout, stderr
         )));
     }
 
@@ -179,7 +178,6 @@ pub fn checkpoint(
 
     let mut symlink_escapes = Vec::new();
 
-
     for line in ls_stdout.lines() {
         let parts: Vec<&str> = line.split('\t').collect();
         if parts.len() == 2 {
@@ -226,22 +224,29 @@ pub fn checkpoint(
         }
     }
 
-    // 4. Determine the files actually committed in this transaction
-    let diff_cached_args = if run_git_cmd(worktree_dir, &["rev-parse", "HEAD"]).is_ok() {
-        vec!["diff", "--name-only", "--cached"]
-    } else {
-        vec!["ls-files"]
-    };
-
-    let diff_stdout = run_git_cmd(worktree_dir, &diff_cached_args).unwrap_or_default();
-
+    // Retrieve the list of staged files that are actually being committed
     let mut files_committed = Vec::new();
-    for line in diff_stdout.lines() {
-        let f = line.trim().to_string();
-        if !f.is_empty() && !symlink_escapes.iter().any(|se| se.path == f) {
-            files_committed.push(f);
+    if let Ok(staged_stdout) = run_git_cmd(worktree_dir, &["diff", "--name-only", "--cached"]) {
+        for line in staged_stdout.lines() {
+            let trimmed = line.trim();
+            if !trimmed.is_empty() {
+                files_committed.push(trimmed.to_string());
+            }
+        }
+    } else {
+        // Fallback for empty repo (no HEAD)
+        if let Ok(ls_stdout) = run_git_cmd(worktree_dir, &["ls-files"]) {
+            for line in ls_stdout.lines() {
+                let trimmed = line.trim();
+                if !trimmed.is_empty() {
+                    files_committed.push(trimmed.to_string());
+                }
+            }
         }
     }
+
+    // Filter out symlink escapes
+    files_committed.retain(|f| !symlink_escapes.iter().any(|se| se.path == *f));
 
     // 5. Commit changes with hooks bypassed.
     let commit_args = &[

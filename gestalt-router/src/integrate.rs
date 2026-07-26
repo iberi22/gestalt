@@ -83,6 +83,7 @@ pub fn integrate_branches(
     let mut conflicted_files = Vec::new();
 
     for (_agent_id, branch_or_sha) in branches {
+<<<<<<< HEAD
         let args = ["merge-tree", "--write-tree", "--merge-base", base_sha, &current_tree, branch_or_sha];
         let result = checkpoint::run_git_cmd(repo_dir, &args);
 
@@ -114,9 +115,26 @@ pub fn integrate_branches(
             Err(e) => {
                 // There is a merge conflict. stdout contains the conflict info.
                 let err_msg = e.to_string();
+=======
+        let merge_base_arg = format!("--merge-base={}", base_sha);
+        let args = ["merge-tree", "--write-tree", &merge_base_arg, &current_tree, branch_or_sha];
+        let output = std::process::Command::new("git")
+            .current_dir(repo_dir)
+            .args(&args)
+            .output()
+            .map_err(|e| RouterError::GitError(format!("Failed to execute git merge-tree: {}", e)))?;
+
+        if output.status.success() {
+            current_tree = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        } else {
+            let exit_code = output.status.code().unwrap_or(-1);
+            if exit_code == 1 {
+                // There is a merge conflict. stdout/stderr contains the conflict info.
+                let stdout_str = String::from_utf8_lossy(&output.stdout);
+>>>>>>> pr-348
                 let mut files = Vec::new();
-                for line in err_msg.lines() {
-                    if line.starts_with("Conflict") || line.contains("conflict") {
+                for line in stdout_str.lines() {
+                    if line.starts_with("CONFLICT") || line.contains("conflict") {
                         if let Some(idx) = line.find("in ") {
                             let p = &line[idx + 3..];
                             files.push(p.trim().to_string());
@@ -126,12 +144,22 @@ pub fn integrate_branches(
                                 files.push(words[words.len() - 1].trim().to_string());
                             }
                         }
+                    } else if let Some(tab_idx) = line.find('\t') {
+                        // Also check for the stage lines "mode OID stage path" which have a tab
+                        let path_str = &line[tab_idx + 1..];
+                        files.push(path_str.trim().to_string());
                     }
                 }
                 if files.is_empty() {
                     files.push(format!("conflict-in-branch-{}", branch_or_sha));
                 }
                 conflicted_files.extend(files);
+            } else {
+                let err_msg = String::from_utf8_lossy(&output.stderr).into_owned();
+                return Err(RouterError::GitError(format!(
+                    "git merge-tree failed with exit code {}: {}",
+                    exit_code, err_msg
+                )));
             }
         }
     }

@@ -430,10 +430,8 @@ fn test_checkpoint_with_gitignored_files() {
     std::fs::write(dir.join("build.log"), "some build output").unwrap();
 
     // Also create a real file to commit
-    let src_lib = dir.join("src/lib.rs");
-    std::fs::create_dir_all(src_lib.parent().unwrap()).unwrap();
-    std::fs::write(&src_lib, "pub fn f() {}").unwrap();
-
+    std::fs::create_dir_all(dir.join("src")).unwrap();
+    std::fs::write(dir.join("src/lib.rs"), "pub fn f() {}").unwrap();
 
     let res = checkpoint(dir, "feat: add lib").unwrap();
     assert!(res.success);

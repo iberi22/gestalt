@@ -36,7 +36,7 @@ priority = 3
 [[agents]]
 name = "agy"
 provider = "openrouter"
-model = "gemini-2.5-flash"  # Gemini 3.6 Flash via OpenRouter
+model = "gemini-2.5-flash"
 type = "Cli"
 capabilities = [
     "edit", "edit-single-line", "insert-line", "delete-line",
@@ -88,7 +88,7 @@ capabilities = [
     "edit", "edit-single-line", "insert-line", "delete-line",
     "test", "refactor", "implement", "fix",
 ]
-rate_limit = { rpm = 30, tpm = 1_000_000 }
+rate_limit = { rpm = 120, tpm = 4_000_000 }
 cost_per_mtok = 0.50
 max_context = 100_000
 tags = ["grok", "low", "swarm", "implementation"]
@@ -183,7 +183,7 @@ name = "tiny-search"
 provider = "local"
 model = "all-MiniLM-L6-v2"
 type = "Tiny"
-capabilities = ["search", "search-files", "grep"]
+capabilities = ["semantic-search", "embedding", "similarity-search"]
 rate_limit = { rpm = 9999, tpm = 999_999 }
 cost_per_mtok = 0.0
 max_context = 512

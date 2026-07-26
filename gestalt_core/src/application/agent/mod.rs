@@ -1,4 +1,5 @@
 pub mod gestalt_agent;
+pub mod registry;
 pub mod tools;
 pub mod xavier;
 

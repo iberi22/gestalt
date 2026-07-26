@@ -1,0 +1,172 @@
+# ──────────────────────────────────────────────────────────
+# 🧠 Agent Registry — Gestalt
+# Inventario de capacidades, rate limits y modelos
+# ──────────────────────────────────────────────────────────
+
+[routing]
+strategy = "CapabilityMatch"
+prefer_local_for_simple = true
+tiny_agents_for_precise_edits = true
+
+# ── Proveedores ──────────────────────────────────────────
+
+[providers.openrouter]
+base_url = "https://openrouter.ai/api/v1"
+rate_limit = { rpm = 200, tpm = 2_000_000 }
+priority = 1
+
+[providers.local]
+base_url = "http://localhost:11434"
+rate_limit = { rpm = 9999, tpm = 9_999_999 }
+priority = 10
+
+[providers.openclaw]
+base_url = "http://localhost:3001"
+rate_limit = { rpm = 500, tpm = 5_000_000 }
+priority = 2
+
+[providers.hermes]
+base_url = "http://localhost:8007"
+rate_limit = { rpm = 100, tpm = 1_000_000 }
+priority = 3
+
+# ── Agentes ──────────────────────────────────────────────
+
+# agy CLI — Agente ejecutor principal
+[[agents]]
+name = "agy"
+provider = "local"
+model = "gemini-2.0-flash"
+type = "Cli"
+capabilities = [
+    "edit", "edit-single-line", "insert-line", "delete-line",
+    "search", "analyze", "code-review", "test", "refactor",
+    "read-file", "search-files", "diff",
+]
+rate_limit = { rpm = 30, tpm = 1_000_000 }
+cost_per_mtok = 0.0   # local
+max_context = 1_000_000
+tags = ["fast", "code", "editor"]
+
+# Kimi CLI — Agente razonador
+[[agents]]
+name = "kimi"
+provider = "openrouter"
+model = "kimi-v1"
+type = "Cli"
+capabilities = [
+    "edit", "reason", "analyze", "search",
+    "plan", "write-docs", "code-review",
+]
+rate_limit = { rpm = 30, tpm = 200_000 }
+cost_per_mtok = 0.50
+max_context = 128_000
+tags = ["reasoning", "docs", "review"]
+
+# Hermes — Asistente conversacional (+ delegación)
+[[agents]]
+name = "hermes"
+provider = "hermes"
+model = "deepseek-v4-flash"
+type = "Assistant"
+capabilities = [
+    "delegate", "orchestrate", "plan", "analyze",
+    "code", "search-web", "read-files", "write-files",
+    "git-operations", "xavier-sync", "skill-manage",
+]
+rate_limit = { rpm = 60, tpm = 500_000 }
+cost_per_mtok = 0.15
+max_context = 200_000
+tags = ["orchestrator", "conversational"]
+
+# OpenClaw — Gateway multi-model
+[[agents]]
+name = "openclaw"
+provider = "openclaw"
+model = "claude-sonnet-4"
+type = "Api"
+capabilities = [
+    "edit", "analyze", "code", "research", "plan",
+]
+rate_limit = { rpm = 100, tpm = 1_000_000 }
+cost_per_mtok = 3.00
+max_context = 200_000
+tags = ["premium", "sonnet"]
+
+# Gestalt Router — Orquestador de subagentes
+[[agents]]
+name = "gestalt"
+provider = "local"
+model = "router-v1"
+type = "Orchestrator"
+capabilities = [
+    "delegate", "orchestrate", "parallel-exec",
+    "vfs-isolation", "conflict-detection", "xavier-sync",
+    "swarm", "wave-execution",
+]
+rate_limit = { rpm = 9999, tpm = 9_999_999 }
+cost_per_mtok = 0.0
+max_context = 1_000_000_000
+tags = ["orchestrator", "local"]
+
+# cursor-agent — Edición precisa con IA
+[[agents]]
+name = "cursor-agent"
+provider = "openrouter"
+model = "gpt-4o-mini"
+type = "Cli"
+capabilities = [
+    "edit-single-line", "insert-line", "delete-line",
+    "multi-line-edit", "search", "diff",
+]
+rate_limit = { rpm = 30, tpm = 200_000 }
+cost_per_mtok = 0.15
+max_context = 128_000
+tags = ["editor", "precise", "fast"]
+
+# ── Tiny Agents (modelos locales diminutos) ──────────────
+# Cada uno hace EXACTAMENTE UNA COSA
+
+[[agents]]
+name = "tiny-insert-line"
+provider = "local"
+model = "phi-3-mini"  # ~3.8B params
+type = "Tiny"
+capabilities = ["insert-line"]
+rate_limit = { rpm = 9999, tpm = 999_999 }
+cost_per_mtok = 0.0
+max_context = 4096
+tags = ["tiny", "single-purpose", "insert"]
+
+[[agents]]
+name = "tiny-delete-line"
+provider = "local"
+model = "tinyllama-1.1b"
+type = "Tiny"
+capabilities = ["delete-line"]
+rate_limit = { rpm = 9999, tpm = 999_999 }
+cost_per_mtok = 0.0
+max_context = 2048
+tags = ["tiny", "single-purpose", "delete"]
+
+[[agents]]
+name = "tiny-replace-line"
+provider = "local"
+model = "qwen2.5-coder-0.5b"
+type = "Tiny"
+capabilities = ["replace-line"]
+rate_limit = { rpm = 9999, tpm = 999_999 }
+cost_per_mtok = 0.0
+max_context = 2048
+tags = ["tiny", "single-purpose", "replace"]
+
+[[agents]]
+name = "tiny-search"
+provider = "local"
+model = "all-MiniLM-L6-v2"
+type = "Tiny"
+capabilities = ["search", "search-files", "grep"]
+rate_limit = { rpm = 9999, tpm = 999_999 }
+cost_per_mtok = 0.0
+max_context = 512
+tags = ["tiny", "single-purpose", "search"]

@@ -19,7 +19,7 @@ gestalt/
 │   └── src/                        # 45 .rs files — adapters, application, domain, ports
 ├── gestalt_cli/                    # CLI binary: run, repl, serve, exec, git
 │   └── src/main.rs                 # CLI entry point (Commands enum, match arms)
-├── gestalt-router/                 # **NEW** Multi-agent orchestration engine
+├── gestalt-router/                 # Multi-agent orchestration engine
 │   └── src/
 │       ├── lib.rs                  # Module declarations (11 modules)
 │       ├── run.rs                  # RunSpec, AgentSpec, RunReport, AgentResult, RouterError, ConflictInfo
@@ -47,7 +47,7 @@ gestalt/
 |-------|------|-------|--------|
 | gestalt_core | lib | 45 .rs | Stable |
 | gestalt_cli | bin | 1 .rs + 2 helpers | Updated — `gestalt run` added |
-| gestalt-router | lib | 11 modules (13 .rs) | **Wave 1 — NEW** |
+| gestalt-router | lib | 12 modules (13 .rs) | **Wave 1 — COMPLETE** |
 | gestalt_swarm | bin | excluded | Legacy |
 | synapse-agentic | lib | 1 .rs | Stable |
 
@@ -57,10 +57,30 @@ gestalt/
 |-------|-----------|-------------|-----------|---------------|
 | gestalt_core | — | — | ✅ | Unknown |
 | gestalt_cli | — | — | ✅ | N/A (binary) |
-| gestalt-router | 6 test files | 39 tests | ❌ **110 errors** | **0%** (no tests compile) |
+| gestalt-router | 7 test files | 119 tests | ✅ | **100%** (119/119 pass) |
 | synapse-agentic | — | — | ✅ | Unknown |
 
-All 39 tests in `gestalt-router/tests/` reference old APIs (Checkpointer struct, MergeResult enum, `integrate()` function, AgentStatus, Router from run.rs) that were rewritten during Wave 1 merge. Tests must be updated to match the new API surface.
+All 119 tests in `gestalt-router` pass. Test categories:
+- agent_tests: 15/15 — AgentSpec, AgentResult, SubprocessRunner construction
+- checkpoint_tests: 16/16 — git checkpoint creation, symlink detection, binary files
+- doctor_tests: 12/12 — orphaned run detection, pruning, manifest handling
+- integration_test: 16/16 — full pipeline integration, event log, overlap info
+- overlap_tests: 13/13 — overlap detection, mergeability, 50+ branch performance
+- router_tests: 46/46 — comprehensive integration tests across all modules
+- worktree unit: 1/1 — worktree lifecycle
+
+> **Note:** `test_doctor_pruning_and_orphans` sets `GESTALT_HOME` env var; run with `--test-threads=1` to avoid parallel-test env interference.
+
+## Known Issues (Fixed)
+
+### ~~find_overlaps hardcoded `"."` path~~ ✅ FIXED
+`router.rs:282` previously passed `Path::new(".")` to `find_overlaps()` instead of the actual repository path. The Router now resolves `std::env::current_dir()` properly, matching the pattern used by `WorktreeManager`.
+
+### ~~Test compilation errors~~ ✅ FIXED
+`router_tests.rs` imported `find_overlaps_in_repo` but the test functions called `find_overlaps` (the wrapper function). Import changed to `find_overlaps`.
+
+### ~~integrate_branches tree vs commit SHA mismatch~~ ✅ FIXED
+`integrate.rs` step 3 passed `current_commit` (a commit SHA) as the tree argument to `git commit-tree`. Now resolves the tree SHA from the intermediate commit via `git rev-parse <commit>:`.
 
 ## Build / Run
 
@@ -68,18 +88,18 @@ All 39 tests in `gestalt-router/tests/` reference old APIs (Checkpointer struct,
 # Check compilation
 PKG_CONFIG_PATH=<openssl-pkgconfig> cargo check --workspace
 
+# Run all tests (sequential to avoid env interference)
+PKG_CONFIG_PATH=<openssl-pkgconfig> cargo test -p gestalt-router -- --test-threads=1
+
 # Run multi-agent orchestration
 cargo run -p gestalt_cli -- run --task "..." --agents "cmd1,cmd2" --base-ref main
 
 # Run REPL
 cargo run -p gestalt_cli -- repl
-
-# Run tests (once fixed)
-cargo test --workspace
 ```
 
 ## Status
 
 ✅ Project active — iberi22/gestalt — SouthWest AI Labs
-🔄 Wave 1 complete (Router Foundation) — tests pending update
+✅ Wave 1 complete (Router Foundation) — 119 tests passing
 📅 Last verified: 2026-07-25

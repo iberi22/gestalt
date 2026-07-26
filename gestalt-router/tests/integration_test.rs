@@ -1,54 +1,11 @@
-use gestalt_router::checkpoint::{checkpoint, CheckpointResult};
-use gestalt_router::integrate::{integrate_branches, AgentIntegrationSpec, IntegrateResult};
-use gestalt_router::overlap::{find_overlaps, OverlapInfo};
+use gestalt_router::integrate::{AgentIntegrationSpec, IntegrateResult};
+use gestalt_router::overlap::OverlapInfo;
 use gestalt_router::run::{AgentResult, AgentSpec, RunReport, RunSpec};
 use gestalt_router::run_state::{AgentState, RunManifest};
 use gestalt_router::timeline::{Event, EventLog, JsonlEventLog, VersionedEvent};
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::process::Command;
-use std::time::Duration;
 use uuid::Uuid;
-
-fn init_test_repo() -> (tempfile::TempDir, PathBuf) {
-    let dir = tempfile::tempdir().unwrap();
-    let repo_path = dir.path().to_path_buf();
-
-    Command::new("git")
-        .arg("init")
-        .current_dir(&repo_path)
-        .status()
-        .unwrap();
-    Command::new("git")
-        .args(["config", "user.name", "Gestalt Tester"])
-        .current_dir(&repo_path)
-        .status()
-        .unwrap();
-    Command::new("git")
-        .args(["config", "user.email", "tester@gestalt.local"])
-        .current_dir(&repo_path)
-        .status()
-        .unwrap();
-
-    std::fs::write(repo_path.join("README.md"), "# Test").unwrap();
-    Command::new("git")
-        .args(["add", "README.md"])
-        .current_dir(&repo_path)
-        .status()
-        .unwrap();
-    Command::new("git")
-        .args(["commit", "-m", "initial"])
-        .current_dir(&repo_path)
-        .status()
-        .unwrap();
-    Command::new("git")
-        .args(["branch", "-m", "main"])
-        .current_dir(&repo_path)
-        .status()
-        .unwrap();
-
-    (dir, repo_path)
-}
 
 #[test]
 fn test_full_pipeline_agent_spec_construction() {

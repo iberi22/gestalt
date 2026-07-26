@@ -1,6 +1,5 @@
 use crate::run::RouterError;
 use std::path::{Component, Path, PathBuf};
-use std::process::Command;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct CheckpointResult {
@@ -75,47 +74,17 @@ fn run_git_commit_cmd(repo_path: &Path, args: &[&str]) -> Result<String, RouterE
         .map_err(|e| RouterError::GitError(format!("Failed to execute git commit: {}", e)))?;
 
     if !output.status.success() {
+        let stdout_str = String::from_utf8_lossy(&output.stdout);
+        let stderr_str = String::from_utf8_lossy(&output.stderr);
         return Err(RouterError::GitError(format!(
-            "git commit failed: {}",
-            String::from_utf8_lossy(&output.stderr)
+            "git commit failed:\nstdout: {}\nstderr: {}",
+            stdout_str, stderr_str
         )));
     }
 
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
-/// Unquote a path string if it is wrapped in double quotes.
-fn unquote_path(path_str: &str) -> &str {
-    let mut s = path_str.trim();
-    if s.starts_with('"') && s.ends_with('"') && s.len() >= 2 {
-        s = &s[1..s.len() - 1];
-    }
-    s
-}
-
-/// Normalize a path by resolving '.', '..', and duplicate separators.
-fn normalize_path(path: &Path) -> PathBuf {
-    let mut components = Vec::new();
-    for component in path.components() {
-        match component {
-            Component::ParentDir => {
-                components.pop();
-            }
-            Component::CurDir => {}
-            Component::Normal(c) => {
-                components.push(c);
-            }
-            Component::Prefix(p) => {
-                components.push(p.as_os_str());
-            }
-            Component::RootDir => {
-                components.clear();
-                components.push(component.as_os_str());
-            }
-        }
-    }
-    components.iter().collect()
-}
 
 /// Checks if a symlink target points to a location outside the worktree.
 pub fn is_symlink_escape(worktree_root: &Path, symlink_rel_path: &Path, target: &str) -> bool {
@@ -144,8 +113,8 @@ pub fn checkpoint(
     worktree_dir: &Path,
     commit_message: &str,
 ) -> Result<CheckpointResult, RouterError> {
-    // 1. Run git status --porcelain --ignored to identify modified and untracked files.
-    let stdout = run_git_cmd(worktree_dir, &["status", "--porcelain", "--ignored"])
+    // 1. Run git status --porcelain --ignored -uall to identify modified and untracked files.
+    let stdout = run_git_cmd(worktree_dir, &["status", "--porcelain", "--ignored", "-uall"])
         .map_err(|e| RouterError::GitError(format!("Failed to check git status: {}", e)))?;
 
     let mut excluded_files = Vec::new();
@@ -209,7 +178,6 @@ pub fn checkpoint(
         .map_err(|e| RouterError::GitError(format!("Failed to run git ls-files: {}", e)))?;
 
     let mut symlink_escapes = Vec::new();
-    let mut files_committed = Vec::new();
 
     for line in ls_stdout.lines() {
         let parts: Vec<&str> = line.split('\t').collect();
@@ -252,28 +220,18 @@ pub fn checkpoint(
                         // Use git rm --cached <file> as a fallback.
                         let _ = run_git_cmd(worktree_dir, &["rm", "--cached", path_str]);
                     }
-                } else {
-                    files_committed.push(path_str.to_string());
                 }
-            } else {
-                files_committed.push(path_str.to_string());
             }
         }
     }
 
-    // Filter out files_committed that were actually unstaged or not part of files_to_add.
-    files_committed.retain(|f| {
-        let is_staged = files_to_add.iter().any(|added| {
-            if f == added {
-                true
-            } else {
-                let added_path = Path::new(added);
-                let f_path = Path::new(f);
-                f_path.starts_with(added_path)
-            }
-        });
-        is_staged && !symlink_escapes.iter().any(|se| &se.path == f)
-    });
+    // Build files_committed by filtering files_to_add
+    let mut files_committed = Vec::new();
+    for f in &files_to_add {
+        if !symlink_escapes.iter().any(|se| &se.path == f) {
+            files_committed.push(f.clone());
+        }
+    }
 
     // 4. Commit changes with hooks bypassed.
     let commit_args = &[

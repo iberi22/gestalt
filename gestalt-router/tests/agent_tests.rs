@@ -1,5 +1,5 @@
 use gestalt_router::agent::{SubprocessRunner, AgentOutcome};
-use gestalt_router::run::{AgentResult, AgentSpec, RunSpec, RouterError};
+use gestalt_router::run::{AgentResult, AgentSpec, RunSpec};
 use gestalt_router::run_state::AgentState;
 use std::collections::HashMap;
 use std::path::PathBuf;

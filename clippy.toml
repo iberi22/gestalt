@@ -1,0 +1,10 @@
+# ── Gestalt Workspace Clippy Configuration ──────────────
+# NIVEL: 🔴 SUPER-ROBUSTO
+
+# Function complexity
+too-many-arguments-threshold = 10
+too-many-lines-threshold = 500
+cognitive-complexity-threshold = 30
+
+# Documentation
+doc-valid-idents = ["Xavier", "Gestalt", "MemState", "StateDb", "VirtualFS"]

@@ -223,6 +223,38 @@ enum Commands {
         #[arg(long, default_value_t = 300)]
         timeout: u64,
     },
+
+    /// Gestalt ↔ Xavier Cycle: memory search, index, and git-aware context
+    Xavier {
+        #[command(subcommand)]
+        action: XavierAction,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+enum XavierAction {
+    /// Search Xavier for context (PRE phase)
+    Search {
+        query: String,
+        #[arg(short, long, default_value_t = 5)]
+        limit: usize,
+    },
+    /// Index content in Xavier (POST phase)
+    Add {
+        content: String,
+        #[arg(short, long)]
+        path: String,
+        #[arg(short, long, default_value = "execution")]
+        kind: String,
+    },
+    /// Full PRE → EXEC → POST cycle with git context
+    Cycle {
+        task: String,
+        #[arg(short, long)]
+        agent: Option<String>,
+    },
+    /// Show Xavier stats / health
+    Stats,
 }
 
 fn current_time() -> String {
@@ -400,6 +432,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let url = args.url.unwrap_or_else(|| config.mcp.server_url.clone());
     let default_db = "tasks.json";
+
+    let xavier_url = std::env::var("XAVIER_URL").unwrap_or_else(|_| "http://127.0.0.1:8006".into());
 
     info!("Gestalt CLI starting with URL: {}", url);
 
@@ -1073,6 +1107,127 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     error!("Router execution failed: {}", e);
                     eprintln!("❌ Router execution failed: {}", e);
                     std::process::exit(1);
+                }
+            }
+        }
+
+        Commands::Xavier { action } => {
+            match action {
+                XavierAction::Search { query, limit } => {
+                    let client = reqwest::Client::new();
+                    let resp = client
+                        .post(format!("{}/v1/memories/search", xavier_url))
+                        .json(&serde_json::json!({"query": query, "limit": limit}))
+                        .send()
+                        .await?;
+                    let body: serde_json::Value = resp.json().await?;
+                    let empty_results = vec![];
+                    let results = body["results"].as_array().unwrap_or(&empty_results);
+                    println!("Xavier Search ({} results):", results.len());
+                    for (i, r) in results.iter().enumerate() {
+                        let mem = r["memory"].as_str().unwrap_or("");
+                        let kind = r["metadata"]["kind"].as_str().unwrap_or("?");
+                        let first_line = mem.lines().next().unwrap_or("");
+                        let preview = first_line
+                            .get(0..80.min(first_line.len()))
+                            .unwrap_or("");
+                        println!(" {}. [{}] {}", i + 1, kind, preview);
+                    }
+                }
+                XavierAction::Add {
+                    content,
+                    path,
+                    kind,
+                } => {
+                    let client = reqwest::Client::new();
+                    let resp = client
+                        .post(format!("{}/v1/memories", xavier_url))
+                        .json(&serde_json::json!({"content": content, "path": path, "kind": kind}))
+                        .send()
+                        .await?;
+                    let body: serde_json::Value = resp.json().await?;
+                    println!("Archived: {}", body["id"].as_str().unwrap_or("ok"));
+                }
+                XavierAction::Stats => {
+                    let client = reqwest::Client::new();
+                    let resp = client
+                        .post(format!("{}/v1/memories/search", xavier_url))
+                        .json(&serde_json::json!({"query": "", "limit": 0}))
+                        .send()
+                        .await?;
+                    let body: serde_json::Value = resp.json().await?;
+                    let count = body["results"]
+                        .as_array()
+                        .map(|a| a.len())
+                        .unwrap_or(0);
+                    println!("Xavier: {} memories found", count);
+                }
+                XavierAction::Cycle { task, agent } => {
+                    // PRE: Search Xavier
+                    let client = reqwest::Client::new();
+                    let resp = client
+                        .post(format!("{}/v1/memories/search", xavier_url))
+                        .json(&serde_json::json!({"query": &task, "limit": 3}))
+                        .send()
+                        .await?;
+                    let body: serde_json::Value = resp.json().await?;
+                    let results = body["results"]
+                        .as_array()
+                        .map(|a| a.len())
+                        .unwrap_or(0);
+                    println!("PRE: {} results from Xavier", results);
+
+                    // GIT: Get context
+                    let branch = std::process::Command::new("git")
+                        .args(["rev-parse", "--abbrev-ref", "HEAD"])
+                        .output();
+                    let log = std::process::Command::new("git")
+                        .args(["log", "--oneline", "-5"])
+                        .output();
+                    if let Ok(out) = &branch {
+                        println!("Branch: {}", String::from_utf8_lossy(&out.stdout).trim());
+                    }
+                    if let Ok(out) = &log {
+                        println!("Recent commits:\n{}", String::from_utf8_lossy(&out.stdout));
+                    }
+
+                    // EXEC: Run agent
+                    if let Some(agent_cmd) = agent {
+                        let output = std::process::Command::new("sh")
+                            .args(["-c", &agent_cmd])
+                            .output();
+                        match output {
+                            Ok(out) => {
+                                let stdout = String::from_utf8_lossy(&out.stdout);
+                                let stderr = String::from_utf8_lossy(&out.stderr);
+                                println!("Agent exit: {}", out.status);
+                                if !stdout.is_empty() {
+                                    println!("stdout: {}", stdout);
+                                }
+                                if !stderr.is_empty() {
+                                    println!("stderr: {}", stderr);
+                                }
+                            }
+                            Err(e) => eprintln!("Agent failed: {}", e),
+                        }
+                    }
+
+                    // POST: Archive
+                    let timestamp = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap()
+                        .as_secs();
+                    let archive_body = serde_json::json!({
+                        "content": format!("Cycle: {}\nResults: {}", task, results),
+                        "path": format!("gestalt/cycle/{}", timestamp),
+                        "kind": "execution"
+                    });
+                    let _ = client
+                        .post(format!("{}/v1/memories", xavier_url))
+                        .json(&archive_body)
+                        .send()
+                        .await;
+                    println!("POST: archived");
                 }
             }
         }

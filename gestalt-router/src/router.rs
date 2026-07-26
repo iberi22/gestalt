@@ -13,7 +13,7 @@ use gestalt_ws::WsServer;
 
 use crate::agent::AgentRunner;
 use crate::run::{AgentResult, RouterError, RunReport, RunSpec};
-use crate::overlap::OverlapDetector;
+use crate::overlap::{LiveConflictDetector, OverlapDetector};
 use crate::timeline::{Event, EventLog};
 use crate::worktree::WorktreeManager;
 use gestalt_core::ports::outbound::vfs::VirtualFS;
@@ -35,7 +35,7 @@ impl Router {
     /// Create a new Router with StateDb and MemState instead of EventLog.
     ///
     /// The EventLog is now optional — timeline events can be logged
-    /// via the existing JsonlEventLog for backward compatibility, but
+    /// via the existing StateDbEventLog for backward compatibility, but
     /// all persistent state lives in StateDb.
     ///
     /// `ws_server` can be provided to broadcast timeline events to
@@ -48,7 +48,7 @@ impl Router {
         log: Option<Arc<dyn EventLog>>,
         ws_server: Option<WsServer>,
     ) -> Self {
-        Self {
+        let router = Self {
             vfs,
             runner,
             state_db,
@@ -59,7 +59,18 @@ impl Router {
             worktrees: Arc::new(WorktreeManager::new(
                 std::path::PathBuf::from("/tmp/gestalt"),
             )),
+        };
+
+        // Spawn LiveConflictDetector if a WebSocket server is configured
+        if router.ws_server.is_some() {
+            let detector = LiveConflictDetector::new(
+                router.mem_state.clone(),
+                router.ws_server.clone(),
+            );
+            tokio::spawn(detector.run());
         }
+
+        router
     }
 
     /// Attach an optional Xavier client for memory/context integration.

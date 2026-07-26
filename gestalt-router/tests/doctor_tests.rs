@@ -1,5 +1,6 @@
 use gestalt_router::doctor::{Doctor, DoctorError, ManifestJson, OrphanedRun};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use uuid::Uuid;
 
 #[test]
 fn test_orphaned_run_construction() {
@@ -117,7 +118,7 @@ fn test_orphaned_run_with_multiple_worktrees() {
 
 #[test]
 fn test_doctor_pruning_and_orphans() {
-    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_dir = TempDir::new();
     let gestalt_home = temp_dir.path().to_path_buf();
 
     // Set GESTALT_HOME to our temp directory so we don't modify ~/.gestalt
@@ -168,7 +169,7 @@ fn test_doctor_pruning_and_orphans() {
     };
 
     // Initialize a dummy repo to run git commands (needed for git list/worktree logic, but can be empty or we can pass a temp git repo)
-    let repo_temp = tempfile::tempdir().unwrap();
+    let repo_temp = TempDir::new();
     let repo_path = repo_temp.path();
     std::process::Command::new("git")
         .arg("init")
@@ -227,4 +228,27 @@ fn test_doctor_pruning_and_orphans() {
     );
 
     std::env::remove_var("GESTALT_HOME");
+}
+
+/// Minimal temp directory helper (replaces `tempfile::TempDir`).
+struct TempDir {
+    path: PathBuf,
+}
+
+impl TempDir {
+    fn new() -> Self {
+        let path = std::env::temp_dir().join(format!("gestalt_test_{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&path).unwrap();
+        Self { path }
+    }
+
+    fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+impl Drop for TempDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.path);
+    }
 }

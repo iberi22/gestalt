@@ -1,15 +1,17 @@
 use gestalt_router::integrate::{integrate_branches, AgentIntegrationSpec, IntegrateResult};
 use gestalt_router::overlap::OverlapInfo;
 use gestalt_router::run::{AgentResult, AgentSpec, RunReport, RunSpec};
-use gestalt_router::run_state::{AgentState, RunManifest};
-use gestalt_router::timeline::{Event, EventLog, JsonlEventLog, VersionedEvent};
+use gestalt_router::run_state::{AgentState, MemState};
+use gestalt_router::timeline::{Event, EventLog, StateDbEventLog, VersionedEvent};
+use gestalt_state::StateDb;
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::Arc;
 use uuid::Uuid;
 
-fn init_test_repo() -> (tempfile::TempDir, PathBuf) {
-    let dir = tempfile::tempdir().unwrap();
+fn init_test_repo() -> TempDir {
+    let dir = TempDir::new();
     let repo_path = dir.path().to_path_buf();
 
     Command::new("git")
@@ -45,7 +47,7 @@ fn init_test_repo() -> (tempfile::TempDir, PathBuf) {
         .status()
         .unwrap();
 
-    (dir, repo_path)
+    dir
 }
 
 #[test]
@@ -122,26 +124,20 @@ fn test_agent_result_builder() {
 }
 
 #[test]
-fn test_run_manifest_with_states() {
-    let mut agent_states = HashMap::new();
-    agent_states.insert("a1".to_string(), AgentState::Pending);
-    agent_states.insert("a2".to_string(), AgentState::Running);
+fn test_memstate_agent_state_tracking() {
+    let mem = MemState::new();
+    let run_id = Uuid::new_v4().to_string();
+    mem.set_agent_state(&run_id, "a1", "Pending");
+    mem.set_agent_state(&run_id, "a2", "Running");
 
-    let manifest = RunManifest {
-        run_id: Uuid::new_v4(),
-        spec: RunSpec {
-            base_ref: "main".to_string(),
-            task: "t".to_string(),
-            agents: vec![],
-            max_parallel: 1,
-            timeout: 30,
-            push: false,
-            integration_branch: None,
-        },
-        agent_states,
-    };
-    assert_eq!(manifest.agent_states.len(), 2);
-    assert_eq!(manifest.agent_states["a1"], AgentState::Pending);
+    assert_eq!(
+        mem.get_agent_state(&run_id, "a1").as_deref(),
+        Some("Pending")
+    );
+    assert_eq!(
+        mem.get_agent_state(&run_id, "a2").as_deref(),
+        Some("Running")
+    );
 }
 
 #[test]
@@ -172,18 +168,26 @@ fn test_versioned_event_wrapper() {
 }
 
 #[test]
-fn test_event_log_creation() {
+fn test_state_db_event_log_creation() {
+    let tmp = TempDir::new();
+    let db_path = tmp.path().join("test.db");
+    let db = Arc::new(StateDb::open(&db_path).unwrap());
     let run_id = Uuid::new_v4();
-    let log = JsonlEventLog::new(run_id);
-    assert!(log.is_ok(), "JsonlEventLog should be creatable");
+    let _log = StateDbEventLog::new(db, run_id);
+    // Construction succeeds without panic/error
+    assert!(true);
 }
 
 #[test]
-fn test_event_log_read_events() {
+fn test_state_db_event_log_read_events() {
+    let tmp = TempDir::new();
+    let db_path = tmp.path().join("test.db");
+    let db = Arc::new(StateDb::open(&db_path).unwrap());
     let run_id = Uuid::new_v4();
-    let log = JsonlEventLog::new(run_id).unwrap();
+    let log = StateDbEventLog::new(db, run_id);
     let events = log.read_events(run_id);
     assert!(events.is_ok(), "Should be able to read events");
+    assert!(events.unwrap().is_empty(), "Expected empty events for untouched run");
 }
 
 #[test]
@@ -267,7 +271,8 @@ fn test_run_report_with_agents_and_conflicts() {
 #[test]
 fn test_integrate_branches_success_and_conflict() {
     // 1. Initialize git repo
-    let (_dir, repo_path) = init_test_repo();
+    let dir = init_test_repo();
+    let repo_path = dir.path().to_path_buf();
 
     // 2. Create branch_a modifying file_a.txt
     Command::new("git")
@@ -450,4 +455,27 @@ fn test_integrate_branches_success_and_conflict() {
         result_conflict.conflicts[0].path, "binary.bin",
         "Conflicted path should be binary.bin"
     );
+}
+
+/// Minimal temp directory helper (replaces `tempfile::TempDir`).
+struct TempDir {
+    path: PathBuf,
+}
+
+impl TempDir {
+    fn new() -> Self {
+        let path = std::env::temp_dir().join(format!("gestalt_test_{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&path).unwrap();
+        Self { path }
+    }
+
+    fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+impl Drop for TempDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.path);
+    }
 }

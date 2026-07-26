@@ -1,5 +1,6 @@
 use crate::run::{AgentResult, AgentSpec, RouterError, RunReport, RunSpec};
-use crate::run_state::{AgentState, RunManifest};
+use crate::run_state::AgentState;
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 
@@ -15,7 +16,9 @@ pub enum RunStatus {
 #[derive(Debug)]
 struct RunInner {
     status: RunStatus,
-    manifest: RunManifest,
+    run_id: uuid::Uuid,
+    spec: RunSpec,
+    agent_states: HashMap<String, AgentState>,
     result: Option<Result<RunReport, RouterError>>,
 }
 
@@ -38,10 +41,6 @@ impl RunHandle {
 
     pub fn run_id(&self) -> uuid::Uuid {
         self.run_id
-    }
-
-    pub fn manifest(&self) -> RunManifest {
-        self.inner.lock().unwrap().manifest.clone()
     }
 
     pub async fn await_completion(&self) -> Result<RunReport, RouterError> {
@@ -80,15 +79,11 @@ impl ProcessManager {
             agent_states.insert(agent.id.clone(), AgentState::Pending);
         }
 
-        let manifest = RunManifest {
+        let inner = Arc::new(std::sync::Mutex::new(RunInner {
+            status: RunStatus::Pending,
             run_id,
             spec: spec.clone(),
             agent_states,
-        };
-
-        let inner = Arc::new(std::sync::Mutex::new(RunInner {
-            status: RunStatus::Pending,
-            manifest,
             result: None,
         }));
 
@@ -123,7 +118,7 @@ impl ProcessManager {
                             let mut lock = inner_clone.lock().unwrap();
                             lock.status = RunStatus::Failed;
                             // Set all pending or running agents to Timeout
-                            for state in lock.manifest.agent_states.values_mut() {
+                            for state in lock.agent_states.values_mut() {
                                 if *state == AgentState::Pending || *state == AgentState::Running {
                                     *state = AgentState::Timeout;
                                 }
@@ -152,7 +147,7 @@ impl ProcessManager {
                             lock.status = RunStatus::Cancelled;
                             lock.result = Some(Err(RouterError::AgentError("Run cancelled".to_string())));
                             // Set all pending or running agents to Crashed
-                            for state in lock.manifest.agent_states.values_mut() {
+                            for state in lock.agent_states.values_mut() {
                                 if *state == AgentState::Pending || *state == AgentState::Running {
                                     *state = AgentState::Crashed;
                                 }
@@ -213,7 +208,7 @@ async fn run_agents_workflow(
             // Update agent state to Running (if not already Timeout)
             {
                 let mut lock = inner_agent.lock().unwrap();
-                if let Some(state) = lock.manifest.agent_states.get_mut(&agent_spec.id) {
+                if let Some(state) = lock.agent_states.get_mut(&agent_spec.id) {
                     if *state == AgentState::Timeout {
                         return AgentResult {
                             agent_id: agent_spec.id.clone(),
@@ -229,7 +224,7 @@ async fn run_agents_workflow(
             // Check cancellation before executing
             if cancel_token_agent.is_cancelled() {
                 let mut lock = inner_agent.lock().unwrap();
-                let is_timeout = if let Some(state) = lock.manifest.agent_states.get_mut(&agent_spec.id) {
+                let is_timeout = if let Some(state) = lock.agent_states.get_mut(&agent_spec.id) {
                     if *state == AgentState::Timeout {
                         true
                     } else {
@@ -254,7 +249,7 @@ async fn run_agents_workflow(
             // Update agent state to final state
             {
                 let mut lock = inner_agent.lock().unwrap();
-                if let Some(state) = lock.manifest.agent_states.get_mut(&agent_spec.id) {
+                if let Some(state) = lock.agent_states.get_mut(&agent_spec.id) {
                     if *state != AgentState::Timeout {
                         *state = result.state;
                     }
@@ -284,7 +279,7 @@ async fn run_agents_workflow(
         return Err(RouterError::AgentError("Run cancelled".to_string()));
     }
 
-    let run_id = inner.lock().unwrap().manifest.run_id;
+    let run_id = inner.lock().unwrap().run_id;
     Ok(RunReport {
         run_id,
         task: spec.task,

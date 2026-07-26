@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 /// Events that can be broadcast to WebSocket clients.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(tag = "type", content = "data")]
+#[serde(tag = "type", content = "data", rename_all = "snake_case")]
 pub enum WsEvent {
     /// An agent's state has changed.
     StateChanged {

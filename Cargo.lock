@@ -1804,14 +1804,19 @@ name = "gestalt-router"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "chrono",
  "dirs",
+ "futures-util",
  "gestalt-state",
+ "gestalt-ws",
  "gestalt_core",
  "libc",
  "serde",
  "serde_json",
+ "sha2",
  "thiserror 1.0.69",
  "tokio",
+ "tokio-tungstenite",
  "tokio-util",
  "tracing",
  "uuid",
@@ -1825,13 +1830,29 @@ dependencies = [
  "async-trait",
  "chrono",
  "dashmap 6.2.1",
+ "gestalt_core",
  "rusqlite",
  "serde",
  "serde_json",
+ "sha2",
  "thiserror 1.0.69",
  "tokio",
  "tracing",
  "uuid",
+]
+
+[[package]]
+name = "gestalt-ws"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "futures-util",
+ "gestalt-state",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tokio-tungstenite",
+ "tracing",
 ]
 
 [[package]]

@@ -3,8 +3,9 @@ use gestalt_router::run::{AgentResult, AgentSpec, RunSpec};
 use gestalt_router::run_state::AgentState;
 use gestalt_router::worktree::WorktreeManager;
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
+use uuid::Uuid;
 
 #[test]
 fn test_agent_spec_construction() {
@@ -235,7 +236,7 @@ async fn test_subprocess_runner_success() {
         allowed_paths: None,
         env: None,
     };
-    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_dir = TempDir::new();
     let result = runner
         .run(&spec, temp_dir.path(), "some task", Duration::from_secs(5))
         .await
@@ -256,7 +257,7 @@ async fn test_subprocess_runner_timeout() {
         allowed_paths: None,
         env: None,
     };
-    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_dir = TempDir::new();
     let result = runner
         .run(
             &spec,
@@ -285,7 +286,7 @@ async fn test_subprocess_runner_env_sanitization() {
         allowed_paths: None,
         env: Some(env),
     };
-    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_dir = TempDir::new();
     let result = runner
         .run(&spec, temp_dir.path(), "some task", Duration::from_secs(5))
         .await
@@ -299,7 +300,7 @@ async fn test_subprocess_runner_env_sanitization() {
 
 #[tokio::test]
 async fn test_worktree_manager_idempotency() {
-    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_dir = TempDir::new();
     let repo_path = temp_dir.path();
 
     let run_git = |args: &[&str]| {
@@ -327,7 +328,7 @@ async fn test_worktree_manager_idempotency() {
         .map(|o| String::from_utf8(o.stdout).unwrap().trim().to_string())
         .unwrap();
 
-    let wt_parent = tempfile::tempdir().unwrap();
+    let wt_parent = TempDir::new();
     let manager = WorktreeManager::new(wt_parent.path().to_path_buf());
 
     let branch = "test-idempotent-branch";
@@ -354,4 +355,27 @@ async fn test_worktree_manager_idempotency() {
 
     let post_list = manager.list_worktrees(repo_path).unwrap();
     assert!(!post_list.iter().any(|wt| wt.path == wt_path));
+}
+
+/// Minimal temp directory helper (replaces `tempfile::TempDir`).
+struct TempDir {
+    path: PathBuf,
+}
+
+impl TempDir {
+    fn new() -> Self {
+        let path = std::env::temp_dir().join(format!("gestalt_test_{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&path).unwrap();
+        Self { path }
+    }
+
+    fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+impl Drop for TempDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.path);
+    }
 }

@@ -1,5 +1,7 @@
 use crate::run::RouterError;
 use gestalt_state::memstate::MemState;
+use gestalt_ws::WsEvent;
+use gestalt_ws::WsServer;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -164,6 +166,147 @@ impl OverlapDetector {
     /// Get a reference to the inner MemState.
     pub fn mem_state(&self) -> &MemState {
         &self.mem_state
+    }
+}
+
+/// Real-time conflict detector that subscribes to MemState events and
+/// broadcasts [`WsEvent::ConflictDetected`] directly through the WebSocket
+/// server whenever a lock conflict is detected.
+///
+/// Unlike [`OverlapDetector`], which pushes events back through
+/// [`MemState::push_event`], this detector emits structured WebSocket
+/// events so that connected clients receive real-time conflict notifications.
+pub struct LiveConflictDetector {
+    /// Shared in-memory state with broadcast channel.
+    state: MemState,
+    /// Optional WebSocket server for broadcasting events.
+    ws: Option<WsServer>,
+}
+
+impl LiveConflictDetector {
+    /// Create a new `LiveConflictDetector`.
+    pub fn new(state: MemState, ws: Option<WsServer>) -> Self {
+        Self { state, ws }
+    }
+
+    /// Subscribe to MemState events and detect conflicts in real time.
+    ///
+    /// Listens for `lock_acquired` and `lock_conflict` events. When a
+    /// conflict is found, it broadcasts a [`WsEvent::ConflictDetected`]
+    /// through the WebSocket server (if configured).
+    pub async fn run(self) {
+        let mut rx = self.state.subscribe();
+        let ws = self.ws.clone();
+
+        loop {
+            match rx.recv().await {
+                Ok(event) => match event.event_type.as_str() {
+                    "lock_acquired" => {
+                        // A new lock was acquired — check if another agent
+                        // already holds a lock on the same path
+                        if let Ok(payload) =
+                            serde_json::from_str::<serde_json::Value>(&event.payload)
+                        {
+                            if let Some(path) =
+                                payload.get("path").and_then(|v| v.as_str())
+                            {
+                                if let Some(ref agent_id) = event.agent_id {
+                                    if let Some(holder) =
+                                        Self::check_lock(&self.state, path, agent_id)
+                                    {
+                                        Self::broadcast_conflict(
+                                            &ws,
+                                            &event.run_id,
+                                            &holder,
+                                            agent_id,
+                                            path,
+                                            &format!(
+                                                "Conflict: agent {holder} already holds lock on {path}"
+                                            ),
+                                        )
+                                        .await;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    "lock_conflict" => {
+                        // A lock attempt failed — forward as ConflictDetected
+                        if let Ok(payload) =
+                            serde_json::from_str::<serde_json::Value>(&event.payload)
+                        {
+                            let path = payload
+                                .get("path")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("?");
+                            let holder = payload
+                                .get("held_by")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("?");
+                            let agent_b = payload
+                                .get("agent_b")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("?");
+                            Self::broadcast_conflict(
+                                &ws,
+                                &event.run_id,
+                                holder,
+                                agent_b,
+                                path,
+                                &format!(
+                                    "Lock conflict on {path} between {holder} and {agent_b}"
+                                ),
+                            )
+                            .await;
+                        }
+                    }
+                    _ => {
+                        // Ignore other event types
+                    }
+                },
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                    tracing::warn!("LiveConflictDetector lagged by {n} events");
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                    tracing::debug!("LiveConflictDetector: MemState broadcast closed");
+                    break;
+                }
+            }
+        }
+    }
+
+    /// Check whether a lock on `path` is currently held by an agent other than
+    /// `agent_id`.
+    fn check_lock(state: &MemState, path: &str, agent_id: &str) -> Option<String> {
+        for lock in state.get_locks() {
+            if lock.path == path && lock.agent_id != agent_id {
+                return Some(lock.agent_id);
+            }
+        }
+        None
+    }
+
+    /// Broadcast a [`WsEvent::ConflictDetected`] through the WebSocket server
+    /// (if one is configured).
+    async fn broadcast_conflict(
+        ws: &Option<WsServer>,
+        run_id: &str,
+        agent_a: &str,
+        agent_b: &str,
+        path: &str,
+        message: &str,
+    ) {
+        if let Some(ref ws_server) = ws {
+            ws_server
+                .broadcast(&WsEvent::ConflictDetected {
+                    run_id: run_id.to_string(),
+                    agent_a: agent_a.to_string(),
+                    agent_b: agent_b.to_string(),
+                    path: path.to_string(),
+                    message: message.to_string(),
+                })
+                .await;
+        }
     }
 }
 

@@ -142,31 +142,38 @@ impl MemState {
     ///
     /// Returns `true` if a lock was actually released.
     pub fn release_lock(&self, path: &str, agent_id: &str) -> bool {
-        let released = match self.active_locks.get(path) {
-            Some(lock) if lock.agent_id == agent_id => {
-                self.active_locks.remove(path);
-                true
-            }
-            _ => false,
+        // Check ownership first (read lock), then remove separately (write lock)
+        let is_owner = self
+            .active_locks
+            .get(path)
+            .map(|lock| lock.agent_id == agent_id)
+            .unwrap_or(false);
+
+        let released = if is_owner {
+            self.active_locks.remove(path);
+            true
+        } else {
+            false
         };
 
         // Broadcast lock release event
         if released {
-            // We need run_id from the lock; retrieve it before removal
             let payload = serde_json::json!({
                 "path": path,
                 "agent_id": agent_id,
             })
             .to_string();
-            // Broadcast without a specific run_id — callers can enrich if needed
-            let _ = self.event_tx.send(TimelineEvent {
-                seq: None,
-                run_id: String::new(),
-                agent_id: Some(agent_id.to_string()),
-                event_type: "lock_released".to_string(),
-                payload,
-                created_at: chrono::Utc::now(),
-            });
+            // Only send if there are active subscribers (avoid blocking send with 0 receivers)
+            if self.event_tx.receiver_count() > 0 {
+                let _ = self.event_tx.send(TimelineEvent {
+                    seq: None,
+                    run_id: String::new(),
+                    agent_id: Some(agent_id.to_string()),
+                    event_type: "lock_released".to_string(),
+                    payload,
+                    created_at: chrono::Utc::now(),
+                });
+            }
         }
 
         released
@@ -278,7 +285,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "test harness hang (tokio broadcast channel in sync context)"]
     fn test_try_lock_exclusive() {
         let mem = MemState::new();
 

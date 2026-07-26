@@ -74,17 +74,16 @@ fn run_git_commit_cmd(repo_path: &Path, args: &[&str]) -> Result<String, RouterE
         .map_err(|e| RouterError::GitError(format!("Failed to execute git commit: {}", e)))?;
 
     if !output.status.success() {
-        let stdout_str = String::from_utf8_lossy(&output.stdout);
-        let stderr_str = String::from_utf8_lossy(&output.stderr);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stdout = String::from_utf8_lossy(&output.stdout);
         return Err(RouterError::GitError(format!(
             "git commit failed:\nstdout: {}\nstderr: {}",
-            stdout_str, stderr_str
+            stdout, stderr
         )));
     }
 
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
-
 
 /// Checks if a symlink target points to a location outside the worktree.
 pub fn is_symlink_escape(worktree_root: &Path, symlink_rel_path: &Path, target: &str) -> bool {
@@ -179,6 +178,8 @@ pub fn checkpoint(
 
     let mut symlink_escapes = Vec::new();
 
+    let mut files_committed = Vec::new();
+
     for line in ls_stdout.lines() {
         let parts: Vec<&str> = line.split('\t').collect();
         if parts.len() == 2 {
@@ -220,18 +221,17 @@ pub fn checkpoint(
                         // Use git rm --cached <file> as a fallback.
                         let _ = run_git_cmd(worktree_dir, &["rm", "--cached", path_str]);
                     }
+                } else {
+                    files_committed.push(path_str.to_string());
                 }
+            } else {
+                files_committed.push(path_str.to_string());
             }
         }
     }
 
-    // Build files_committed by filtering files_to_add
-    let mut files_committed = Vec::new();
-    for f in &files_to_add {
-        if !symlink_escapes.iter().any(|se| &se.path == f) {
-            files_committed.push(f.clone());
-        }
-    }
+    // Filter out files_committed that were actually unstaged or not in files_to_add.
+    files_committed.retain(|f| files_to_add.contains(f) && !symlink_escapes.iter().any(|se| &se.path == f));
 
     // 4. Commit changes with hooks bypassed.
     let commit_args = &[

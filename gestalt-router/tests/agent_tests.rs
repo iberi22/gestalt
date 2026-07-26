@@ -1,6 +1,7 @@
-use gestalt_router::agent::{SubprocessRunner, AgentOutcome};
+use gestalt_router::agent::{SubprocessRunner, AgentOutcome, AgentRunner};
 use gestalt_router::run::{AgentResult, AgentSpec, RunSpec};
 use gestalt_router::run_state::AgentState;
+use gestalt_router::worktree::WorktreeManager;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::Duration;
@@ -214,4 +215,117 @@ fn test_multi_agent_specs() {
         .collect();
     assert_eq!(agents.len(), 3);
     assert_eq!(agents[0].id, "agent-0");
+}
+
+#[tokio::test]
+async fn test_subprocess_runner_success() {
+    let runner = SubprocessRunner::new(Duration::from_secs(5));
+    let spec = AgentSpec {
+        id: "success-agent".to_string(),
+        command: "echo".to_string(),
+        args: vec!["hello world".to_string()],
+        allowed_paths: None,
+        env: None,
+    };
+    let temp_dir = tempfile::tempdir().unwrap();
+    let result = runner.run(&spec, temp_dir.path(), "some task", Duration::from_secs(5)).await.unwrap();
+    assert_eq!(result.state, AgentState::Success);
+    assert!(result.output.is_some());
+    assert!(result.output.unwrap().contains("hello world"));
+    assert!(result.error.is_none());
+}
+
+#[tokio::test]
+async fn test_subprocess_runner_timeout() {
+    let runner = SubprocessRunner::new(Duration::from_secs(1));
+    let spec = AgentSpec {
+        id: "timeout-agent".to_string(),
+        command: "sleep".to_string(),
+        args: vec!["10".to_string()],
+        allowed_paths: None,
+        env: None,
+    };
+    let temp_dir = tempfile::tempdir().unwrap();
+    let result = runner.run(&spec, temp_dir.path(), "some task", Duration::from_millis(200)).await.unwrap();
+    assert_eq!(result.state, AgentState::Timeout);
+    assert!(result.error.as_ref().unwrap().contains("timed out"));
+}
+
+#[tokio::test]
+async fn test_subprocess_runner_env_sanitization() {
+    let runner = SubprocessRunner::new(Duration::from_secs(5));
+    let mut env = HashMap::new();
+    env.insert("CUSTOM_VAR".to_string(), "CUSTOM_VALUE".to_string());
+
+    std::env::set_var("SECRET_PARENT_VAR", "SECRET_VALUE");
+
+    let spec = AgentSpec {
+        id: "env-agent".to_string(),
+        command: "sh".to_string(),
+        args: vec!["-c".to_string(), "env".to_string()],
+        allowed_paths: None,
+        env: Some(env),
+    };
+    let temp_dir = tempfile::tempdir().unwrap();
+    let result = runner.run(&spec, temp_dir.path(), "some task", Duration::from_secs(5)).await.unwrap();
+    assert_eq!(result.state, AgentState::Success);
+    let out = result.output.unwrap();
+    assert!(out.contains("CUSTOM_VAR=CUSTOM_VALUE"));
+    assert!(out.contains("GESTALT_TASK=some task"));
+    assert!(!out.contains("SECRET_PARENT_VAR"));
+}
+
+#[tokio::test]
+async fn test_worktree_manager_idempotency() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let repo_path = temp_dir.path();
+
+    let run_git = |args: &[&str]| {
+        let output = std::process::Command::new("git")
+            .current_dir(repo_path)
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "Git command failed: {:?}", args);
+    };
+
+    run_git(&["init"]);
+    run_git(&["config", "user.name", "Gestalt Test"]);
+    run_git(&["config", "user.email", "test@gestalt.ai"]);
+
+    let file_path = repo_path.join("file.txt");
+    std::fs::write(&file_path, "hello").unwrap();
+    run_git(&["add", "file.txt"]);
+    run_git(&["commit", "-m", "initial commit"]);
+
+    let base_sha = std::process::Command::new("git")
+        .current_dir(repo_path)
+        .args(["rev-parse", "HEAD"])
+        .output()
+        .map(|o| String::from_utf8(o.stdout).unwrap().trim().to_string())
+        .unwrap();
+
+    let wt_parent = tempfile::tempdir().unwrap();
+    let manager = WorktreeManager::new(wt_parent.path().to_path_buf());
+
+    let branch = "test-idempotent-branch";
+    let wt_path = wt_parent.path().join("wt_subdir");
+
+    // 1. Create worktree first time
+    manager.create_worktree_at(repo_path, &base_sha, branch, &wt_path).unwrap();
+
+    // 2. Create worktree second time (idempotency check)
+    manager.create_worktree_at(repo_path, &base_sha, branch, &wt_path).unwrap();
+
+    let list = manager.list_worktrees(repo_path).unwrap();
+    assert!(list.iter().any(|wt| wt.path == wt_path));
+
+    // 3. Remove worktree first time
+    manager.remove_worktree(repo_path, &wt_path).unwrap();
+
+    // 4. Remove worktree second time (idempotency check)
+    manager.remove_worktree(repo_path, &wt_path).unwrap();
+
+    let post_list = manager.list_worktrees(repo_path).unwrap();
+    assert!(!post_list.iter().any(|wt| wt.path == wt_path));
 }

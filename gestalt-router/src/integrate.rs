@@ -83,7 +83,8 @@ pub fn integrate_branches(
     let mut conflicted_files = Vec::new();
 
     for (_agent_id, branch_or_sha) in branches {
-        let args = vec!["merge-tree", "--write-tree", &current_commit, branch_or_sha];
+        let merge_base_arg = format!("--merge-base={}", base_sha);
+        let args = vec!["merge-tree", "--write-tree", &merge_base_arg, &current_commit, branch_or_sha];
         let result = checkpoint::run_git_cmd(repo_dir, &args);
 
         match result {

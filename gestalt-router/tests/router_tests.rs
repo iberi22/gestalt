@@ -433,9 +433,7 @@ fn test_checkpoint_with_gitignored_files() {
     let src_lib = dir.join("src/lib.rs");
     std::fs::create_dir_all(src_lib.parent().unwrap()).unwrap();
     std::fs::write(&src_lib, "pub fn f() {}").unwrap();
-    let src_dir = dir.join("src");
-    std::fs::create_dir_all(&src_dir).unwrap();
-    std::fs::write(src_dir.join("lib.rs"), "pub fn f() {}").unwrap();
+
 
     let res = checkpoint(dir, "feat: add lib").unwrap();
     assert!(res.success);

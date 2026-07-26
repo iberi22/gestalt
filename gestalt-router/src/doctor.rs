@@ -14,6 +14,17 @@ fn get_runs_dir() -> PathBuf {
     }
 }
 
+fn get_archive_dir(run_id: &str) -> PathBuf {
+    if let Some(gestalt_home) = std::env::var_os("GESTALT_HOME") {
+        PathBuf::from(gestalt_home).join("archive").join("runs").join(run_id)
+    } else if let Some(home) = dirs::home_dir() {
+        home.join(".gestalt").join("archive").join("runs").join(run_id)
+    } else {
+        PathBuf::from(".gestalt").join("archive").join("runs").join(run_id)
+    }
+}
+
+
 #[derive(Debug, Error)]
 pub enum DoctorError {
     #[error("IO error: {0}")]
@@ -432,17 +443,7 @@ impl Doctor {
         // Archive events
         let run_dir = runs_dir.join(run_id);
         if run_dir.exists() {
-            let archive_dir = match dirs::home_dir() {
-                Some(home) => home
-                    .join(".gestalt")
-                    .join("archive")
-                    .join("runs")
-                    .join(run_id),
-                None => PathBuf::from(".gestalt")
-                    .join("archive")
-                    .join("runs")
-                    .join(run_id),
-            };
+            let archive_dir = get_archive_dir(run_id);
 
             // Look for events file (e.g., events.jsonl)
             let events_file = run_dir.join("events.jsonl");

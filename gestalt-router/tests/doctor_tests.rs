@@ -173,12 +173,8 @@ fn test_doctor_pruning_and_orphans() {
     let orphaned_run = all_runs.iter().find(|r| r.run_id == orphaned_run_id).unwrap();
     assert_eq!(orphaned_run.status, "Orphaned");
 
-    // Test orphaned-only filtering
-    let orphaned_only: Vec<_> = doctor
-        .list_orphaned(&log_func, repo_path)
-        .into_iter()
-        .filter(|r| r.status == "Orphaned")
-        .collect();
+    // Test find_orphaned_runs
+    let orphaned_only = doctor.find_orphaned_runs(&log_func, repo_path);
     assert_eq!(orphaned_only.len(), 1);
     assert_eq!(orphaned_only[0].run_id, orphaned_run_id);
 

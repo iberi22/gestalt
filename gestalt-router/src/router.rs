@@ -171,7 +171,6 @@ impl Router {
             let run_id_clone = run_id;
             let wt_path = wt_paths.get(&agent_id).cloned().unwrap();
             let timeout = std::time::Duration::from_secs(spec.timeout);
-            let router = router.clone();
 
             let worktrees_clone = self.worktrees.clone();
             let runner_clone = self.runner.clone();

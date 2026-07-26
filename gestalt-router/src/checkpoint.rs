@@ -77,8 +77,9 @@ fn run_git_commit_cmd(repo_path: &Path, args: &[&str]) -> Result<String, RouterE
         let stderr = String::from_utf8_lossy(&output.stderr);
         let stdout = String::from_utf8_lossy(&output.stdout);
         return Err(RouterError::GitError(format!(
-            "git commit failed:\nstdout: {}\nstderr: {}",
-            stdout, stderr
+            "git commit failed: {} {}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
         )));
     }
 
@@ -178,7 +179,6 @@ pub fn checkpoint(
 
     let mut symlink_escapes = Vec::new();
 
-    let mut files_committed = Vec::new();
 
     for line in ls_stdout.lines() {
         let parts: Vec<&str> = line.split('\t').collect();
@@ -221,19 +221,29 @@ pub fn checkpoint(
                         // Use git rm --cached <file> as a fallback.
                         let _ = run_git_cmd(worktree_dir, &["rm", "--cached", path_str]);
                     }
-                } else {
-                    files_committed.push(path_str.to_string());
                 }
-            } else {
-                files_committed.push(path_str.to_string());
             }
         }
     }
 
-    // Filter out files_committed that were actually unstaged or not in files_to_add.
-    files_committed.retain(|f| files_to_add.contains(f) && !symlink_escapes.iter().any(|se| &se.path == f));
+    // 4. Determine the files actually committed in this transaction
+    let diff_cached_args = if run_git_cmd(worktree_dir, &["rev-parse", "HEAD"]).is_ok() {
+        vec!["diff", "--name-only", "--cached"]
+    } else {
+        vec!["ls-files"]
+    };
 
-    // 4. Commit changes with hooks bypassed.
+    let diff_stdout = run_git_cmd(worktree_dir, &diff_cached_args).unwrap_or_default();
+
+    let mut files_committed = Vec::new();
+    for line in diff_stdout.lines() {
+        let f = line.trim().to_string();
+        if !f.is_empty() && !symlink_escapes.iter().any(|se| se.path == f) {
+            files_committed.push(f);
+        }
+    }
+
+    // 5. Commit changes with hooks bypassed.
     let commit_args = &[
         "-c",
         "core.hooksPath=/dev/null",

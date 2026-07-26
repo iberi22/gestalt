@@ -400,9 +400,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_echo_handler() {
+    async fn test_echo_handler() -> Result<(), Box<dyn std::error::Error>> {
         let mut handler = EchoHandler;
         let result = handler.handle_input("test").await?;
         assert_eq!(result, "Echo: test");
+        Ok(())
     }
 }

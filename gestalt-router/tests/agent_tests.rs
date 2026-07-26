@@ -195,7 +195,7 @@ fn test_agent_outcome_with_error() {
 #[test]
 fn test_all_agent_states() {
     use AgentState::*;
-    let states = vec![Pending, Running, Success, NoChanges, Timeout, Crashed, Quarantined];
+    let states = [Pending, Running, Success, NoChanges, Timeout, Crashed, Quarantined];
     assert_eq!(states.len(), 7);
     assert_ne!(Pending, Running);
     assert_ne!(Running, Success);

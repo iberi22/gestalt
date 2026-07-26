@@ -189,7 +189,6 @@ impl Router {
             let sem = semaphore.clone();
             let agent = agent.clone();
             let repo_path = self.repo_path.clone();
-            let run_id = run_id;
             let base_ref = spec.base_ref.clone();
             let timeout_sec = spec.timeout;
 
@@ -375,7 +374,7 @@ impl Router {
             &[
                 "checkout",
                 "-B",
-                &spec.integration_branch.as_deref().unwrap_or("main"),
+                spec.integration_branch.as_deref().unwrap_or("main"),
                 &spec.base_ref,
             ],
         ) {

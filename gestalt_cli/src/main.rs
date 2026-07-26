@@ -936,7 +936,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let log = JsonlEventLog::new(run_id).map_err(|e| {
                 let msg = format!("Failed to create event log: {}", e);
                 error!("{}", msg);
-                std::io::Error::new(std::io::ErrorKind::Other, msg)
+                std::io::Error::other(msg)
             })?;
 
             // 4. Build AgentSpecs from the CLI agent commands

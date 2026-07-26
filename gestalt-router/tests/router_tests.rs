@@ -8,7 +8,7 @@
 use gestalt_router::checkpoint::{checkpoint, clean_path, is_symlink_escape, CheckpointResult};
 use gestalt_router::integrate::{integrate_branches, AgentIntegrationSpec, IntegrateResult, MergeResult};
 use gestalt_router::overlap::{
-    detect_overlap, find_overlaps_in_repo, get_modified_files, ConflictKind as OverlapConflictKind,
+    detect_overlap, find_overlaps, get_modified_files, ConflictKind as OverlapConflictKind,
     ConflictInfo as OverlapConflictInfo, MergeTestResult, OverlapInfo, OverlapResult,
 };
 use gestalt_router::run::{
@@ -281,7 +281,7 @@ fn test_router_error_and_error_kind() {
     assert_eq!(err.message, "corrupt log");
 
     // new() with source
-    let inner = std::io::Error::new(std::io::ErrorKind::Other, "io failure");
+    let inner = std::io::Error::other("io failure");
     let err = RouterError::new(
         RouterErrorKind::GitError,
         "git command failed",
@@ -430,8 +430,9 @@ fn test_checkpoint_with_gitignored_files() {
     std::fs::write(dir.join("build.log"), "some build output").unwrap();
 
     // Also create a real file to commit
-    std::fs::create_dir_all(dir.join("src")).unwrap();
-    std::fs::write(dir.join("src/lib.rs"), "pub fn f() {}").unwrap();
+    let src_lib = dir.join("src/lib.rs");
+    std::fs::create_dir_all(src_lib.parent().unwrap()).unwrap();
+    std::fs::write(&src_lib, "pub fn f() {}").unwrap();
 
     let res = checkpoint(dir, "feat: add lib").unwrap();
     assert!(res.success);
@@ -606,7 +607,7 @@ fn test_detect_overlap_finds_shared_paths() {
     assert!(result.disjoint);
 
     // One empty
-    let result = detect_overlap(&vec![PathBuf::from("f.rs")], &[]);
+    let result = detect_overlap(&[PathBuf::from("f.rs")], &[]);
     assert!(result.disjoint);
 }
 

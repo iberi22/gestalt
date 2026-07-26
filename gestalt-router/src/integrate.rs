@@ -153,12 +153,29 @@ pub fn integrate_branches(
         });
     }
 
-    // 3. Create integration commit using git commit-tree
+    // 3. Resolve the merged tree SHA from the final intermediate commit
+    // 3. Resolve the merged tree SHA from the final intermediate commit
+    //    (commit-tree expects a tree SHA, not a commit SHA)
+    let merged_tree_sha = if !branches.is_empty() {
+        let tree_rev = format!("{}:", current_commit);
+        let tree_args = vec!["rev-parse", &tree_rev];
+        match checkpoint::run_git_cmd(repo_dir, &tree_args) {
+            Ok(tree) => tree.trim().to_string(),
+            Err(_) => {
+                // Fall back: the last merge-tree output may already be a tree
+                current_commit.clone()
+            }
+        }
+    } else {
+        base_sha.to_string()
+    };
+
+    // 4. Create integration commit using git commit-tree
     let commit_args = vec![
         "-c",
         "core.hooksPath=/dev/null",
         "commit-tree",
-        &current_commit,
+        &merged_tree_sha,
         "-p",
         base_sha,
         "-m",
@@ -175,7 +192,7 @@ pub fn integrate_branches(
                     "-c",
                     "core.hooksPath=/dev/null",
                     "commit-tree",
-                    &current_commit,
+                    &merged_tree_sha,
                     "-m",
                     "gestalt: integrate agent branches",
                 ];

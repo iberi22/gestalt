@@ -166,3 +166,61 @@ fn test_checkpoint_multiple_files() {
     assert!(result.commit_sha.is_some());
     assert_eq!(result.files_committed.len(), 2, "Both files should be committed");
 }
+
+#[test]
+fn test_checkpoint_binary_files() {
+    let repo = TempRepo::new();
+    let binary_file = repo.path().join("image.png");
+    // Write some raw binary data
+    std::fs::write(&binary_file, vec![0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0, 1, 2, 3]).unwrap();
+
+    let result = checkpoint(repo.path(), "commit binary png").unwrap();
+    assert!(result.success);
+    assert!(result.commit_sha.is_some());
+    assert!(result.files_committed.contains(&"image.png".to_string()));
+}
+
+#[test]
+fn test_checkpoint_large_files() {
+    let repo = TempRepo::new();
+    let large_file = repo.path().join("large.dat");
+    // Write 5 megabytes of data
+    let large_data = vec![0u8; 5 * 1024 * 1024];
+    std::fs::write(&large_file, large_data).unwrap();
+
+    let result = checkpoint(repo.path(), "commit large file").unwrap();
+    assert!(result.success);
+    assert!(result.commit_sha.is_some());
+    assert!(result.files_committed.contains(&"large.dat".to_string()));
+}
+
+#[test]
+#[cfg(unix)]
+fn test_checkpoint_permission_errors() {
+    use std::os::unix::fs::PermissionsExt;
+    let repo = TempRepo::new();
+    let file_path = repo.path().join("restricted.txt");
+    std::fs::write(&file_path, "restricted content").unwrap();
+
+    // Make the file completely unreadable/unwritable (000 permissions)
+    std::fs::set_permissions(&file_path, std::fs::Permissions::from_mode(0o000)).unwrap();
+
+    // The git command might fail or skip it because it can't read/add it,
+    // which should either return a GitError or be caught. Let's verify we handle it.
+    let result = checkpoint(repo.path(), "commit restricted file");
+
+    // Clean up permissions so TempRepo can be deleted successfully
+    let _ = std::fs::set_permissions(&file_path, std::fs::Permissions::from_mode(0o644));
+
+    // Either it returns an error or fails gracefully. We want to verify we don't crash.
+    match result {
+        Ok(res) => {
+            // If it succeeds, it might not have committed the unreadable file
+            println!("Checkpoint succeeded: {:?}", res);
+        }
+        Err(e) => {
+            // If it fails with a GitError, that's also a valid and graceful handling of permission errors
+            assert_eq!(e.kind, gestalt_router::run::RouterErrorKind::GitError);
+        }
+    }
+}

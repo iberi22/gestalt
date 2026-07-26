@@ -158,11 +158,10 @@ impl WorktreeManager {
             if line.is_empty() {
                 continue;
             }
-            if line.starts_with("worktree ") {
+            if let Some(path_str) = line.strip_prefix("worktree ") {
                 if let Some(wt) = current.take() {
                     worktrees.push(wt);
                 }
-                let path_str = &line["worktree ".len()..];
                 current = Some(TempWorktreeInfo {
                     path: PathBuf::from(path_str),
                     branch: None,
@@ -170,12 +169,11 @@ impl WorktreeManager {
                     is_prunable: false,
                 });
             } else if let Some(ref mut wt) = current {
-                if line.starts_with("HEAD ") {
-                    wt.sha = Some(line["HEAD ".len()..].to_string());
-                } else if line.starts_with("branch ") {
-                    let branch_str = &line["branch ".len()..];
-                    let clean_branch = if branch_str.starts_with("refs/heads/") {
-                        branch_str["refs/heads/".len()..].to_string()
+                if let Some(sha) = line.strip_prefix("HEAD ") {
+                    wt.sha = Some(sha.to_string());
+                } else if let Some(branch_str) = line.strip_prefix("branch ") {
+                    let clean_branch = if let Some(stripped) = branch_str.strip_prefix("refs/heads/") {
+                        stripped.to_string()
                     } else {
                         branch_str.to_string()
                     };

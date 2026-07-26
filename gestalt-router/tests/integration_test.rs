@@ -1,11 +1,52 @@
-use gestalt_router::integrate::{AgentIntegrationSpec, IntegrateResult};
+use gestalt_router::integrate::{integrate_branches, AgentIntegrationSpec, IntegrateResult};
 use gestalt_router::overlap::OverlapInfo;
 use gestalt_router::run::{AgentResult, AgentSpec, RunReport, RunSpec};
 use gestalt_router::run_state::{AgentState, RunManifest};
 use gestalt_router::timeline::{Event, EventLog, JsonlEventLog, VersionedEvent};
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::process::Command;
 use uuid::Uuid;
+
+fn init_test_repo() -> (tempfile::TempDir, PathBuf) {
+    let dir = tempfile::tempdir().unwrap();
+    let repo_path = dir.path().to_path_buf();
+
+    Command::new("git")
+        .arg("init")
+        .current_dir(&repo_path)
+        .status()
+        .unwrap();
+    Command::new("git")
+        .args(["config", "user.name", "Gestalt Tester"])
+        .current_dir(&repo_path)
+        .status()
+        .unwrap();
+    Command::new("git")
+        .args(["config", "user.email", "tester@gestalt.local"])
+        .current_dir(&repo_path)
+        .status()
+        .unwrap();
+
+    std::fs::write(repo_path.join("README.md"), "# Test").unwrap();
+    Command::new("git")
+        .args(["add", "README.md"])
+        .current_dir(&repo_path)
+        .status()
+        .unwrap();
+    Command::new("git")
+        .args(["commit", "-m", "initial"])
+        .current_dir(&repo_path)
+        .status()
+        .unwrap();
+    Command::new("git")
+        .args(["branch", "-m", "main"])
+        .current_dir(&repo_path)
+        .status()
+        .unwrap();
+
+    (dir, repo_path)
+}
 
 #[test]
 fn test_full_pipeline_agent_spec_construction() {
@@ -148,12 +189,12 @@ fn test_event_log_read_events() {
 #[test]
 fn test_integrate_result_construction() {
     let result = IntegrateResult {
-        merge_sha: "abc123def".to_string(),
+        merge_sha: "abc123de".to_string(),
         merged_branches: vec!["feat/a".to_string(), "feat/b".to_string()],
         conflicts: vec![],
     };
     assert_eq!(result.merged_branches.len(), 2);
-    assert_eq!(result.merge_sha.len(), 9);
+    assert_eq!(result.merge_sha.len(), 8);
 }
 
 #[test]
@@ -219,4 +260,168 @@ fn test_run_report_with_agents_and_conflicts() {
     };
     assert_eq!(report.agents.len(), 1);
     assert!(report.success);
+}
+
+#[test]
+fn test_integrate_branches_success_and_conflict() {
+    // 1. Initialize git repo
+    let (_dir, repo_path) = init_test_repo();
+
+    // 2. Create branch_a modifying file_a.txt
+    Command::new("git")
+        .args(["checkout", "-b", "branch_a"])
+        .current_dir(&repo_path)
+        .status()
+        .unwrap();
+    std::fs::write(repo_path.join("file_a.txt"), "content a").unwrap();
+    Command::new("git")
+        .args(["add", "file_a.txt"])
+        .current_dir(&repo_path)
+        .status()
+        .unwrap();
+    Command::new("git")
+        .args(["commit", "-m", "commit a"])
+        .current_dir(&repo_path)
+        .status()
+        .unwrap();
+
+    // Get the SHA of branch_a
+    let sha_a = Command::new("git")
+        .args(["rev-parse", "branch_a"])
+        .current_dir(&repo_path)
+        .output()
+        .map(|out| String::from_utf8_lossy(&out.stdout).trim().to_string())
+        .unwrap();
+
+    // Go back to main
+    Command::new("git")
+        .args(["checkout", "main"])
+        .current_dir(&repo_path)
+        .status()
+        .unwrap();
+
+    // 3. Create branch_b modifying file_b.txt
+    Command::new("git")
+        .args(["checkout", "-b", "branch_b"])
+        .current_dir(&repo_path)
+        .status()
+        .unwrap();
+    std::fs::write(repo_path.join("file_b.txt"), "content b").unwrap();
+    Command::new("git")
+        .args(["add", "file_b.txt"])
+        .current_dir(&repo_path)
+        .status()
+        .unwrap();
+    Command::new("git")
+        .args(["commit", "-m", "commit b"])
+        .current_dir(&repo_path)
+        .status()
+        .unwrap();
+
+    let sha_b = Command::new("git")
+        .args(["rev-parse", "branch_b"])
+        .current_dir(&repo_path)
+        .output()
+        .map(|out| String::from_utf8_lossy(&out.stdout).trim().to_string())
+        .unwrap();
+
+    // Go back to main
+    Command::new("git")
+        .args(["checkout", "main"])
+        .current_dir(&repo_path)
+        .status()
+        .unwrap();
+
+    let base_sha = Command::new("git")
+        .args(["rev-parse", "main"])
+        .current_dir(&repo_path)
+        .output()
+        .map(|out| String::from_utf8_lossy(&out.stdout).trim().to_string())
+        .unwrap();
+
+    // 4. Run integrate_branches for branch_a and branch_b
+    let branches = vec![
+        ("agent_a".to_string(), sha_a.clone()),
+        ("agent_b".to_string(), sha_b.clone()),
+    ];
+
+    let result = integrate_branches(&repo_path, &base_sha, "integration", &branches).unwrap();
+    assert!(!result.merge_sha.is_empty(), "Should produce a merge SHA, but got: {:?}", result);
+    assert_eq!(result.merged_branches.len(), 2);
+    assert!(result.conflicts.is_empty(), "Should have no conflicts");
+
+    // 5. Test binary conflict detection
+    // Go back to main
+    Command::new("git")
+        .args(["checkout", "main"])
+        .current_dir(&repo_path)
+        .status()
+        .unwrap();
+
+    // Create binary file with null bytes in branch_c
+    Command::new("git")
+        .args(["checkout", "-b", "branch_c"])
+        .current_dir(&repo_path)
+        .status()
+        .unwrap();
+    std::fs::write(repo_path.join("binary.bin"), b"binary\0content\0c").unwrap();
+    Command::new("git")
+        .args(["add", "binary.bin"])
+        .current_dir(&repo_path)
+        .status()
+        .unwrap();
+    Command::new("git")
+        .args(["commit", "-m", "commit c"])
+        .current_dir(&repo_path)
+        .status()
+        .unwrap();
+
+    let sha_c = Command::new("git")
+        .args(["rev-parse", "branch_c"])
+        .current_dir(&repo_path)
+        .output()
+        .map(|out| String::from_utf8_lossy(&out.stdout).trim().to_string())
+        .unwrap();
+
+    // Go back to main
+    Command::new("git")
+        .args(["checkout", "main"])
+        .current_dir(&repo_path)
+        .status()
+        .unwrap();
+
+    // Create conflicting binary file with null bytes in branch_d
+    Command::new("git")
+        .args(["checkout", "-b", "branch_d"])
+        .current_dir(&repo_path)
+        .status()
+        .unwrap();
+    std::fs::write(repo_path.join("binary.bin"), b"different\0binary\0content\0d").unwrap();
+    Command::new("git")
+        .args(["add", "binary.bin"])
+        .current_dir(&repo_path)
+        .status()
+        .unwrap();
+    Command::new("git")
+        .args(["commit", "-m", "commit d"])
+        .current_dir(&repo_path)
+        .status()
+        .unwrap();
+
+    let sha_d = Command::new("git")
+        .args(["rev-parse", "branch_d"])
+        .current_dir(&repo_path)
+        .output()
+        .map(|out| String::from_utf8_lossy(&out.stdout).trim().to_string())
+        .unwrap();
+
+    let binary_branches = vec![
+        ("agent_c".to_string(), sha_c),
+        ("agent_d".to_string(), sha_d),
+    ];
+
+    let result_conflict = integrate_branches(&repo_path, &base_sha, "integration_conflict", &binary_branches).unwrap();
+    assert!(result_conflict.merge_sha.is_empty(), "Should not produce a merge SHA on conflict");
+    assert_eq!(result_conflict.conflicts.len(), 1, "Should report one conflict");
+    assert_eq!(result_conflict.conflicts[0].path, "binary.bin", "Conflicted path should be binary.bin");
 }

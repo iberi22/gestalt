@@ -2,10 +2,7 @@ use crate::run::{AgentResult, AgentSpec, RouterError};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::time::{Duration, Instant};
-#[cfg(unix)]
-use std::os::unix::process::CommandExt;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentOutcome {
@@ -216,7 +213,7 @@ impl AgentRunner for SubprocessRunner {
             agent_id: spec.id.clone(),
             state: crate::run_state::AgentState::Success,
             output: None,
-            error: if exit_code.map_or(false, |c| c != 0) {
+            error: if exit_code.is_some_and(|c| c != 0) {
                 Some("Process exited with non-zero".to_string())
             } else {
                 None

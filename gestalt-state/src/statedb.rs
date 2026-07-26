@@ -170,6 +170,7 @@ impl StateDb {
     ///
     /// Uses `ON CONFLICT DO UPDATE` so the same agent can be updated
     /// multiple times during a run (e.g. Pending → Running → Success).
+    #[allow(clippy::too_many_arguments)]
     pub fn upsert_agent(
         &self,
         run_id: &str,
@@ -381,11 +382,9 @@ impl StateDb {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::Duration;
 
     fn setup_db() -> StateDb {
-        let db = StateDb::open(":memory:").expect("Failed to open in-memory DB");
-        db
+        StateDb::open(":memory:").expect("Failed to open in-memory DB")
     }
 
     #[test]

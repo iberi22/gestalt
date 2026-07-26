@@ -262,7 +262,7 @@ impl AgentRunner for SubprocessRunner {
 
         let state = if is_timeout {
             crate::run_state::AgentState::Timeout
-        } else if exit_code.map_or(false, |c| c != 0) {
+        } else if exit_code.is_some_and(|c| c != 0) {
             crate::run_state::AgentState::Crashed
         } else {
             crate::run_state::AgentState::Success
@@ -270,7 +270,7 @@ impl AgentRunner for SubprocessRunner {
 
         let error = if is_timeout {
             Some("Agent process timed out".to_string())
-        } else if exit_code.map_or(false, |c| c != 0) {
+        } else if exit_code.is_some_and(|c| c != 0) {
             Some(format!(
                 "Process exited with non-zero code: {:?}",
                 exit_code

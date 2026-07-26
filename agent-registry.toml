@@ -20,9 +20,9 @@ base_url = "http://localhost:11434"
 rate_limit = { rpm = 9999, tpm = 9_999_999 }
 priority = 10
 
-[providers.openclaw]
-base_url = "http://localhost:3001"
-rate_limit = { rpm = 500, tpm = 5_000_000 }
+[providers.opencode]
+base_url = "http://localhost:3003"
+rate_limit = { rpm = 100, tpm = 1_000_000 }
 priority = 2
 
 [providers.hermes]
@@ -32,11 +32,11 @@ priority = 3
 
 # ── Agentes ──────────────────────────────────────────────
 
-# agy CLI — Agente ejecutor principal
+# agy CLI — Ejecutor principal con Gemini 3.6 Flash
 [[agents]]
 name = "agy"
-provider = "local"
-model = "gemini-2.0-flash"
+provider = "openrouter"
+model = "gemini-2.5-flash"  # Gemini 3.6 Flash via OpenRouter
 type = "Cli"
 capabilities = [
     "edit", "edit-single-line", "insert-line", "delete-line",
@@ -44,85 +44,103 @@ capabilities = [
     "read-file", "search-files", "diff",
 ]
 rate_limit = { rpm = 30, tpm = 1_000_000 }
-cost_per_mtok = 0.0   # local
+cost_per_mtok = 0.15
 max_context = 1_000_000
 tags = ["fast", "code", "editor"]
 
-# Kimi CLI — Agente razonador
+# Kimi CLI K3 — Analizar y planear
 [[agents]]
 name = "kimi"
 provider = "openrouter"
-model = "kimi-v1"
+model = "kimi-k3"
 type = "Cli"
 capabilities = [
-    "edit", "reason", "analyze", "search",
-    "plan", "write-docs", "code-review",
+    "reason", "analyze", "plan", "research",
+    "write-docs", "architecture-review", "code-review",
 ]
-rate_limit = { rpm = 30, tpm = 200_000 }
+rate_limit = { rpm = 20, tpm = 200_000 }
 cost_per_mtok = 0.50
 max_context = 128_000
-tags = ["reasoning", "docs", "review"]
+tags = ["reasoning", "planning", "analysis"]
 
-# Hermes — Asistente conversacional (+ delegación)
+# agent CLI (OpenCode) — Grok 4.5 para análisis/planeación
+[[agents]]
+name = "agent-cli-high"
+provider = "openrouter"
+model = "x-ai/grok-4.5-high"
+type = "Cli"
+capabilities = [
+    "analyze", "plan", "architecture-review",
+    "code-review", "research", "design",
+]
+rate_limit = { rpm = 10, tpm = 500_000 }
+cost_per_mtok = 2.00
+max_context = 200_000
+tags = ["grok", "high", "analysis", "planning"]
+
+# agent CLI (OpenCode) — Grok 4.5 Low para implementación en enjambre
+[[agents]]
+name = "agent-cli-low"
+provider = "openrouter"
+model = "x-ai/grok-4.5-low"
+type = "Cli"
+capabilities = [
+    "edit", "edit-single-line", "insert-line", "delete-line",
+    "test", "refactor", "implement", "fix",
+]
+rate_limit = { rpm = 30, tpm = 1_000_000 }
+cost_per_mtok = 0.50
+max_context = 100_000
+tags = ["grok", "low", "swarm", "implementation"]
+
+# Opencode Go CLI — DeepSeek V4 Flash (misma key que Hermes)
+[[agents]]
+name = "opencode"
+provider = "opencode"
+model = "deepseek-v4-flash"
+type = "Cli"
+capabilities = [
+    "edit", "search", "analyze", "code",
+    "read-file", "write-file", "diff", "git",
+]
+rate_limit = { rpm = 30, tpm = 500_000 }
+cost_per_mtok = 0.15
+max_context = 200_000
+tags = ["opencode", "deepseek", "fast"]
+
+# Hermes — Orquestador principal
 [[agents]]
 name = "hermes"
 provider = "hermes"
 model = "deepseek-v4-flash"
 type = "Assistant"
 capabilities = [
-    "delegate", "orchestrate", "plan", "analyze",
+    "orchestrate", "delegate", "plan", "analyze",
     "code", "search-web", "read-files", "write-files",
     "git-operations", "xavier-sync", "skill-manage",
+    "agent-registry", "rate-limit-tracking",
 ]
 rate_limit = { rpm = 60, tpm = 500_000 }
 cost_per_mtok = 0.15
 max_context = 200_000
-tags = ["orchestrator", "conversational"]
+tags = ["orchestrator", "conversational", "memory"]
 
-# OpenClaw — Gateway multi-model
-[[agents]]
-name = "openclaw"
-provider = "openclaw"
-model = "claude-sonnet-4"
-type = "Api"
-capabilities = [
-    "edit", "analyze", "code", "research", "plan",
-]
-rate_limit = { rpm = 100, tpm = 1_000_000 }
-cost_per_mtok = 3.00
-max_context = 200_000
-tags = ["premium", "sonnet"]
-
-# Gestalt Router — Orquestador de subagentes
+# Gestalt Router — Backend técnico (VFS, conflictos, paralelo)
 [[agents]]
 name = "gestalt"
 provider = "local"
 model = "router-v1"
 type = "Orchestrator"
 capabilities = [
-    "delegate", "orchestrate", "parallel-exec",
-    "vfs-isolation", "conflict-detection", "xavier-sync",
-    "swarm", "wave-execution",
+    "vfs-isolation", "parallel-exec",
+    "conflict-detection", "xavier-sync",
+    "swarm", "wave-execution", "file-versioning",
+    "block-editing", "diff-capture",
 ]
 rate_limit = { rpm = 9999, tpm = 9_999_999 }
 cost_per_mtok = 0.0
 max_context = 1_000_000_000
-tags = ["orchestrator", "local"]
-
-# cursor-agent — Edición precisa con IA
-[[agents]]
-name = "cursor-agent"
-provider = "openrouter"
-model = "gpt-4o-mini"
-type = "Cli"
-capabilities = [
-    "edit-single-line", "insert-line", "delete-line",
-    "multi-line-edit", "search", "diff",
-]
-rate_limit = { rpm = 30, tpm = 200_000 }
-cost_per_mtok = 0.15
-max_context = 128_000
-tags = ["editor", "precise", "fast"]
+tags = ["backend", "vfs", "local", "technical"]
 
 # ── Tiny Agents (modelos locales diminutos) ──────────────
 # Cada uno hace EXACTAMENTE UNA COSA

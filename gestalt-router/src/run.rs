@@ -65,11 +65,41 @@ pub struct ConflictInfo {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RunReport {
     pub run_id: Uuid,
+    pub task: String,
     pub agents: Vec<AgentResult>,
+    pub duration_ms: u64,
     pub merged_branches: Vec<String>,
     pub conflicts: Vec<ConflictInfo>,
     pub events_path: String,
     pub success: bool,
+}
+
+impl RunReport {
+    /// Serialize this report as a JSON Value suitable for Xavier archival.
+    pub fn to_json(&self) -> serde_json::Value {
+        serde_json::json!({
+            "run_id": self.run_id.to_string(),
+            "task": self.task,
+            "agents": self.agents.iter().map(|r| {
+                serde_json::json!({
+                    "agent_id": r.agent_id,
+                    "state": format!("{:?}", r.state),
+                    "error": r.error,
+                    "changed_files": r.changed_files,
+                    "duration_ms": r.duration_ms,
+                })
+            }).collect::<Vec<_>>(),
+            "merged_branches": self.merged_branches,
+            "conflicts": self.conflicts.iter().map(|c| {
+                serde_json::json!({
+                    "agent_id": c.agent_id,
+                    "path": c.path,
+                })
+            }).collect::<Vec<_>>(),
+            "duration_ms": self.duration_ms,
+            "success": self.success,
+        })
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]

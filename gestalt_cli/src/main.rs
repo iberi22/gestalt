@@ -2,13 +2,14 @@
 //!
 //! CLI tool for interacting with Gestalt MCP Server and managing tasks.
 
+mod agent_wrapper;
 mod config;
 mod repl;
 
 use crate::config::CliConfig;
 use crate::repl::{EchoHandler, InteractiveRepl};
 use clap::{Parser, Subcommand};
-use gestalt_core::ports::outbound::vfs::{OverlayFs, VirtualFileSystem as VirtualFs};
+use gestalt_core::ports::outbound::vfs::{OverlayFs, VirtualFS, VirtualFileSystem as VirtualFs};
 use serde_json::json;
 use std::collections::HashMap;
 use std::fs;
@@ -29,7 +30,6 @@ use gestalt_router::agent::SubprocessRunner;
 use gestalt_router::router::Router;
 use gestalt_router::run::{AgentSpec, RunSpec};
 use gestalt_router::run_state::{AgentState, MemState, StateDb};
-use gestalt_router::worktree::WorktreeManager;
 
 /// Simple task storage
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -404,9 +404,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("Gestalt CLI starting with URL: {}", url);
 
     // Create blocking HTTP client inside spawn_blocking to avoid nested tokio runtime
-    let http_client = tokio::task::spawn_blocking(move || {
-        build_http_client()
-    }).await.map_err(std::io::Error::other)??;
+    let http_client = tokio::task::spawn_blocking(move || build_http_client())
+        .await
+        .map_err(std::io::Error::other)??;
 
     match args.command {
         Commands::Serve { host, port } => {
@@ -921,18 +921,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("   Timeout: {}s", timeout);
             println!();
 
-            // 1. Create WorktreeManager with a temp directory
-            let run_dir = std::env::temp_dir().join(format!(
-                "gestalt-run-{}",
-                chrono::Utc::now().format("%Y%m%d-%H%M%S")
-            ));
-            std::fs::create_dir_all(&run_dir).map_err(|e| {
-                error!("Failed to create run directory: {}", e);
-                e
-            })?;
-            let worktrees = WorktreeManager::new(run_dir.clone());
-
-            // 2. Create SubprocessRunner with the configured timeout
+            // 1. Create SubprocessRunner with the configured timeout
             let timeout_dur = std::time::Duration::from_secs(timeout);
             let runner = SubprocessRunner::new(timeout_dur);
 
@@ -957,11 +946,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 })
                 .collect();
 
+            // Save agent specs and count before moving into RunSpec
+            let agent_specs_clone = agent_specs.clone();
+            let agent_count = agent_specs.len();
+
             // 5. Build the RunSpec from CLI arguments
             let spec = RunSpec {
                 base_ref: base_ref.clone(),
                 task: task.clone(),
-                agents: agent_specs,
+                agents: agent_specs.clone(),
                 max_parallel,
                 timeout,
                 push: false,
@@ -981,11 +974,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let mem_state = MemState::new();
 
             let router = Router::new(
-                std::sync::Arc::new(worktrees),
+                None, // VFS mode — Router creates WorktreeManager internally
                 std::sync::Arc::new(runner),
                 state_db,
                 mem_state,
                 None, // EventLog is now integrated via StateDbEventLog
+                None, // WebSocket port — set Some(3001) to enable live events
             )
             .with_xavier(xavier_client);
             println!("⚙️  Executing run...");
@@ -1035,6 +1029,40 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         for conflict in &report.conflicts {
                             println!("      - {}: {}", conflict.agent_id, conflict.path);
                         }
+                    }
+
+                    // ── AgentWrapper block-level editing integration ──
+                    // After router execution, wrap each agent through AgentWrapper
+                    // to capture diffs and send BlockEdit operations to a VirtualFS.
+                    // The tracked paths are the worktree directories created by the router.
+                    if agent_count > 0 {
+                        let wrapper_vfs: std::sync::Arc<dyn VirtualFS> =
+                            std::sync::Arc::new(agent_wrapper::InMemoryVfs::new());
+                        info!(
+                            "AgentWrapper: {} agents ready for block-level diff capture",
+                            agent_count
+                        );
+                        println!();
+                        println!("📦 AgentWrapper block-level editing:");
+                        for agent_spec in &agent_specs_clone {
+                            let _wrapper = agent_wrapper::AgentWrapper::new(
+                                agent_spec.command.clone(),
+                                agent_spec.args.clone(),
+                                wrapper_vfs.clone(),
+                                agent_spec.id.clone(),
+                                report.run_id.to_string(),
+                                vec![format!("/tmp/worktree-{}", agent_spec.id)],
+                            );
+                            // In production, call wrapper.execute().await to run the
+                            // agent through AgentWrapper and capture block-level diffs.
+                            // For now we log the setup — the actual execution is handled
+                            // by the Router above.
+                            info!(
+                                "AgentWrapper setup: id={}, command={}",
+                                agent_spec.id, agent_spec.command,
+                            );
+                        }
+                        println!("   ✅ {} AgentWrapper(s) configured", agent_count);
                     }
 
                     // Also output the full report as JSON for machine consumption

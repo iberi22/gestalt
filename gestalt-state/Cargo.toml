@@ -16,3 +16,5 @@ rusqlite = { version = "0.33", features = ["bundled"] }
 dashmap = "6.1"
 anyhow = "1.0"
 async-trait = "0.1"
+sha2 = "0.10"
+gestalt_core = { path = "../gestalt_core" }

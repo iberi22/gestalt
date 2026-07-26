@@ -87,12 +87,9 @@ impl MemState {
     /// Returns `true` if the lock was acquired. Automatically cleans up
     /// expired locks (based on `ttl_secs`) before attempting acquisition.
     pub fn try_lock(&self, path: &str, agent_id: &str, run_id: &str, ttl_secs: i64) -> bool {
-        // Clean up expired locks
+        // Clean up expired locks before attempting acquisition
+        self.cleanup_expired_locks();
         let now = chrono::Utc::now();
-        self.active_locks.retain(|_, lock| {
-            let expires = lock.acquired_at + chrono::Duration::seconds(lock.ttl_secs);
-            expires > now
-        });
 
         // Try to insert
         let lock = FileLock {
@@ -105,26 +102,101 @@ impl MemState {
 
         // `entry` API: insert if vacant
         use dashmap::mapref::entry::Entry;
-        match self.active_locks.entry(path.to_string()) {
+        let acquired = match self.active_locks.entry(path.to_string()) {
             Entry::Vacant(v) => {
                 v.insert(lock);
                 true
             }
             Entry::Occupied(_) => false,
+        };
+
+        // Broadcast lock event
+        if acquired {
+            let payload = serde_json::json!({
+                "path": path,
+                "agent_id": agent_id,
+                "ttl_secs": ttl_secs,
+            })
+            .to_string();
+            self.push_event(run_id, Some(agent_id), "lock_acquired", &payload);
+        } else {
+            // Lock acquisition failed — check who holds it and emit a conflict event
+            if let Some(existing) = self.active_locks.get(path) {
+                if existing.agent_id != agent_id {
+                    let payload = serde_json::json!({
+                        "path": path,
+                        "agent_a": existing.agent_id,
+                        "agent_b": agent_id,
+                        "held_by": existing.agent_id,
+                    })
+                    .to_string();
+                    self.push_event(run_id, Some(agent_id), "lock_conflict", &payload);
+                }
+            }
         }
+
+        acquired
     }
 
     /// Release a lock previously acquired by `agent_id` on `path`.
     ///
     /// Returns `true` if a lock was actually released.
     pub fn release_lock(&self, path: &str, agent_id: &str) -> bool {
-        match self.active_locks.get(path) {
+        let released = match self.active_locks.get(path) {
             Some(lock) if lock.agent_id == agent_id => {
                 self.active_locks.remove(path);
                 true
             }
             _ => false,
+        };
+
+        // Broadcast lock release event
+        if released {
+            // We need run_id from the lock; retrieve it before removal
+            let payload = serde_json::json!({
+                "path": path,
+                "agent_id": agent_id,
+            })
+            .to_string();
+            // Broadcast without a specific run_id — callers can enrich if needed
+            let _ = self.event_tx.send(TimelineEvent {
+                seq: None,
+                run_id: String::new(),
+                agent_id: Some(agent_id.to_string()),
+                event_type: "lock_released".to_string(),
+                payload,
+                created_at: chrono::Utc::now(),
+            });
         }
+
+        released
+    }
+
+    /// Renew a lock previously acquired by `agent_id` on `path`.
+    ///
+    /// Resets the `acquired_at` timestamp to now and optionally updates the TTL.
+    /// Returns `true` if the lock was renewed (i.e. it existed and was owned by `agent_id`).
+    pub fn renew_lock(&self, path: &str, agent_id: &str, ttl_secs: i64) -> bool {
+        if let Some(mut lock) = self.active_locks.get_mut(path) {
+            if lock.agent_id == agent_id {
+                lock.acquired_at = chrono::Utc::now();
+                lock.ttl_secs = ttl_secs;
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Remove all expired locks from the map.
+    ///
+    /// This is called internally by [`try_lock`](Self::try_lock) but can also
+    /// be invoked externally for periodic cleanup.
+    pub fn cleanup_expired_locks(&self) {
+        let now = chrono::Utc::now();
+        self.active_locks.retain(|_, lock| {
+            let expires = lock.acquired_at + chrono::Duration::seconds(lock.ttl_secs);
+            expires > now
+        });
     }
 
     /// List all currently held file locks.
@@ -206,7 +278,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "hangs in synchronous test context (tokio broadcast channel interaction)"]
+    #[ignore = "test harness hang (tokio broadcast channel in sync context)"]
     fn test_try_lock_exclusive() {
         let mem = MemState::new();
 

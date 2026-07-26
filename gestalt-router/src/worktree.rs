@@ -1,6 +1,8 @@
 use crate::run::RouterError;
+use async_trait::async_trait;
+use gestalt_core::ports::outbound::vfs::{BlockEdit, FileVersion, VfsError, VirtualFS};
+use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
 use uuid::Uuid;
 pub struct WorktreeInfo {
     pub path: PathBuf,
@@ -10,8 +12,13 @@ pub struct WorktreeInfo {
 }
 
 pub struct WorktreeManager {
-    lock: Mutex<()>,
     pub base_dir: PathBuf,
+}
+
+fn sha256_hex(content: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(content.as_bytes());
+    format!("{:x}", hasher.finalize())
 }
 
 impl Default for WorktreeManager {
@@ -22,10 +29,7 @@ impl Default for WorktreeManager {
 
 impl WorktreeManager {
     pub fn new(base_dir: PathBuf) -> Self {
-        Self {
-            lock: Mutex::new(()),
-            base_dir,
-        }
+        Self { base_dir }
     }
 
     /// High-level create_worktree: creates a worktree named by run_id + agent_id.
@@ -35,7 +39,6 @@ impl WorktreeManager {
         agent_id: &str,
         base_sha: &str,
     ) -> Result<PathBuf, RouterError> {
-        let _lock = self.lock.lock().unwrap();
         let branch = format!("gestalt/{}/{}", run_id, agent_id);
         let wt_path = self.base_dir.join(format!("{}-{}", run_id, agent_id));
 
@@ -91,7 +94,6 @@ impl WorktreeManager {
 
     /// Helper to run a git command in the context of a repository path with locks.
     pub fn run_git_command(&self, repo_path: &Path, args: &[&str]) -> Result<String, RouterError> {
-        let _lock = self.lock.lock().unwrap();
         self.run_git_command_locked(repo_path, args)
     }
 
@@ -146,7 +148,6 @@ impl WorktreeManager {
         branch: &str,
         worktree_path: &Path,
     ) -> Result<(), RouterError> {
-        let _lock = self.lock.lock().unwrap();
 
         // Idempotency: cleanup existing worktree at worktree_path if registered
         if let Ok(list) = self.list_worktrees_locked(repo_path) {
@@ -178,7 +179,6 @@ impl WorktreeManager {
         repo_path: &Path,
         worktree_path: &Path,
     ) -> Result<(), RouterError> {
-        let _lock = self.lock.lock().unwrap();
         self.remove_worktree_locked(repo_path, worktree_path)
     }
 
@@ -220,7 +220,6 @@ impl WorktreeManager {
     /// Lists all worktrees in the given repository.
     /// Maps to: git worktree list --porcelain
     pub fn list_worktrees(&self, repo_path: &Path) -> Result<Vec<WorktreeInfo>, RouterError> {
-        let _lock = self.lock.lock().unwrap();
         self.list_worktrees_locked(repo_path)
     }
 
@@ -292,11 +291,186 @@ impl WorktreeManager {
     /// Prunes stale worktree administrative files.
     /// Maps to: git worktree prune
     pub fn prune_worktrees(&self, repo_path: &Path) -> Result<(), RouterError> {
-        let _lock = self.lock.lock().unwrap();
-
         self.run_git_command_locked(repo_path, &["worktree", "prune"])?;
 
         Ok(())
+    }
+}
+
+// ── VirtualFS implementation (legacy git-backed) ───────────────────────────
+
+fn run_git_show(repo_path: &Path, path: &str) -> Result<String, VfsError> {
+    let output = std::process::Command::new("git")
+        .current_dir(repo_path)
+        .args(["show", format!("HEAD:{}", path).as_str()])
+        .output()
+        .map_err(|e| VfsError::Internal(format!("git show failed: {e}")))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        if stderr.contains("fatal: bad revision") || stderr.contains("fatal: Path") {
+            return Err(VfsError::NotFound(format!("path not found: {path}")));
+        }
+        return Err(VfsError::Internal(format!(
+            "git show error: {stderr}"
+        )));
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+}
+
+fn run_git_log(repo_path: &Path, path: &str) -> Result<Vec<FileVersion>, VfsError> {
+    let output = std::process::Command::new("git")
+        .current_dir(repo_path)
+        .args([
+            "log",
+            "--format=%H|%ai|%an",
+            "--follow",
+            "--",
+            path,
+        ])
+        .output()
+        .map_err(|e| VfsError::Internal(format!("git log failed: {e}")))?;
+
+    if !output.status.success() {
+        return Ok(Vec::new());
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut versions = Vec::new();
+
+    for line in stdout.lines() {
+        let parts: Vec<&str> = line.splitn(3, '|').collect();
+        if parts.len() == 3 {
+            let git_sha = parts[0].to_string();
+            let timestamp = parts[1].to_string();
+            let agent_id = parts[2].to_string();
+
+            // Get content at this revision to compute a content hash
+            let content = match run_git_show_at(repo_path, path, &git_sha) {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+
+            versions.push(FileVersion {
+                hash: sha256_hex(&content),
+                content,
+                timestamp,
+                agent_id,
+            });
+        }
+    }
+
+    Ok(versions)
+}
+
+fn run_git_show_at(repo_path: &Path, path: &str, sha: &str) -> Result<String, VfsError> {
+    let output = std::process::Command::new("git")
+        .current_dir(repo_path)
+        .args(["show", format!("{}:{}", sha, path).as_str()])
+        .output()
+        .map_err(|e| VfsError::Internal(format!("git show at {sha} failed: {e}")))?;
+
+    if !output.status.success() {
+        return Err(VfsError::NotFound(format!(
+            "path not found at {sha}: {path}"
+        )));
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+}
+
+fn run_git_diff(repo_path: &Path, path: &str, from: &str, to: &str) -> Result<String, VfsError> {
+    let output = std::process::Command::new("git")
+        .current_dir(repo_path)
+        .args(["diff", &format!("{}..{}", from, to), "--", path])
+        .output()
+        .map_err(|e| VfsError::Internal(format!("git diff failed: {e}")))?;
+
+    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+}
+
+fn get_repo_path() -> Result<PathBuf, VfsError> {
+    std::env::current_dir().map_err(|e| VfsError::Internal(format!("Failed to get cwd: {e}")))
+}
+
+#[async_trait]
+impl VirtualFS for WorktreeManager {
+    async fn read_file(&self, path: &str) -> Result<(String, String), VfsError> {
+        let repo_path = get_repo_path()?;
+        let path = path.to_string();
+        tokio::task::spawn_blocking(move || {
+            let content = run_git_show(&repo_path, &path)?;
+            let hash = sha256_hex(&content);
+            Ok((content, hash))
+        })
+        .await
+        .map_err(|e| VfsError::Internal(format!("task join failed: {e}")))?
+    }
+
+    async fn write_block(&self, path: &str, block: BlockEdit) -> Result<String, VfsError> {
+        let repo_path = get_repo_path()?;
+        let path = path.to_string();
+        tokio::task::spawn_blocking(move || {
+            // Read current content (from git or filesystem)
+            let current_content: String = match run_git_show(&repo_path, &path) {
+                Ok(c) => c,
+                Err(VfsError::NotFound(_)) => String::new(),
+                Err(e) => return Err(e),
+            };
+
+            // Apply block edit
+            let new_content = if block.old_string.is_empty() && block.new_string.is_empty() {
+                current_content.clone()
+            } else if current_content.contains(&block.old_string) {
+                current_content.replace(&block.old_string, &block.new_string)
+            } else if !block.context.is_empty() && current_content.contains(&block.context) {
+                current_content.replace(&block.old_string, &block.new_string)
+            } else if current_content.is_empty() {
+                block.new_string.clone()
+            } else {
+                format!("{}{}", current_content, block.new_string)
+            };
+
+            // Write to filesystem
+            let disk_path = std::path::Path::new(&path);
+            if let Some(parent) = disk_path.parent() {
+                std::fs::create_dir_all(parent)
+                    .map_err(|e| VfsError::Internal(format!("failed to create dirs: {e}")))?;
+            }
+            std::fs::write(disk_path, &new_content)
+                .map_err(|e| VfsError::Internal(format!("failed to write file: {e}")))?;
+
+            let hash = sha256_hex(&new_content);
+            Ok(hash)
+        })
+        .await
+        .map_err(|e| VfsError::Internal(format!("task join failed: {e}")))?
+    }
+
+    async fn list_versions(&self, path: &str) -> Result<Vec<FileVersion>, VfsError> {
+        let repo_path = get_repo_path()?;
+        let path = path.to_string();
+        tokio::task::spawn_blocking(move || run_git_log(&repo_path, &path))
+            .await
+            .map_err(|e| VfsError::Internal(format!("task join failed: {e}")))?
+    }
+
+    async fn get_diff(&self, path: &str, from: &str, to: &str) -> Result<String, VfsError> {
+        let repo_path = get_repo_path()?;
+        let path = path.to_string();
+        let from = from.to_string();
+        let to = to.to_string();
+        tokio::task::spawn_blocking(move || run_git_diff(&repo_path, &path, &from, &to))
+            .await
+            .map_err(|e| VfsError::Internal(format!("task join failed: {e}")))?
+    }
+
+    async fn lock(&self, _path: &str, _agent: &str) -> Result<bool, VfsError> {
+        // Legacy WorktreeManager — file-level locking is handled by MemState.
+        Ok(true)
+    }
+
+    async fn unlock(&self, _path: &str, _agent: &str) -> Result<bool, VfsError> {
+        Ok(true)
     }
 }
 

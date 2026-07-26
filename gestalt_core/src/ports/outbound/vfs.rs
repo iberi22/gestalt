@@ -790,3 +790,78 @@ mod tests {
         Ok(())
     }
 }
+
+// ── VirtualFS: Versioned File System ──────────────────────────────────────
+
+/// A block edit operation that replaces `old_string` with `new_string`
+/// within the context of the given file.
+#[derive(Debug, Clone)]
+pub struct BlockEdit {
+    pub agent_id: String,
+    pub run_id: String,
+    pub old_string: String,
+    pub new_string: String,
+    pub context: String,
+}
+
+/// Metadata for a single version of a file.
+#[derive(Debug, Clone)]
+pub struct FileVersion {
+    pub hash: String,
+    pub content: String,
+    pub timestamp: String,
+    pub agent_id: String,
+}
+
+/// Errors that can occur during VirtualFS operations.
+#[derive(Debug, Clone)]
+pub enum VfsError {
+    /// The requested path was not found.
+    NotFound(String),
+    /// A lock could not be acquired because another agent holds it.
+    LockContention(String),
+    /// An internal error occurred (e.g. I/O, database).
+    Internal(String),
+}
+
+impl std::fmt::Display for VfsError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            VfsError::NotFound(path) => write!(f, "path not found: {path}"),
+            VfsError::LockContention(msg) => write!(f, "lock contention: {msg}"),
+            VfsError::Internal(msg) => write!(f, "internal error: {msg}"),
+        }
+    }
+}
+
+impl std::error::Error for VfsError {}
+
+/// A versioned virtual file system that tracks file history.
+///
+/// Unlike [`VirtualFileSystem`] which is an overlay for in-memory
+/// buffered I/O, `VirtualFS` is a persistent, versioned store that
+/// tracks every write as a new version with a content-addressed hash.
+#[async_trait]
+pub trait VirtualFS: Send + Sync {
+    /// Read a file at the given path, returning its content and version hash.
+    async fn read_file(&self, path: &str) -> Result<(String, String), VfsError>;
+
+    /// Write a block-level diff to a file.
+    ///
+    /// Creates a new version by replacing `block.old_string` with
+    /// `block.new_string` in the latest version of the file. Returns
+    /// the hash of the newly created version.
+    async fn write_block(&self, path: &str, block: BlockEdit) -> Result<String, VfsError>;
+
+    /// List all known versions of a file, most recent first.
+    async fn list_versions(&self, path: &str) -> Result<Vec<FileVersion>, VfsError>;
+
+    /// Get a textual diff between two versions of a file.
+    async fn get_diff(&self, path: &str, from: &str, to: &str) -> Result<String, VfsError>;
+
+    /// Lock a file for exclusive editing by an agent.
+    async fn lock(&self, path: &str, agent: &str) -> Result<bool, VfsError>;
+
+    /// Release a file lock held by an agent.
+    async fn unlock(&self, path: &str, agent: &str) -> Result<bool, VfsError>;
+}

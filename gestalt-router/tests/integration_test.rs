@@ -242,6 +242,7 @@ fn test_worktree_manager_creation() {
 fn test_run_report_with_agents_and_conflicts() {
     let report = RunReport {
         run_id: Uuid::new_v4(),
+        task: "test task".into(),
         agents: vec![AgentResult {
             agent_id: "a1".to_string(),
             state: AgentState::Success,
@@ -253,6 +254,7 @@ fn test_run_report_with_agents_and_conflicts() {
             run_id: None,
             worktree_path: None,
         }],
+        duration_ms: 100,
         merged_branches: vec!["feat/a1".to_string()],
         conflicts: vec![],
         events_path: "/tmp/run.jsonl".to_string(),

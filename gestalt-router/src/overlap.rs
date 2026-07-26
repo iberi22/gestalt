@@ -1,8 +1,171 @@
 use crate::run::RouterError;
+use gestalt_state::memstate::MemState;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+
+/// A lock conflict detected in real time between two agents.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LockConflict {
+    /// The file path that both agents tried to lock.
+    pub path: String,
+    /// The agent that already holds the lock.
+    pub agent_a: String,
+    /// The agent that failed to acquire the lock.
+    pub agent_b: String,
+    /// The run in which the conflict occurred.
+    pub run_id: String,
+}
+
+/// Real-time overlap detector using MemState's timeline broadcast channel.
+///
+/// Monitors lock acquisition events broadcast by [`MemState`] and detects
+/// when two agents compete for the same file. When a conflict is found,
+/// it emits a `conflict_detected` event back through the broadcast channel
+/// so that subscribers (including the WebSocket bridge) can observe it.
+///
+/// The legacy `find_overlaps` / `detect_overlap` functions are retained for
+/// post-hoc (git-based) overlap analysis after all agents have finished.
+#[derive(Clone)]
+pub struct OverlapDetector {
+    mem_state: MemState,
+}
+
+impl OverlapDetector {
+    /// Create a new `OverlapDetector` that monitors the given [`MemState`].
+    pub fn new(mem_state: MemState) -> Self {
+        Self { mem_state }
+    }
+
+    /// Spawn a background task that subscribes to MemState events and
+    /// detects real-time lock conflicts.
+    ///
+    /// The task listens for `lock_acquired` events. When a new lock is
+    /// acquired, it checks whether another agent already holds a lock on
+    /// the same path. If so, it emits a `conflict_detected` event via
+    /// [`MemState::push_event`] so that both the timeline log and
+    /// WebSocket bridge are notified.
+    ///
+    /// Also listens for `lock_conflict` events emitted by
+    /// [`MemState::try_lock`] when a lock attempt fails due to an existing
+    /// holder — these are forwarded as `conflict_detected` so the system
+    /// has a single, canonical event type for conflicts.
+    pub fn spawn_monitor(&self) {
+        let mem_state = self.mem_state.clone();
+        let mut rx = self.mem_state.subscribe();
+        tokio::spawn(async move {
+            loop {
+                match rx.recv().await {
+                    Ok(event) => match event.event_type.as_str() {
+                        "lock_acquired" => {
+                            // A new lock was acquired — check if another agent
+                            // already holds a lock on the same path
+                            if let Ok(payload) =
+                                serde_json::from_str::<serde_json::Value>(&event.payload)
+                            {
+                                if let Some(path) =
+                                    payload.get("path").and_then(|v| v.as_str())
+                                {
+                                    if let Some(ref agent_id) = event.agent_id {
+                                        if let Some(holder) =
+                                            Self::check_lock(&mem_state, path, agent_id)
+                                        {
+                                            let conflict_payload = serde_json::json!({
+                                                "path": path,
+                                                "agent_a": holder,
+                                                "agent_b": agent_id,
+                                                "message": format!(
+                                                    "Conflict: agent {holder} already holds lock on {path}"
+                                                ),
+                                            })
+                                            .to_string();
+                                            mem_state.push_event(
+                                                &event.run_id,
+                                                Some(agent_id),
+                                                "conflict_detected",
+                                                &conflict_payload,
+                                            );
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        "lock_conflict" => {
+                            // A lock attempt failed — forward as conflict_detected
+                            // so downstream consumers only need to listen for one type
+                            if let Ok(payload) =
+                                serde_json::from_str::<serde_json::Value>(&event.payload)
+                            {
+                                let conflict_payload = serde_json::json!({
+                                    "path": payload.get("path"),
+                                    "agent_a": payload.get("held_by"),
+                                    "agent_b": payload.get("agent_b"),
+                                    "message": format!(
+                                        "Lock conflict on {} between {} and {}",
+                                        payload.get("path").and_then(|v| v.as_str()).unwrap_or("?"),
+                                        payload.get("held_by").and_then(|v| v.as_str()).unwrap_or("?"),
+                                        payload.get("agent_b").and_then(|v| v.as_str()).unwrap_or("?"),
+                                    ),
+                                })
+                                .to_string();
+                                mem_state.push_event(
+                                    &event.run_id,
+                                    event.agent_id.as_deref(),
+                                    "conflict_detected",
+                                    &conflict_payload,
+                                );
+                            }
+                        }
+                        _ => {
+                            // Ignore other event types
+                        }
+                    },
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                        tracing::warn!("OverlapDetector lagged by {n} events");
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                        tracing::debug!("OverlapDetector: MemState broadcast closed");
+                        break;
+                    }
+                }
+            }
+        });
+    }
+
+    /// Check whether a lock on `path` is currently held by an agent other than
+    /// `agent_id`.
+    ///
+    /// Returns `Some(holder_agent_id)` if another agent holds the lock, or
+    /// `None` if the path is free or locked by the same agent.
+    pub fn check_lock(mem_state: &MemState, path: &str, agent_id: &str) -> Option<String> {
+        for lock in mem_state.get_locks() {
+            if lock.path == path && lock.agent_id != agent_id {
+                return Some(lock.agent_id);
+            }
+        }
+        None
+    }
+
+    /// Statically check all current locks and return any conflicts for the
+    /// given agent. Returns all locks held by other agents.
+    pub fn check_all_locks_for_agent(
+        mem_state: &MemState,
+        agent_id: &str,
+    ) -> Vec<(String, String)> {
+        mem_state
+            .get_locks()
+            .iter()
+            .filter(|lock| lock.agent_id != agent_id)
+            .map(|lock| (lock.path.clone(), lock.agent_id.clone()))
+            .collect()
+    }
+
+    /// Get a reference to the inner MemState.
+    pub fn mem_state(&self) -> &MemState {
+        &self.mem_state
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OverlapResult {

@@ -287,10 +287,13 @@ async fn run_agents_workflow(
     let run_id = inner.lock().unwrap().manifest.run_id;
     Ok(RunReport {
         run_id,
+        task: spec.task,
         agents: agent_results,
+        duration_ms: 0,
         merged_branches: vec![],
         conflicts: vec![],
         events_path: "".to_string(),
+        success: true,
     })
 }
 

@@ -16,4 +16,11 @@ libc = "0.2"
 dirs = "5.0.1"
 gestalt_core = { path = "../gestalt_core" }
 gestalt-state = { path = "../gestalt-state" }
+gestalt-ws = { path = "../gestalt-ws" }
+sha2 = "0.10"
+
+[dev-dependencies]
+tokio-tungstenite = "0.23"
+futures-util = "0.3"
+chrono = "0.4"
 

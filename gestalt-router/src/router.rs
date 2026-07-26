@@ -8,19 +8,27 @@ use gestalt_core::application::agent::xavier::XavierClient;
 use gestalt_state::memstate::MemState;
 use gestalt_state::statedb::StateDb;
 use gestalt_state::AgentState;
+use gestalt_ws::WsEvent;
+use gestalt_ws::WsServer;
 
 use crate::agent::AgentRunner;
 use crate::run::{AgentResult, RouterError, RunReport, RunSpec};
+use crate::overlap::OverlapDetector;
 use crate::timeline::{Event, EventLog};
 use crate::worktree::WorktreeManager;
+use gestalt_core::ports::outbound::vfs::VirtualFS;
 
 pub struct Router {
-    pub worktrees: Arc<WorktreeManager>,
+    pub vfs: Option<Arc<dyn VirtualFS>>,
     pub runner: Arc<dyn AgentRunner>,
     pub state_db: Arc<StateDb>,
     pub mem_state: MemState,
     pub log: Option<Arc<dyn EventLog>>,
     pub xavier: Option<XavierClient>,
+    /// Optional WebSocket server for broadcasting timeline events.
+    pub ws_server: Option<WsServer>,
+    /// Internal WorktreeManager for git worktree operations (legacy).
+    worktrees: Arc<WorktreeManager>,
 }
 
 impl Router {
@@ -29,26 +37,40 @@ impl Router {
     /// The EventLog is now optional — timeline events can be logged
     /// via the existing JsonlEventLog for backward compatibility, but
     /// all persistent state lives in StateDb.
+    ///
+    /// `ws_server` can be provided to broadcast timeline events to
+    /// WebSocket clients in real time.
     pub fn new(
-        worktrees: Arc<WorktreeManager>,
+        vfs: Option<Arc<dyn VirtualFS>>,
         runner: Arc<dyn AgentRunner>,
         state_db: Arc<StateDb>,
         mem_state: MemState,
         log: Option<Arc<dyn EventLog>>,
+        ws_server: Option<WsServer>,
     ) -> Self {
         Self {
-            worktrees,
+            vfs,
             runner,
             state_db,
             mem_state,
             log,
             xavier: None,
+            ws_server,
+            worktrees: Arc::new(WorktreeManager::new(
+                std::path::PathBuf::from("/tmp/gestalt"),
+            )),
         }
     }
 
     /// Attach an optional Xavier client for memory/context integration.
     pub fn with_xavier(mut self, xavier: XavierClient) -> Self {
         self.xavier = Some(xavier);
+        self
+    }
+
+    /// Attach a WebSocket server for timeline event broadcasting.
+    pub fn with_ws_server(mut self, ws_server: WsServer) -> Self {
+        self.ws_server = Some(ws_server);
         self
     }
 
@@ -86,8 +108,19 @@ impl Router {
         }
     }
 
+    /// Broadcast a WsEvent through the optional WebSocket server.
+    fn broadcast_ws_event(&self, event: WsEvent) {
+        if let Some(ref ws) = self.ws_server {
+            let ws = ws.clone();
+            let event = event.clone();
+            tokio::spawn(async move {
+                ws.broadcast(&event).await;
+            });
+        }
+    }
+
     /// Main Router pipeline execution using StateDb + MemState.
-    pub async fn execute(&self, spec: RunSpec) -> Result<RunReport, RouterError> {
+    pub async fn execute(&self, mut spec: RunSpec) -> Result<RunReport, RouterError> {
         // 1. Validate spec
         if spec.agents.is_empty() {
             return Err(RouterError::InvalidSpec(
@@ -100,6 +133,7 @@ impl Router {
         // Generate Run ID
         let run_id = Uuid::new_v4();
         let run_id_str = run_id.to_string();
+        let _timer_start = std::time::Instant::now();
 
         // 2. Initialize StateDb with the run
         let spec_json = serde_json::to_string(&spec)
@@ -110,20 +144,33 @@ impl Router {
                 RouterError::InvalidSpec(format!("Failed to create run in StateDb: {}", e))
             })?;
 
-        // 3. PRE: Fetch relevant context from Xavier memory before running agents
-        if let Some(ref xavier) = self.xavier {
-            match xavier.search(&spec.task, 5, "hybrid").await {
-                Ok(resp) => {
-                    tracing::info!(
-                        "Xavier context fetched for task: {} results (run {})",
-                        resp.count,
-                        run_id
-                    );
-                }
-                Err(e) => {
-                    // Non-fatal; Xavier may not be available
-                    tracing::warn!("Xavier search failed (non-fatal): {}", e);
-                }
+        // 3. PRE: Fetch relevant context from Xavier memory and inject into agents
+        let xavier_context = if let Some(ref xavier) = self.xavier {
+            let ctx = xavier.search_context(&spec.task, 5).await;
+            if !ctx.is_empty() {
+                tracing::info!(
+                    "Xavier context fetched for task: {} results (run {})",
+                    ctx.len(),
+                    run_id
+                );
+                Some(ctx)
+            } else {
+                tracing::info!(
+                    "No Xavier context found for task (run {})",
+                    run_id
+                );
+                None
+            }
+        } else {
+            None
+        };
+
+        // Inject XAVIER_CONTEXT into each agent's environment
+        if let Some(ref ctx) = xavier_context {
+            let ctx_json = serde_json::to_string(ctx).unwrap_or_default();
+            for agent in &mut spec.agents {
+                let env = agent.env.get_or_insert_with(HashMap::new);
+                env.insert("XAVIER_CONTEXT".into(), ctx_json.clone());
             }
         }
 
@@ -132,8 +179,13 @@ impl Router {
         self.log_event(Event::RunStarted {
             run_id,
             sha_base: base_sha.clone(),
-            agents: agent_ids,
+            agents: agent_ids.clone(),
             task: spec.task.clone(),
+        });
+        self.broadcast_ws_event(WsEvent::RunStarted {
+            run_id: run_id.to_string(),
+            task: spec.task.clone(),
+            agents: agent_ids,
         });
 
         // 5. Create Worktrees (serial)
@@ -176,6 +228,7 @@ impl Router {
             let state_db = self.state_db.clone();
             let mem_state = self.mem_state.clone();
             let log_opt = self.log.clone();
+            let ws_server = self.ws_server.clone();
 
             join_set.spawn(async move {
                 // Set agent state to Running in MemState
@@ -193,6 +246,52 @@ impl Router {
                         from: AgentState::Pending,
                         to: AgentState::Running,
                     });
+                }
+
+                // Broadcast state change via WebSocket
+                if let Some(ref ws) = ws_server {
+                    ws.broadcast(&WsEvent::StateChanged {
+                        run_id: run_id_str_clone.clone(),
+                        agent_id: agent_id.clone(),
+                        state: "running".to_string(),
+                    })
+                    .await;
+                }
+
+                // Check for lock conflicts before running the agent
+                let conflicts = OverlapDetector::check_all_locks_for_agent(
+                    &mem_state,
+                    &agent_id,
+                );
+                for (path, holder_id) in &conflicts {
+                    let conflict_payload = serde_json::json!({
+                        "path": path,
+                        "agent_a": holder_id,
+                        "agent_b": agent_id,
+                        "message": format!(
+                            "Agent {agent_id} may conflict with agent {holder_id} on {path}"
+                        ),
+                    })
+                    .to_string();
+                    mem_state.push_event(
+                        &run_id_str_clone,
+                        Some(&agent_id),
+                        "conflict_detected",
+                        &conflict_payload,
+                    );
+                    // Broadcast via WebSocket if available
+                    if let Some(ref ws) = ws_server {
+                        ws.broadcast(&WsEvent::ConflictDetected {
+                            run_id: run_id_str_clone.clone(),
+                            agent_a: holder_id.clone(),
+                            agent_b: agent_id.clone(),
+                            path: path.clone(),
+                            message: format!(
+                                "Agent {agent_id} may conflict with agent {holder_id} on {path}"
+                            ),
+                        })
+                        .await;
+                    }
                 }
 
                 // Run Agent
@@ -247,8 +346,18 @@ impl Router {
                         run_id: run_id_clone,
                         agent_id: agent_id.clone(),
                         from: AgentState::Running,
-                        to: final_state,
+                        to: final_state.clone(),
                     });
+                }
+
+                // Broadcast final state change via WebSocket
+                if let Some(ref ws) = ws_server {
+                    ws.broadcast(&WsEvent::StateChanged {
+                        run_id: run_id_str_clone.clone(),
+                        agent_id: agent_id.clone(),
+                        state: format!("{:?}", final_state).to_lowercase(),
+                    })
+                    .await;
                 }
 
                 Ok::<AgentResult, RouterError>(run_result)
@@ -386,6 +495,10 @@ impl Router {
             run_id,
             summary: summary.clone(),
         });
+        self.broadcast_ws_event(WsEvent::RunFinished {
+            run_id: run_id.to_string(),
+            summary: summary.clone(),
+        });
 
         // Mark run as completed in StateDb
         self.state_db
@@ -394,43 +507,7 @@ impl Router {
                 RouterError::InvalidSpec(format!("Failed to complete run in StateDb: {}", e))
             })?;
 
-        // 11. POST: Store run results as memory in Xavier
-        if let Some(ref xavier) = self.xavier {
-            let results_json = serde_json::json!({
-                "run_id": run_id.to_string(),
-                "agents": agent_results.iter().map(|r| {
-                    serde_json::json!({
-                        "agent_id": r.agent_id,
-                        "state": format!("{:?}", r.state),
-                        "error": r.error,
-                        "changed_files": r.changed_files,
-                        "duration_ms": r.duration_ms,
-                    })
-                }).collect::<Vec<_>>(),
-                "merged_branches": merged_branches,
-                "conflicts": conflicts,
-                "success": true,
-            });
-
-            match xavier
-                .add(
-                    &summary,
-                    &format!("gestalt/run/{}", run_id),
-                    "run_result",
-                    results_json,
-                )
-                .await
-            {
-                Ok(_) => {
-                    tracing::info!("Xavier memory stored for run {}", run_id);
-                }
-                Err(e) => {
-                    // Non-fatal; Xavier may not be available
-                    tracing::warn!("Xavier add failed (non-fatal): {}", e);
-                }
-            }
-        }
-
+        // 11. POST: Archive run results as memory in Xavier
         let events_path = self
             .worktrees
             .base_dir
@@ -438,10 +515,46 @@ impl Router {
             .join("events.jsonl")
             .to_string_lossy()
             .to_string();
+        let duration_ms = _timer_start.elapsed().as_millis() as u64;
+        if let Some(ref xavier) = self.xavier {
+            let content = serde_json::to_string_pretty(&RunReport {
+                run_id,
+                task: spec.task.clone(),
+                agents: agent_results.clone(),
+                duration_ms,
+                merged_branches: merged_branches.clone(),
+                conflicts: conflicts.clone(),
+                events_path: events_path.clone(),
+                success: true,
+            }.to_json())
+                .unwrap_or_else(|_| "{}".to_string());
+            let metadata = serde_json::json!({
+                "run_id": run_id.to_string(),
+                "task": spec.task,
+                "agents": agent_results.len(),
+                "duration_ms": duration_ms,
+                "success": true,
+            });
+
+            match xavier.archive_run(&content, &run_id_str, metadata).await {
+                Ok(memory_id) => {
+                    tracing::info!(
+                        "Xavier memory stored for run {} (memory_id={})",
+                        run_id,
+                        memory_id
+                    );
+                }
+                Err(e) => {
+                    tracing::warn!("Xavier archive_run failed (non-fatal): {}", e);
+                }
+            }
+        }
 
         Ok(RunReport {
             run_id,
+            task: spec.task,
             agents: agent_results,
+            duration_ms,
             merged_branches,
             conflicts,
             events_path,

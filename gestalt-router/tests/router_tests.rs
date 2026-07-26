@@ -352,7 +352,9 @@ fn test_run_report_serialization() {
 
     let report = RunReport {
         run_id: Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap(),
+        task: "test task".into(),
         agents: vec![result],
+        duration_ms: 0,
         merged_branches: vec!["branch-a1".into()],
         conflicts: vec![conflict],
         events_path: "/tmp/run-events.jsonl".into(),

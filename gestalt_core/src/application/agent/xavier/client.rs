@@ -179,6 +179,46 @@ impl XavierClient {
     pub async fn is_available(&self) -> bool {
         self.health().await.is_ok()
     }
+
+    /// Search context — convenience wrapper around `search` that returns
+    /// a flat `Vec<String>` of the top-N snippet results.
+    ///
+    /// Uses hybrid search mode by default. Returns an empty vec on failure
+    /// (non-fatal; Xavier may be unavailable).
+    pub async fn search_context(&self, query: &str, limit: usize) -> Vec<String> {
+        match self.search(query, limit, "hybrid").await {
+            Ok(resp) => resp
+                .results
+                .into_iter()
+                .map(|r| {
+                    if r.snippet.is_empty() {
+                        r.content
+                    } else {
+                        r.snippet
+                    }
+                })
+                .collect(),
+            Err(e) => {
+                tracing::warn!("Xavier search_context failed (non-fatal): {e}");
+                Vec::new()
+            }
+        }
+    }
+
+    /// Archive a completed run result as a Xavier memory.
+    ///
+    /// Stores the serialized content at `gestalt/run/{run_id}` with
+    /// kind=`run_result`. Returns the assigned memory ID on success.
+    pub async fn archive_run(
+        &self,
+        content: &str,
+        run_id: &str,
+        metadata: serde_json::Value,
+    ) -> anyhow::Result<String> {
+        let path = format!("gestalt/run/{run_id}");
+        let resp = self.add(content, &path, "run_result", metadata).await?;
+        Ok(resp.id)
+    }
 }
 
 #[cfg(test)]

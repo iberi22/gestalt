@@ -94,6 +94,16 @@ impl StateDb {
         Ok(())
     }
 
+    /// Access the internal SQLite connection.
+    ///
+    /// This is crate-internal so that [`super::virtual_fs::StateDbVfs`]
+    /// can share the same database for the `file_versions` table.
+    pub(crate) fn conn(&self) -> Result<std::sync::MutexGuard<'_, rusqlite::Connection>, anyhow::Error> {
+        self.conn
+            .lock()
+            .map_err(|e| anyhow::anyhow!("DB lock poisoned: {e}"))
+    }
+
     // ── Runs ──────────────────────────────────────────────────────────
 
     /// Create a new execution run.

@@ -43,7 +43,7 @@ impl AgentRunner for SubprocessRunner {
         spec: &AgentSpec,
         worktree: &Path,
         task: &str,
-        _timeout: Duration,
+        timeout: Duration,
     ) -> Result<AgentResult, RouterError> {
         let start_time = Instant::now();
 

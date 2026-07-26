@@ -972,7 +972,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             };
 
             // 6. Create Router and execute
-            let router = Router::new(Arc::new(worktrees), Arc::new(runner), Arc::new(log));
+            let router = Router::new(
+                std::sync::Arc::new(worktrees),
+                std::sync::Arc::new(runner),
+                std::sync::Arc::new(log),
+            );
             println!("⚙️  Executing run...");
 
             match router.execute(spec).await {

@@ -1,0 +1,19 @@
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   E:\scripts-python\gestalt-rust\gestalt_ui\Cargo.toml
+workspace: E:\scripts-python\gestalt-rust\Cargo.toml
+    Checking gestalt_ui v0.1.0 (E:\scripts-python\gestalt-rust\gestalt_ui)
+warning: fields `rt` and `is_loading` are never read
+  --> gestalt_ui\src\app.rs:8:9
+   |
+ 7 | pub struct GestaltApp {
+   |            ---------- fields in this struct
+ 8 |     pub rt: Arc<Runtime>,
+   |         ^^
+...
+12 |     pub is_loading: bool,
+   |         ^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `gestalt_ui` (bin "gestalt_ui") generated 1 warning
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 2.31s

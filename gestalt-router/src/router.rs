@@ -59,13 +59,13 @@ impl Router {
         Ok(sha)
     }
 
-    /// Writes the RunManifest atomically to manifest.json.
-    pub fn write_manifest_atomically(
-        &self,
+    /// Writes the RunManifest atomically to manifest.json using a specified base directory.
+    pub fn write_manifest_atomically_dir(
+        base_dir: &std::path::Path,
         run_id: Uuid,
         manifest: &RunManifest,
     ) -> Result<PathBuf, RouterError> {
-        let manifest_dir = self.worktrees.base_dir.join(run_id.to_string());
+        let manifest_dir = base_dir.join(run_id.to_string());
         std::fs::create_dir_all(&manifest_dir).map_err(|e| {
             RouterError::GitError(format!("Failed to create manifest directory: {}", e))
         })?;
@@ -85,6 +85,15 @@ impl Router {
         })?;
 
         Ok(manifest_path)
+    }
+
+    /// Writes the RunManifest atomically to manifest.json.
+    pub fn write_manifest_atomically(
+        &self,
+        run_id: Uuid,
+        manifest: &RunManifest,
+    ) -> Result<PathBuf, RouterError> {
+        Self::write_manifest_atomically_dir(&self.worktrees.base_dir, run_id, manifest)
     }
 
     /// Main Router pipeline execution.
@@ -152,13 +161,6 @@ impl Router {
         let manifest_mutex = Arc::new(Mutex::new(manifest));
         let mut join_set = JoinSet::new();
 
-        // Share Router via Arc for spawned tasks
-        let router = Arc::new(Router {
-            worktrees: self.worktrees.clone(),
-            runner: self.runner.clone(),
-            log: self.log.clone(),
-        });
-
         for agent in spec.agents {
             let sem_clone = semaphore.clone();
             let manifest_lock = manifest_mutex.clone();
@@ -171,6 +173,10 @@ impl Router {
             let timeout = std::time::Duration::from_secs(spec.timeout);
             let router = router.clone();
 
+            let worktrees_clone = self.worktrees.clone();
+            let runner_clone = self.runner.clone();
+            let log_clone = self.log.clone();
+
             join_set.spawn(async move {
                 let _permit = sem_clone.acquire_owned().await.unwrap();
 
@@ -181,8 +187,8 @@ impl Router {
                         .agent_states
                         .insert(agent_id.clone(), AgentState::Running)
                         .unwrap_or(AgentState::Pending);
-                    router.write_manifest_atomically(run_id_clone, &m)?;
-                    let _ = router.log.log(Event::AgentStateChanged {
+                    Self::write_manifest_atomically_dir(&worktrees_clone.base_dir, run_id_clone, &m)?;
+                    let _ = log_clone.log(Event::AgentStateChanged {
                         run_id: run_id_clone,
                         agent_id: agent_id.clone(),
                         from: old_state,
@@ -191,8 +197,7 @@ impl Router {
                 }
 
                 // Run Agent
-                let mut run_result = router
-                    .runner
+                let mut run_result = runner_clone
                     .run(&agent_spec, &wt_path, &task_desc, timeout)
                     .await?;
                 // Run Checkpoint
@@ -227,8 +232,8 @@ impl Router {
                         .agent_states
                         .insert(agent_id.clone(), final_state)
                         .unwrap_or(AgentState::Running);
-                    router.write_manifest_atomically(run_id_clone, &m)?;
-                    let _ = router.log.log(Event::AgentStateChanged {
+                    Self::write_manifest_atomically_dir(&worktrees_clone.base_dir, run_id_clone, &m)?;
+                    let _ = log_clone.log(Event::AgentStateChanged {
                         run_id: run_id_clone,
                         agent_id: agent_id.clone(),
                         from: old_state,

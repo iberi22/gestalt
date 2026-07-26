@@ -70,8 +70,12 @@ fn test_find_overlaps_empty_branches() {
         ("agent-empty-b".to_string(), "branch-empty-b".to_string()),
     ];
 
-    let overlaps = gestalt_router::overlap::find_overlaps(&repo_path, &base_sha, &active_branches).unwrap();
-    assert!(overlaps.is_empty(), "expected no overlaps for empty branches");
+    let overlaps =
+        gestalt_router::overlap::find_overlaps(&repo_path, &base_sha, &active_branches).unwrap();
+    assert!(
+        overlaps.is_empty(),
+        "expected no overlaps for empty branches"
+    );
 }
 
 #[test]
@@ -90,7 +94,8 @@ fn test_find_overlaps_identical_branches() {
         ("agent-ident-b".to_string(), "branch-ident-b".to_string()),
     ];
 
-    let overlaps = gestalt_router::overlap::find_overlaps(&repo_path, &base_sha, &active_branches).unwrap();
+    let overlaps =
+        gestalt_router::overlap::find_overlaps(&repo_path, &base_sha, &active_branches).unwrap();
     assert_eq!(overlaps.len(), 1);
     assert_eq!(overlaps[0].files, vec![PathBuf::from("shared.txt")]);
 }
@@ -105,13 +110,17 @@ fn test_find_overlaps_50_plus_branches() {
     for i in 1..=55 {
         let branch_name = format!("branch-{}", i);
         let file_name = format!("file-{}.txt", i);
-        create_branch(&repo_path, &branch_name, &[( &file_name, "content" )]);
+        create_branch(&repo_path, &branch_name, &[(&file_name, "content")]);
         active_branches.push((format!("agent-{}", i), branch_name));
         run_git(&repo_path, &["checkout", "main"]);
     }
 
-    let overlaps = gestalt_router::overlap::find_overlaps(&repo_path, &base_sha, &active_branches).unwrap();
-    assert!(overlaps.is_empty(), "expected no overlaps as all files are disjoint");
+    let overlaps =
+        gestalt_router::overlap::find_overlaps(&repo_path, &base_sha, &active_branches).unwrap();
+    assert!(
+        overlaps.is_empty(),
+        "expected no overlaps as all files are disjoint"
+    );
 }
 
 #[test]

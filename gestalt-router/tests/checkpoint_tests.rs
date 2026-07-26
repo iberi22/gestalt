@@ -1,5 +1,5 @@
 use gestalt_router::checkpoint::{checkpoint, clean_path, is_symlink_escape};
-use gestalt_router::checkpoint::{CheckpointResult, SymlinkEscape, ExcludedFile};
+use gestalt_router::checkpoint::{CheckpointResult, ExcludedFile, SymlinkEscape};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use uuid::Uuid;
@@ -14,21 +14,37 @@ impl TempRepo {
         std::fs::create_dir_all(&path).unwrap();
 
         Command::new("git")
-            .arg("init").current_dir(&path).output().unwrap();
+            .arg("init")
+            .current_dir(&path)
+            .output()
+            .unwrap();
         Command::new("git")
             .args(["config", "user.name", "Gestalt Test"])
-            .current_dir(&path).output().unwrap();
+            .current_dir(&path)
+            .output()
+            .unwrap();
         Command::new("git")
             .args(["config", "user.email", "test@gestalt.local"])
-            .current_dir(&path).output().unwrap();
+            .current_dir(&path)
+            .output()
+            .unwrap();
 
         std::fs::write(path.join("initial.txt"), "initial content").unwrap();
         Command::new("git")
-            .args(["add", "initial.txt"]).current_dir(&path).output().unwrap();
+            .args(["add", "initial.txt"])
+            .current_dir(&path)
+            .output()
+            .unwrap();
         Command::new("git")
-            .args(["commit", "-m", "init"]).current_dir(&path).output().unwrap();
+            .args(["commit", "-m", "init"])
+            .current_dir(&path)
+            .output()
+            .unwrap();
         Command::new("git")
-            .args(["branch", "-m", "main"]).current_dir(&path).output().unwrap();
+            .args(["branch", "-m", "main"])
+            .current_dir(&path)
+            .output()
+            .unwrap();
 
         TempRepo { path }
     }
@@ -164,7 +180,11 @@ fn test_checkpoint_multiple_files() {
     let result = checkpoint(repo.path(), "two files").unwrap();
     assert!(result.success);
     assert!(result.commit_sha.is_some());
-    assert_eq!(result.files_committed.len(), 2, "Both files should be committed");
+    assert_eq!(
+        result.files_committed.len(),
+        2,
+        "Both files should be committed"
+    );
 }
 
 #[test]
@@ -172,7 +192,11 @@ fn test_checkpoint_binary_files() {
     let repo = TempRepo::new();
     let binary_file = repo.path().join("image.png");
     // Write some raw binary data
-    std::fs::write(&binary_file, vec![0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0, 1, 2, 3]).unwrap();
+    std::fs::write(
+        &binary_file,
+        vec![0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0, 1, 2, 3],
+    )
+    .unwrap();
 
     let result = checkpoint(repo.path(), "commit binary png").unwrap();
     assert!(result.success);
@@ -216,7 +240,6 @@ fn test_checkpoint_permission_errors() {
     match result {
         Ok(res) => {
             // If it succeeds, it might not have committed the unreadable file
-            println!("Checkpoint succeeded: {:?}", res);
         }
         Err(e) => {
             // If it fails with a GitError, that's also a valid and graceful handling of permission errors

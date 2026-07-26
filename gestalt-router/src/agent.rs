@@ -215,8 +215,12 @@ impl AgentRunner for SubprocessRunner {
         }
 
         // Read captured output and delete temporary files to avoid disk leaks
-        let stdout_content = tokio::fs::read_to_string(&stdout_path).await.unwrap_or_default();
-        let stderr_content = tokio::fs::read_to_string(&stderr_path).await.unwrap_or_default();
+        let stdout_content = tokio::fs::read_to_string(&stdout_path)
+            .await
+            .unwrap_or_default();
+        let stderr_content = tokio::fs::read_to_string(&stderr_path)
+            .await
+            .unwrap_or_default();
         let _ = tokio::fs::remove_file(&stdout_path).await;
         let _ = tokio::fs::remove_file(&stderr_path).await;
 
@@ -267,7 +271,10 @@ impl AgentRunner for SubprocessRunner {
         let error = if is_timeout {
             Some("Agent process timed out".to_string())
         } else if exit_code.map_or(false, |c| c != 0) {
-            Some(format!("Process exited with non-zero code: {:?}", exit_code))
+            Some(format!(
+                "Process exited with non-zero code: {:?}",
+                exit_code
+            ))
         } else {
             None
         };

@@ -1,13 +1,9 @@
-use crate::run::RunSpec;
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use uuid::Uuid;
+/// Re-export AgentState from gestalt-state.
+pub use gestalt_state::AgentState;
 
-pub use crate::run::AgentStatus as AgentState;
+/// Re-export schema types for convenience.
+pub use gestalt_state::schema::{AgentRecord, RunRecord};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RunManifest {
-    pub run_id: Uuid,
-    pub spec: RunSpec,
-    pub agent_states: HashMap<String, AgentState>,
-}
+pub use gestalt_state::memstate::MemState;
+/// Re-export StateDb and MemState for convenience.
+pub use gestalt_state::statedb::StateDb;

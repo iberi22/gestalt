@@ -5,6 +5,7 @@ members = [
     "synapse-agentic",
     "gestalt-router",
     "gestalt-merge",
+    "gestalt-state",
 ]
 resolver = "2"
 

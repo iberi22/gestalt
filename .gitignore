@@ -1,1 +1,28 @@
-*.xavier/
+# Rust
+target/
+Cargo.lock
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Environment
+.env
+.env.local
+*.env
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+*.jsonl
+debug/
+
+# Temp
+tmp/
+/tmp/

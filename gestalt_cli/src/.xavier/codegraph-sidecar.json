@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "decision": "skipped",
+  "decided_at": "2026-07-26T01:45:09Z",
+  "note": "non-interactive; set XAVIER_CODEGRAPH_INSTALL=yes to install"
+}

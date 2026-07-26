@@ -113,8 +113,11 @@ pub fn checkpoint(
     commit_message: &str,
 ) -> Result<CheckpointResult, RouterError> {
     // 1. Run git status --porcelain --ignored -uall to identify modified and untracked files.
-    let stdout = run_git_cmd(worktree_dir, &["status", "--porcelain", "--ignored", "-uall"])
-        .map_err(|e| RouterError::GitError(format!("Failed to check git status: {}", e)))?;
+    let stdout = run_git_cmd(
+        worktree_dir,
+        &["status", "--porcelain", "--ignored", "-uall"],
+    )
+    .map_err(|e| RouterError::GitError(format!("Failed to check git status: {}", e)))?;
 
     let mut excluded_files = Vec::new();
     let mut files_to_add = Vec::new();

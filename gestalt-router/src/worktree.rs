@@ -96,7 +96,11 @@ impl WorktreeManager {
     }
 
     /// Internal git executor with automatic retry for lock/concurrency conflicts.
-    fn run_git_command_locked(&self, repo_path: &Path, args: &[&str]) -> Result<String, RouterError> {
+    fn run_git_command_locked(
+        &self,
+        repo_path: &Path,
+        args: &[&str],
+    ) -> Result<String, RouterError> {
         Self::verify_git()?;
 
         let mut retries = 5;
@@ -107,7 +111,9 @@ impl WorktreeManager {
                 .current_dir(repo_path)
                 .args(args)
                 .output()
-                .map_err(|e| RouterError::GitError(format!("Failed to execute git command: {e}")))?;
+                .map_err(|e| {
+                    RouterError::GitError(format!("Failed to execute git command: {e}"))
+                })?;
 
             if output.status.success() {
                 return Ok(String::from_utf8_lossy(&output.stdout).into_owned());
@@ -186,7 +192,8 @@ impl WorktreeManager {
             .ok_or_else(|| RouterError::GitError("Invalid worktree path".to_string()))?;
 
         // Use --force to remove even with untracked/modified files or deleted path
-        let res = self.run_git_command_locked(repo_path, &["worktree", "remove", "--force", path_str]);
+        let res =
+            self.run_git_command_locked(repo_path, &["worktree", "remove", "--force", path_str]);
 
         match res {
             Ok(_) => {}
@@ -196,6 +203,7 @@ impl WorktreeManager {
                     || err_str.contains("is not a worktree")
                     || err_str.contains("not a working tree")
                     || err_str.contains("is not a working tree")
+                    || err_str.contains("no es un árbol de trabajo")
                 {
                     // Already removed, treat as success (idempotent)
                 } else {
@@ -217,7 +225,8 @@ impl WorktreeManager {
     }
 
     fn list_worktrees_locked(&self, repo_path: &Path) -> Result<Vec<WorktreeInfo>, RouterError> {
-        let output_str = self.run_git_command_locked(repo_path, &["worktree", "list", "--porcelain"])?;
+        let output_str =
+            self.run_git_command_locked(repo_path, &["worktree", "list", "--porcelain"])?;
 
         struct TempWorktreeInfo {
             path: PathBuf,
@@ -248,11 +257,12 @@ impl WorktreeManager {
                 if let Some(sha) = line.strip_prefix("HEAD ") {
                     wt.sha = Some(sha.to_string());
                 } else if let Some(branch_str) = line.strip_prefix("branch ") {
-                    let clean_branch = if let Some(stripped) = branch_str.strip_prefix("refs/heads/") {
-                        stripped.to_string()
-                    } else {
-                        branch_str.to_string()
-                    };
+                    let clean_branch =
+                        if let Some(stripped) = branch_str.strip_prefix("refs/heads/") {
+                            stripped.to_string()
+                        } else {
+                            branch_str.to_string()
+                        };
                     wt.branch = Some(clean_branch);
                 } else if line.starts_with("prunable") {
                     wt.is_prunable = true;

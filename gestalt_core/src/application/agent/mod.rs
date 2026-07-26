@@ -1,5 +1,6 @@
 pub mod gestalt_agent;
 pub mod tools;
+pub mod xavier;
 
 pub use gestalt_agent::{GestaltAgent, GestaltInput};
 

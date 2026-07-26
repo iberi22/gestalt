@@ -6,10 +6,12 @@
 //! Git operations use std::process::Command (NOT pub(crate) run_git_cmd).
 
 use gestalt_router::checkpoint::{checkpoint, clean_path, is_symlink_escape, CheckpointResult};
-use gestalt_router::integrate::{integrate_branches, AgentIntegrationSpec, IntegrateResult, MergeResult};
+use gestalt_router::integrate::{
+    integrate_branches, AgentIntegrationSpec, IntegrateResult, MergeResult,
+};
 use gestalt_router::overlap::{
-    detect_overlap, find_overlaps, get_modified_files, ConflictKind as OverlapConflictKind,
-    ConflictInfo as OverlapConflictInfo, MergeTestResult, OverlapInfo, OverlapResult,
+    detect_overlap, find_overlaps, get_modified_files, ConflictInfo as OverlapConflictInfo,
+    ConflictKind as OverlapConflictKind, MergeTestResult, OverlapInfo, OverlapResult,
 };
 use gestalt_router::run::{
     AgentResult, AgentSpec, AgentStatus, ConflictInfo, ConflictKind, RouterError, RouterErrorKind,
@@ -105,7 +107,10 @@ fn test_agent_spec_serialization_roundtrip() {
         &vec!["/tmp/work".to_string(), "/var/data".to_string()]
     );
     assert_eq!(deser.env.as_ref().unwrap().get("PATH").unwrap(), "/usr/bin");
-    assert_eq!(deser.env.as_ref().unwrap().get("HOME").unwrap(), "/home/user");
+    assert_eq!(
+        deser.env.as_ref().unwrap().get("HOME").unwrap(),
+        "/home/user"
+    );
 }
 
 #[test]
@@ -245,11 +250,21 @@ fn test_conflict_info_and_conflict_kind() {
 
     // All variants
     assert_eq!(format!("{:?}", ConflictKind::Overlap), "Overlap");
-    assert_eq!(format!("{:?}", ConflictKind::MergeConflict), "MergeConflict");
-    assert_eq!(format!("{:?}", ConflictKind::BinaryConflict), "BinaryConflict");
+    assert_eq!(
+        format!("{:?}", ConflictKind::MergeConflict),
+        "MergeConflict"
+    );
+    assert_eq!(
+        format!("{:?}", ConflictKind::BinaryConflict),
+        "BinaryConflict"
+    );
 
     // Serialization roundtrip
-    for kind in &[ConflictKind::Overlap, ConflictKind::MergeConflict, ConflictKind::BinaryConflict] {
+    for kind in &[
+        ConflictKind::Overlap,
+        ConflictKind::MergeConflict,
+        ConflictKind::BinaryConflict,
+    ] {
         let json = serde_json::to_string(kind).unwrap();
         let deser: ConflictKind = serde_json::from_str(&json).unwrap();
         assert_eq!(*kind, deser);
@@ -347,7 +362,10 @@ fn test_run_report_serialization() {
     let json = serde_json::to_string(&report).unwrap();
     let deser: RunReport = serde_json::from_str(&json).unwrap();
 
-    assert_eq!(deser.run_id.to_string(), "550e8400-e29b-41d4-a716-446655440000");
+    assert_eq!(
+        deser.run_id.to_string(),
+        "550e8400-e29b-41d4-a716-446655440000"
+    );
     assert_eq!(deser.agents.len(), 1);
     assert_eq!(deser.agents[0].agent_id, "a1");
     assert_eq!(deser.merged_branches, vec!["branch-a1"]);
@@ -378,13 +396,25 @@ fn test_is_symlink_escape_logic() {
 
     // Relative target within worktree
     assert!(!is_symlink_escape(root, Path::new("sub/link"), "file.txt"));
-    assert!(!is_symlink_escape(root, Path::new("sub/link"), "../other.txt"));
+    assert!(!is_symlink_escape(
+        root,
+        Path::new("sub/link"),
+        "../other.txt"
+    ));
 
     // Relative target escaping the worktree
-    assert!(is_symlink_escape(root, Path::new("sub/link"), "../../etc/passwd"));
+    assert!(is_symlink_escape(
+        root,
+        Path::new("sub/link"),
+        "../../etc/passwd"
+    ));
 
     // Absolute targets are always escapes
-    assert!(is_symlink_escape(root, Path::new("sub/link"), "/etc/passwd"));
+    assert!(is_symlink_escape(
+        root,
+        Path::new("sub/link"),
+        "/etc/passwd"
+    ));
     assert!(is_symlink_escape(root, Path::new("link"), "/bin/sh"));
 }
 
@@ -480,7 +510,11 @@ fn test_checkpoint_symlink_escape_detection() {
     assert!(!res.files_committed.contains(&"leak_link".to_string()));
 
     // Symlink escape should be reported
-    let escape_paths: Vec<&str> = res.symlink_escapes.iter().map(|e| e.path.as_str()).collect();
+    let escape_paths: Vec<&str> = res
+        .symlink_escapes
+        .iter()
+        .map(|e| e.path.as_str())
+        .collect();
     assert!(
         escape_paths.contains(&"leak_link"),
         "leak_link should be in symlink_escapes, got {:?}",
@@ -626,7 +660,10 @@ fn test_get_modified_files_returns_correct_files() {
 
     let files = get_modified_files(dir, &base_sha, "feature").unwrap();
     assert_eq!(files.len(), 2);
-    let names: Vec<String> = files.iter().map(|p| p.to_string_lossy().to_string()).collect();
+    let names: Vec<String> = files
+        .iter()
+        .map(|p| p.to_string_lossy().to_string())
+        .collect();
     assert!(names.contains(&"new_file.txt".to_string()));
     assert!(names.contains(&"another.rs".to_string()));
 }
@@ -641,7 +678,11 @@ fn test_get_modified_files_no_changes() {
     run_git(dir, &["commit", "--allow-empty", "-m", "no changes"]);
 
     let files = get_modified_files(dir, &base_sha, "empty-branch").unwrap();
-    assert!(files.is_empty(), "expected no modified files, got {:?}", files);
+    assert!(
+        files.is_empty(),
+        "expected no modified files, got {:?}",
+        files
+    );
 }
 
 // ===========================================================================
@@ -653,12 +694,10 @@ fn test_integrate_result_structure() {
     let result = IntegrateResult {
         merge_sha: "abc123def456".into(),
         merged_branches: vec!["branch-a".into(), "branch-b".into()],
-        conflicts: vec![
-            ConflictInfo {
-                agent_id: "agent-x".into(),
-                path: "src/main.rs".into(),
-            },
-        ],
+        conflicts: vec![ConflictInfo {
+            agent_id: "agent-x".into(),
+            path: "src/main.rs".into(),
+        }],
     };
 
     assert_eq!(result.merge_sha, "abc123def456");
@@ -761,7 +800,11 @@ fn test_integrate_branches_no_conflicts() {
     let result = integrate_branches(dir, &base_sha, "integration/main", &branches).unwrap();
     assert!(!result.merge_sha.is_empty(), "expected a merge SHA");
     assert_eq!(result.merged_branches.len(), 2);
-    assert!(result.conflicts.is_empty(), "expected no conflicts, got {:?}", result.conflicts);
+    assert!(
+        result.conflicts.is_empty(),
+        "expected no conflicts, got {:?}",
+        result.conflicts
+    );
 }
 
 // ===========================================================================
@@ -832,7 +875,10 @@ fn test_versioned_event_wrapper() {
         commit_hash: "abc123".into(),
     };
 
-    let versioned = VersionedEvent { v: 1, event: event.clone() };
+    let versioned = VersionedEvent {
+        v: 1,
+        event: event.clone(),
+    };
 
     let json = serde_json::to_string(&versioned).unwrap();
     let deser: VersionedEvent = serde_json::from_str(&json).unwrap();
@@ -893,23 +939,21 @@ fn test_event_log_list_runs() {
     let log1 = JsonlEventLog::new_with_dir(run_id1, tmp.path.clone()).unwrap();
     let log2 = JsonlEventLog::new_with_dir(run_id2, tmp.path.clone()).unwrap();
 
-    log1
-        .append(Event::RunStarted {
-            run_id: run_id1,
-            task: "first".into(),
-            agents: vec![],
-            sha_base: "a".into(),
-        })
-        .unwrap();
+    log1.append(Event::RunStarted {
+        run_id: run_id1,
+        task: "first".into(),
+        agents: vec![],
+        sha_base: "a".into(),
+    })
+    .unwrap();
 
-    log2
-        .append(Event::RunStarted {
-            run_id: run_id2,
-            task: "second".into(),
-            agents: vec![],
-            sha_base: "b".into(),
-        })
-        .unwrap();
+    log2.append(Event::RunStarted {
+        run_id: run_id2,
+        task: "second".into(),
+        agents: vec![],
+        sha_base: "b".into(),
+    })
+    .unwrap();
 
     let listed = log1.list_runs().unwrap();
     assert!(listed.contains(&run_id1));

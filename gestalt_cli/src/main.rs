@@ -24,11 +24,11 @@ use ulid::Ulid;
 use uuid::Uuid;
 
 // gestalt-router types
+use gestalt_core::application::agent::xavier::XavierClient;
 use gestalt_router::agent::SubprocessRunner;
 use gestalt_router::router::Router;
 use gestalt_router::run::{AgentSpec, RunSpec};
-use gestalt_router::run_state::AgentState;
-use gestalt_router::timeline::JsonlEventLog;
+use gestalt_router::run_state::{AgentState, MemState, StateDb};
 use gestalt_router::worktree::WorktreeManager;
 
 /// Simple task storage
@@ -251,6 +251,7 @@ fn save_tasks(db_path: &str, tasks: &HashMap<String, Task>) -> Result<(), String
 }
 
 fn build_http_client() -> Result<reqwest::blocking::Client, String> {
+    // Created inside spawn_blocking to avoid nesting tokio runtimes
     reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(20))
         .build()
@@ -398,10 +399,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let url = args.url.unwrap_or_else(|| config.mcp.server_url.clone());
-    let http_client = build_http_client().map_err(std::io::Error::other)?;
     let default_db = "tasks.json";
 
     info!("Gestalt CLI starting with URL: {}", url);
+
+    // Create blocking HTTP client inside spawn_blocking to avoid nested tokio runtime
+    let http_client = tokio::task::spawn_blocking(move || {
+        build_http_client()
+    }).await.map_err(std::io::Error::other)??;
 
     match args.command {
         Commands::Serve { host, port } => {
@@ -925,19 +930,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 error!("Failed to create run directory: {}", e);
                 e
             })?;
-            let worktrees = WorktreeManager::new(run_dir);
+            let worktrees = WorktreeManager::new(run_dir.clone());
 
             // 2. Create SubprocessRunner with the configured timeout
             let timeout_dur = std::time::Duration::from_secs(timeout);
             let runner = SubprocessRunner::new(timeout_dur);
-
-            // 3. Create JsonlEventLog for event timeline tracking
-            let run_id = Uuid::new_v4();
-            let log = JsonlEventLog::new(run_id).map_err(|e| {
-                let msg = format!("Failed to create event log: {}", e);
-                error!("{}", msg);
-                std::io::Error::other(msg)
-            })?;
 
             // 4. Build AgentSpecs from the CLI agent commands
             let agent_specs: Vec<AgentSpec> = agents
@@ -971,12 +968,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 integration_branch: None,
             };
 
-            // 6. Create Router and execute
+            // 6. Create Router with StateDb, MemState, XavierClient and execute
+            let xavier_client = XavierClient::from_env();
+
+            // Initialize state backends
+            let state_db_path = home::home_dir()
+                .unwrap_or_else(|| PathBuf::from("."))
+                .join(".gestalt")
+                .join("state.db");
+            let state_db =
+                Arc::new(StateDb::open(&state_db_path).expect("Failed to open state database"));
+            let mem_state = MemState::new();
+
             let router = Router::new(
                 std::sync::Arc::new(worktrees),
                 std::sync::Arc::new(runner),
-                std::sync::Arc::new(log),
-            );
+                state_db,
+                mem_state,
+                None, // EventLog is now integrated via StateDbEventLog
+            )
+            .with_xavier(xavier_client);
             println!("⚙️  Executing run...");
 
             match router.execute(spec).await {

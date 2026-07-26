@@ -16,14 +16,22 @@ fn get_runs_dir() -> PathBuf {
 
 fn get_archive_dir(run_id: &str) -> PathBuf {
     if let Some(gestalt_home) = std::env::var_os("GESTALT_HOME") {
-        PathBuf::from(gestalt_home).join("archive").join("runs").join(run_id)
+        PathBuf::from(gestalt_home)
+            .join("archive")
+            .join("runs")
+            .join(run_id)
     } else if let Some(home) = dirs::home_dir() {
-        home.join(".gestalt").join("archive").join("runs").join(run_id)
+        home.join(".gestalt")
+            .join("archive")
+            .join("runs")
+            .join(run_id)
     } else {
-        PathBuf::from(".gestalt").join("archive").join("runs").join(run_id)
+        PathBuf::from(".gestalt")
+            .join("archive")
+            .join("runs")
+            .join(run_id)
     }
 }
-
 
 #[derive(Debug, Error)]
 pub enum DoctorError {

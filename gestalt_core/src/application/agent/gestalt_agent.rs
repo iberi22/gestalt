@@ -134,7 +134,7 @@ impl GraphNode for GestaltNode {
             }
         } else {
             tracing::info!("Agent provided final answer.");
-            println!("🤖 {}", decision.action);
+            tracing::info!("🤖 {}", decision.action);
             state.set_value("final_answer", json!(decision.action));
             Ok(NodeResult::Halt)
         }

@@ -71,7 +71,10 @@ pub fn integrate_branches(
             conflicts: conflicted_binaries
                 .iter()
                 .map(|f| ConflictInfo {
-                    agent_id: binary_mods.get(f).and_then(|v| v.first().cloned()).unwrap_or_default(),
+                    agent_id: binary_mods
+                        .get(f)
+                        .and_then(|v| v.first().cloned())
+                        .unwrap_or_default(),
                     path: f.clone(),
                 })
                 .collect(),
@@ -79,61 +82,29 @@ pub fn integrate_branches(
     }
 
     // 2. Perform sequential merge using git merge-tree
-    let mut current_commit = base_sha.to_string();
+    let mut current_tree = base_sha.to_string();
     let mut conflicted_files = Vec::new();
 
     for (_agent_id, branch_or_sha) in branches {
-<<<<<<< HEAD
-        let args = ["merge-tree", "--write-tree", "--merge-base", base_sha, &current_tree, branch_or_sha];
+        let merge_base_arg = format!("--merge-base={}", base_sha);
+        let args = [
+            "merge-tree",
+            "--write-tree",
+            &merge_base_arg,
+            &current_tree,
+            branch_or_sha,
+        ];
         let result = checkpoint::run_git_cmd(repo_dir, &args);
 
         match result {
             Ok(stdout) => {
-                let merged_tree = stdout.trim().to_string();
-                // Create an intermediate commit so that we have a commit object for the next merge-tree
-                let intermediate_args = [
-                    "-c",
-                    "core.hooksPath=/dev/null",
-                    "commit-tree",
-                    &merged_tree,
-                    "-p",
-                    &current_commit,
-                    "-p",
-                    branch_or_sha,
-                    "-m",
-                    "gestalt: intermediate merge",
-                ];
-                match checkpoint::run_git_cmd(repo_dir, &intermediate_args) {
-                    Ok(sha) => {
-                        current_commit = sha.trim().to_string();
-                    }
-                    Err(e) => {
-                        conflicted_files.push(format!("commit-tree-failed: {}", e));
-                    }
-                }
+                current_tree = stdout.trim().to_string();
             }
             Err(e) => {
-                // There is a merge conflict. stdout contains the conflict info.
+                // There is a merge conflict. Parse conflict info from stderr.
                 let err_msg = e.to_string();
-=======
-        let merge_base_arg = format!("--merge-base={}", base_sha);
-        let args = ["merge-tree", "--write-tree", &merge_base_arg, &current_tree, branch_or_sha];
-        let output = std::process::Command::new("git")
-            .current_dir(repo_dir)
-            .args(&args)
-            .output()
-            .map_err(|e| RouterError::GitError(format!("Failed to execute git merge-tree: {}", e)))?;
-
-        if output.status.success() {
-            current_tree = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        } else {
-            let exit_code = output.status.code().unwrap_or(-1);
-            if exit_code == 1 {
-                // There is a merge conflict. stdout/stderr contains the conflict info.
-                let stdout_str = String::from_utf8_lossy(&output.stdout);
->>>>>>> pr-348
                 let mut files = Vec::new();
-                for line in stdout_str.lines() {
+                for line in err_msg.lines() {
                     if line.starts_with("CONFLICT") || line.contains("conflict") {
                         if let Some(idx) = line.find("in ") {
                             let p = &line[idx + 3..];
@@ -154,12 +125,6 @@ pub fn integrate_branches(
                     files.push(format!("conflict-in-branch-{}", branch_or_sha));
                 }
                 conflicted_files.extend(files);
-            } else {
-                let err_msg = String::from_utf8_lossy(&output.stderr).into_owned();
-                return Err(RouterError::GitError(format!(
-                    "git merge-tree failed with exit code {}: {}",
-                    exit_code, err_msg
-                )));
             }
         }
     }
@@ -182,16 +147,15 @@ pub fn integrate_branches(
     }
 
     // 3. Resolve the merged tree SHA from the final intermediate commit
-    // 3. Resolve the merged tree SHA from the final intermediate commit
     //    (commit-tree expects a tree SHA, not a commit SHA)
     let merged_tree_sha = if !branches.is_empty() {
-        let tree_rev = format!("{}:", current_commit);
+        let tree_rev = format!("{}:", current_tree);
         let tree_args = vec!["rev-parse", &tree_rev];
         match checkpoint::run_git_cmd(repo_dir, &tree_args) {
             Ok(tree) => tree.trim().to_string(),
             Err(_) => {
                 // Fall back: the last merge-tree output may already be a tree
-                current_commit.clone()
+                current_tree.clone()
             }
         }
     } else {

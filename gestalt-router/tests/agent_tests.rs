@@ -1,4 +1,4 @@
-use gestalt_router::agent::{SubprocessRunner, AgentOutcome, AgentRunner};
+use gestalt_router::agent::{AgentOutcome, AgentRunner, SubprocessRunner};
 use gestalt_router::run::{AgentResult, AgentSpec, RunSpec};
 use gestalt_router::run_state::AgentState;
 use gestalt_router::worktree::WorktreeManager;
@@ -196,7 +196,15 @@ fn test_agent_outcome_with_error() {
 #[test]
 fn test_all_agent_states() {
     use AgentState::*;
-    let states = [Pending, Running, Success, NoChanges, Timeout, Crashed, Quarantined];
+    let states = [
+        Pending,
+        Running,
+        Success,
+        NoChanges,
+        Timeout,
+        Crashed,
+        Quarantined,
+    ];
     assert_eq!(states.len(), 7);
     assert_ne!(Pending, Running);
     assert_ne!(Running, Success);
@@ -228,7 +236,10 @@ async fn test_subprocess_runner_success() {
         env: None,
     };
     let temp_dir = tempfile::tempdir().unwrap();
-    let result = runner.run(&spec, temp_dir.path(), "some task", Duration::from_secs(5)).await.unwrap();
+    let result = runner
+        .run(&spec, temp_dir.path(), "some task", Duration::from_secs(5))
+        .await
+        .unwrap();
     assert_eq!(result.state, AgentState::Success);
     assert!(result.output.is_some());
     assert!(result.output.unwrap().contains("hello world"));
@@ -246,7 +257,15 @@ async fn test_subprocess_runner_timeout() {
         env: None,
     };
     let temp_dir = tempfile::tempdir().unwrap();
-    let result = runner.run(&spec, temp_dir.path(), "some task", Duration::from_millis(200)).await.unwrap();
+    let result = runner
+        .run(
+            &spec,
+            temp_dir.path(),
+            "some task",
+            Duration::from_millis(200),
+        )
+        .await
+        .unwrap();
     assert_eq!(result.state, AgentState::Timeout);
     assert!(result.error.as_ref().unwrap().contains("timed out"));
 }
@@ -267,7 +286,10 @@ async fn test_subprocess_runner_env_sanitization() {
         env: Some(env),
     };
     let temp_dir = tempfile::tempdir().unwrap();
-    let result = runner.run(&spec, temp_dir.path(), "some task", Duration::from_secs(5)).await.unwrap();
+    let result = runner
+        .run(&spec, temp_dir.path(), "some task", Duration::from_secs(5))
+        .await
+        .unwrap();
     assert_eq!(result.state, AgentState::Success);
     let out = result.output.unwrap();
     assert!(out.contains("CUSTOM_VAR=CUSTOM_VALUE"));
@@ -312,10 +334,14 @@ async fn test_worktree_manager_idempotency() {
     let wt_path = wt_parent.path().join("wt_subdir");
 
     // 1. Create worktree first time
-    manager.create_worktree_at(repo_path, &base_sha, branch, &wt_path).unwrap();
+    manager
+        .create_worktree_at(repo_path, &base_sha, branch, &wt_path)
+        .unwrap();
 
     // 2. Create worktree second time (idempotency check)
-    manager.create_worktree_at(repo_path, &base_sha, branch, &wt_path).unwrap();
+    manager
+        .create_worktree_at(repo_path, &base_sha, branch, &wt_path)
+        .unwrap();
 
     let list = manager.list_worktrees(repo_path).unwrap();
     assert!(list.iter().any(|wt| wt.path == wt_path));

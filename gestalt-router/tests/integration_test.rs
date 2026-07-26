@@ -194,7 +194,7 @@ fn test_integrate_result_construction() {
         conflicts: vec![],
     };
     assert_eq!(result.merged_branches.len(), 2);
-    assert_eq!(result.merge_sha.len(), 9);
+    assert_eq!(result.merge_sha.len(), 8);
 }
 
 #[test]
@@ -346,7 +346,11 @@ fn test_integrate_branches_success_and_conflict() {
     ];
 
     let result = integrate_branches(&repo_path, &base_sha, "integration", &branches).unwrap();
-    assert!(!result.merge_sha.is_empty(), "Should produce a merge SHA, but got: {:?}", result);
+    assert!(
+        !result.merge_sha.is_empty(),
+        "Should produce a merge SHA, but got: {:?}",
+        result
+    );
     assert_eq!(result.merged_branches.len(), 2);
     assert!(result.conflicts.is_empty(), "Should have no conflicts");
 
@@ -396,7 +400,11 @@ fn test_integrate_branches_success_and_conflict() {
         .current_dir(&repo_path)
         .status()
         .unwrap();
-    std::fs::write(repo_path.join("binary.bin"), b"different\0binary\0content\0d").unwrap();
+    std::fs::write(
+        repo_path.join("binary.bin"),
+        b"different\0binary\0content\0d",
+    )
+    .unwrap();
     Command::new("git")
         .args(["add", "binary.bin"])
         .current_dir(&repo_path)
@@ -420,8 +428,24 @@ fn test_integrate_branches_success_and_conflict() {
         ("agent_d".to_string(), sha_d),
     ];
 
-    let result_conflict = integrate_branches(&repo_path, &base_sha, "integration_conflict", &binary_branches).unwrap();
-    assert!(result_conflict.merge_sha.is_empty(), "Should not produce a merge SHA on conflict");
-    assert_eq!(result_conflict.conflicts.len(), 1, "Should report one conflict");
-    assert_eq!(result_conflict.conflicts[0].path, "binary.bin", "Conflicted path should be binary.bin");
+    let result_conflict = integrate_branches(
+        &repo_path,
+        &base_sha,
+        "integration_conflict",
+        &binary_branches,
+    )
+    .unwrap();
+    assert!(
+        result_conflict.merge_sha.is_empty(),
+        "Should not produce a merge SHA on conflict"
+    );
+    assert_eq!(
+        result_conflict.conflicts.len(),
+        1,
+        "Should report one conflict"
+    );
+    assert_eq!(
+        result_conflict.conflicts[0].path, "binary.bin",
+        "Conflicted path should be binary.bin"
+    );
 }

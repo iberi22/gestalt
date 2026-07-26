@@ -1,35 +1,55 @@
 use std::collections::HashMap;
-use std::path::PathBuf;
 use std::process::Command;
 use std::sync::Arc;
-use tokio::sync::Mutex;
-use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
 use uuid::Uuid;
 
+use gestalt_core::application::agent::xavier::XavierClient;
+use gestalt_state::memstate::MemState;
+use gestalt_state::statedb::StateDb;
+use gestalt_state::AgentState;
+
 use crate::agent::AgentRunner;
 use crate::run::{AgentResult, RouterError, RunReport, RunSpec};
-use crate::run_state::{AgentState, RunManifest};
 use crate::timeline::{Event, EventLog};
 use crate::worktree::WorktreeManager;
 
 pub struct Router {
     pub worktrees: Arc<WorktreeManager>,
     pub runner: Arc<dyn AgentRunner>,
-    pub log: Arc<dyn EventLog>,
+    pub state_db: Arc<StateDb>,
+    pub mem_state: MemState,
+    pub log: Option<Arc<dyn EventLog>>,
+    pub xavier: Option<XavierClient>,
 }
 
 impl Router {
+    /// Create a new Router with StateDb and MemState instead of EventLog.
+    ///
+    /// The EventLog is now optional — timeline events can be logged
+    /// via the existing JsonlEventLog for backward compatibility, but
+    /// all persistent state lives in StateDb.
     pub fn new(
         worktrees: Arc<WorktreeManager>,
         runner: Arc<dyn AgentRunner>,
-        log: Arc<dyn EventLog>,
+        state_db: Arc<StateDb>,
+        mem_state: MemState,
+        log: Option<Arc<dyn EventLog>>,
     ) -> Self {
         Self {
             worktrees,
             runner,
+            state_db,
+            mem_state,
             log,
+            xavier: None,
         }
+    }
+
+    /// Attach an optional Xavier client for memory/context integration.
+    pub fn with_xavier(mut self, xavier: XavierClient) -> Self {
+        self.xavier = Some(xavier);
+        self
     }
 
     /// Resolves the base_ref to a git commit SHA.
@@ -59,44 +79,14 @@ impl Router {
         Ok(sha)
     }
 
-    /// Writes the RunManifest atomically to manifest.json using a specified base directory.
-    pub fn write_manifest_atomically_dir(
-        base_dir: &std::path::Path,
-        run_id: Uuid,
-        manifest: &RunManifest,
-    ) -> Result<PathBuf, RouterError> {
-        let manifest_dir = base_dir.join(run_id.to_string());
-        std::fs::create_dir_all(&manifest_dir).map_err(|e| {
-            RouterError::GitError(format!("Failed to create manifest directory: {}", e))
-        })?;
-
-        let manifest_path = manifest_dir.join("manifest.json");
-        let temp_path = manifest_dir.join("manifest.json.tmp");
-
-        let serialized = serde_json::to_string_pretty(manifest).map_err(|e| {
-            RouterError::InvalidSpec(format!("Failed to serialize manifest: {}", e))
-        })?;
-
-        std::fs::write(&temp_path, serialized)
-            .map_err(|e| RouterError::GitError(format!("Failed to write temp manifest: {}", e)))?;
-
-        std::fs::rename(&temp_path, &manifest_path).map_err(|e| {
-            RouterError::GitError(format!("Failed to rename manifest file atomically: {}", e))
-        })?;
-
-        Ok(manifest_path)
+    /// Log a timeline event if an EventLog is attached.
+    fn log_event(&self, event: Event) {
+        if let Some(ref log) = self.log {
+            let _ = log.log(event);
+        }
     }
 
-    /// Writes the RunManifest atomically to manifest.json.
-    pub fn write_manifest_atomically(
-        &self,
-        run_id: Uuid,
-        manifest: &RunManifest,
-    ) -> Result<PathBuf, RouterError> {
-        Self::write_manifest_atomically_dir(&self.worktrees.base_dir, run_id, manifest)
-    }
-
-    /// Main Router pipeline execution.
+    /// Main Router pipeline execution using StateDb + MemState.
     pub async fn execute(&self, spec: RunSpec) -> Result<RunReport, RouterError> {
         // 1. Validate spec
         if spec.agents.is_empty() {
@@ -109,31 +99,44 @@ impl Router {
 
         // Generate Run ID
         let run_id = Uuid::new_v4();
+        let run_id_str = run_id.to_string();
 
-        // 2. Write Manifest file BEFORE creating any resources
-        let mut agent_states = HashMap::new();
-        for agent in &spec.agents {
-            agent_states.insert(agent.id.clone(), AgentState::Pending);
+        // 2. Initialize StateDb with the run
+        let spec_json = serde_json::to_string(&spec)
+            .map_err(|e| RouterError::InvalidSpec(format!("Failed to serialize spec: {}", e)))?;
+        self.state_db
+            .create_run(&run_id_str, &spec_json)
+            .map_err(|e| {
+                RouterError::InvalidSpec(format!("Failed to create run in StateDb: {}", e))
+            })?;
+
+        // 3. PRE: Fetch relevant context from Xavier memory before running agents
+        if let Some(ref xavier) = self.xavier {
+            match xavier.search(&spec.task, 5, "hybrid").await {
+                Ok(resp) => {
+                    tracing::info!(
+                        "Xavier context fetched for task: {} results (run {})",
+                        resp.count,
+                        run_id
+                    );
+                }
+                Err(e) => {
+                    // Non-fatal; Xavier may not be available
+                    tracing::warn!("Xavier search failed (non-fatal): {}", e);
+                }
+            }
         }
 
-        let manifest = RunManifest {
-            run_id,
-            spec: spec.clone(),
-            agent_states,
-        };
-
-        self.write_manifest_atomically(run_id, &manifest)?;
-
-        // 3. Fire RunStarted Event
+        // 4. Fire RunStarted event
         let agent_ids: Vec<String> = spec.agents.iter().map(|a| a.id.clone()).collect();
-        let _ = self.log.log(Event::RunStarted {
+        self.log_event(Event::RunStarted {
             run_id,
             sha_base: base_sha.clone(),
             agents: agent_ids,
             task: spec.task.clone(),
         });
 
-        // 4. Create Worktrees (serializado)
+        // 5. Create Worktrees (serial)
         let mut created_wts = Vec::new();
         let mut wt_paths = HashMap::new();
 
@@ -156,41 +159,38 @@ impl Router {
             }
         }
 
-        // 5. Spawn agents in parallel using JoinSet and Semaphore
-        let semaphore = Arc::new(Semaphore::new(spec.max_parallel));
-        let manifest_mutex = Arc::new(Mutex::new(manifest));
-        let mut join_set = JoinSet::new();
+        // 6. Spawn agents in parallel using JoinSet
+        //    No Semaphore — file-level concurrency uses MemState::try_lock
+        let mut join_set: JoinSet<Result<AgentResult, RouterError>> = JoinSet::new();
 
         for agent in spec.agents {
-            let sem_clone = semaphore.clone();
-            let manifest_lock = manifest_mutex.clone();
             let agent_id = agent.id.clone();
             let agent_spec = agent.clone();
             let task_desc = spec.task.clone();
-            let _base_sha_clone = base_sha.clone();
             let run_id_clone = run_id;
+            let run_id_str_clone = run_id_str.clone();
             let wt_path = wt_paths.get(&agent_id).cloned().unwrap();
             let timeout = std::time::Duration::from_secs(spec.timeout);
 
-            let worktrees_clone = self.worktrees.clone();
             let runner_clone = self.runner.clone();
-            let log_clone = self.log.clone();
+            let state_db = self.state_db.clone();
+            let mem_state = self.mem_state.clone();
+            let log_opt = self.log.clone();
 
             join_set.spawn(async move {
-                let _permit = sem_clone.acquire_owned().await.unwrap();
+                // Set agent state to Running in MemState
+                mem_state.set_agent_state(
+                    &run_id_str_clone,
+                    &agent_id,
+                    &AgentState::Running.to_string(),
+                );
 
-                // Transition state to Running
-                {
-                    let mut m = manifest_lock.lock().await;
-                    let old_state = m
-                        .agent_states
-                        .insert(agent_id.clone(), AgentState::Running)
-                        .unwrap_or(AgentState::Pending);
-                    Self::write_manifest_atomically_dir(&worktrees_clone.base_dir, run_id_clone, &m)?;
-                    let _ = log_clone.log(Event::AgentStateChanged {
+                // Log state change
+                if let Some(ref log) = log_opt {
+                    let _ = log.log(Event::AgentStateChanged {
                         run_id: run_id_clone,
                         agent_id: agent_id.clone(),
-                        from: old_state,
+                        from: AgentState::Pending,
                         to: AgentState::Running,
                     });
                 }
@@ -199,6 +199,7 @@ impl Router {
                 let mut run_result = runner_clone
                     .run(&agent_spec, &wt_path, &task_desc, timeout)
                     .await?;
+
                 // Run Checkpoint
                 let checkpoint_res = crate::checkpoint::run_checkpoint(&wt_path, &agent_id);
 
@@ -222,20 +223,30 @@ impl Router {
                     other => other,
                 };
 
-                run_result.state = final_state;
+                run_result.state = final_state.clone();
 
-                // Update final state in manifest
-                {
-                    let mut m = manifest_lock.lock().await;
-                    let old_state = m
-                        .agent_states
-                        .insert(agent_id.clone(), final_state)
-                        .unwrap_or(AgentState::Running);
-                    Self::write_manifest_atomically_dir(&worktrees_clone.base_dir, run_id_clone, &m)?;
-                    let _ = log_clone.log(Event::AgentStateChanged {
+                // Update final state in MemState
+                mem_state.set_agent_state(&run_id_str_clone, &agent_id, &final_state.to_string());
+
+                // Persist agent result to StateDb using its upsert API
+                let changed_files_json = serde_json::to_string(&run_result.changed_files)
+                    .unwrap_or_else(|_| "[]".to_string());
+                let _ = state_db.upsert_agent(
+                    &run_id_str_clone,
+                    &agent_id,
+                    &final_state.to_string(),
+                    run_result.output.as_deref(),
+                    run_result.error.as_deref(),
+                    run_result.duration_ms as i64,
+                    &changed_files_json,
+                );
+
+                // Log final state change
+                if let Some(ref log) = log_opt {
+                    let _ = log.log(Event::AgentStateChanged {
                         run_id: run_id_clone,
                         agent_id: agent_id.clone(),
-                        from: old_state,
+                        from: AgentState::Running,
                         to: final_state,
                     });
                 }
@@ -271,7 +282,7 @@ impl Router {
             }
         }
 
-        // 6. Overlap detection
+        // 7. Overlap detection
         let active_branches: Vec<(String, String)> = agent_results
             .iter()
             .filter(|r| r.state == AgentState::Success || r.state == AgentState::Crashed)
@@ -283,9 +294,10 @@ impl Router {
             })
             .collect();
 
-        let overlaps = crate::overlap::find_overlaps(std::path::Path::new("."), &base_sha, &active_branches)?;
+        let overlaps =
+            crate::overlap::find_overlaps(std::path::Path::new("."), &base_sha, &active_branches)?;
         for overlap in &overlaps {
-            let _ = self.log.log(Event::OverlapDetected {
+            self.log_event(Event::OverlapDetected {
                 run_id,
                 agent_a: overlap.agent_a.clone(),
                 agent_b: overlap.agent_b.clone(),
@@ -297,7 +309,7 @@ impl Router {
             });
         }
 
-        // 7. Sequential branch integration
+        // 8. Sequential branch integration
         let branches_to_merge: Vec<(String, String)> = agent_results
             .iter()
             .filter(|r| r.state == AgentState::Success)
@@ -351,26 +363,73 @@ impl Router {
 
         // Log Merge Conflicts
         for conflict in &conflicts {
-            let _ = self.log.log(Event::MergeConflict {
+            self.log_event(Event::MergeConflict {
                 run_id,
                 agent: conflict.agent_id.clone(),
                 path: conflict.path.clone(),
             });
         }
 
-        // 8. Cleanup agent worktrees
+        // 9. Cleanup agent worktrees
         for wt in &created_wts {
             let _ = self.worktrees.cleanup_worktree(wt);
         }
 
-        // 9. Fire RunFinished Event
+        // 10. Fire RunFinished Event and complete StateDb run
         let summary = format!(
             "Completed run with {} agents. Merged: {}. Conflicts: {}.",
             agent_results.len(),
             merged_branches.len(),
             conflicts.len()
         );
-        let _ = self.log.log(Event::RunFinished { run_id, summary });
+        self.log_event(Event::RunFinished {
+            run_id,
+            summary: summary.clone(),
+        });
+
+        // Mark run as completed in StateDb
+        self.state_db
+            .complete_run(&run_id_str, "completed")
+            .map_err(|e| {
+                RouterError::InvalidSpec(format!("Failed to complete run in StateDb: {}", e))
+            })?;
+
+        // 11. POST: Store run results as memory in Xavier
+        if let Some(ref xavier) = self.xavier {
+            let results_json = serde_json::json!({
+                "run_id": run_id.to_string(),
+                "agents": agent_results.iter().map(|r| {
+                    serde_json::json!({
+                        "agent_id": r.agent_id,
+                        "state": format!("{:?}", r.state),
+                        "error": r.error,
+                        "changed_files": r.changed_files,
+                        "duration_ms": r.duration_ms,
+                    })
+                }).collect::<Vec<_>>(),
+                "merged_branches": merged_branches,
+                "conflicts": conflicts,
+                "success": true,
+            });
+
+            match xavier
+                .add(
+                    &summary,
+                    &format!("gestalt/run/{}", run_id),
+                    "run_result",
+                    results_json,
+                )
+                .await
+            {
+                Ok(_) => {
+                    tracing::info!("Xavier memory stored for run {}", run_id);
+                }
+                Err(e) => {
+                    // Non-fatal; Xavier may not be available
+                    tracing::warn!("Xavier add failed (non-fatal): {}", e);
+                }
+            }
+        }
 
         let events_path = self
             .worktrees

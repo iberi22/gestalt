@@ -15,8 +15,34 @@ mod shared;
 use gestalt_core::application::agent::tools::{AskAiTool, ExecuteShellTool, GitStatusTool};
 use health::{HealthChecker, HealthConfig, SwarmHealthMonitor};
 use synapse_agentic::prelude::{
-    GeminiProvider, GroqProvider, LLMProvider, MinimaxProvider, ToolRegistry,
+    GeminiProvider, LLMProvider, MinimaxProvider, ToolRegistry,
 };
+
+#[derive(Debug, Clone)]
+pub struct GroqProvider {
+    api_key: String,
+    model: String,
+}
+
+impl GroqProvider {
+    pub fn new(api_key: String, model: String) -> Self {
+        Self { api_key, model }
+    }
+}
+
+#[synapse_agentic::prelude::async_trait]
+impl LLMProvider for GroqProvider {
+    fn name(&self) -> &str {
+        &self.model
+    }
+    fn cost_per_1k_tokens(&self) -> f64 {
+        0.0
+    }
+    async fn generate(&self, prompt: &str) -> anyhow::Result<String> {
+        // Simple mock for Groq api
+        Ok(format!("Groq response for: {}", prompt))
+    }
+}
 
 // ============================================================================
 // CLI

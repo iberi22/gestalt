@@ -32,7 +32,7 @@ anyhow = "1.0.100"
 tracing = "0.1.44"
 
 # Git
-git2 = "0.20.4"
+git2 = "0.21.0"
 
 # OAuth2 helpers
 dirs = "5.0.1"

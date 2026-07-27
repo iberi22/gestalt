@@ -7,93 +7,166 @@
 //!
 //! ```rust,ignore
 //! let vfs: Arc<dyn VirtualFS> = Arc::new(InMemoryVfs::new());
+//! let mem_state = MemState::new();
 //! let wrapper = AgentWrapper::new(
-//!     "agy".into(),
-//!     vec!["--file", "src/main.rs", "fix typo"],
 //!     vfs,
 //!     "agent-1".into(),
 //!     "run-abc".into(),
-//!     vec!["src/main.rs".into()],
-//! );
-//! let changed = wrapper.execute().await?;
-//! println!("Changed files: {:?}", changed);
+//!     "agy --file src/main.rs fix typo".into(),
+//! )
+//! .with_mem_state(mem_state);
+//! let edits = wrapper.execute().await?;
+//! println!("Edits: {:?}", edits);
 //! ```
+//!
+//! # Warnings
+//!
+//! Dead-code items in this module are `pub` API surfaces that are
+//! consumed from the integration site (`main.rs` calling `execute()`)
+//! rather than from within the module itself. Allow `dead_code` to
+//! avoid spurious warnings during incremental development.
 
-use gestalt_core::ports::outbound::vfs::{BlockEdit, FileVersion, VfsError, VirtualFS};
+#![allow(dead_code)]
+
+use gestalt_core::ports::outbound::vfs::{
+    BlockEdit as VfsBlockEdit, FileVersion, VfsError, VirtualFS,
+};
+use gestalt_router::run_state::MemState;
+use serde::Serialize;
 use std::collections::HashMap;
 use std::process::Command;
 use std::sync::Arc;
 use std::sync::Mutex;
 use tracing::{error, info, warn};
 
-/// Wraps an agent CLI command, capturing pre/post state of tracked files
-/// and converting diffs to block-level edits on a [`VirtualFS`].
+/// A structured file edit produced by parsing agent CLI output.
+///
+/// Each variant represents a single atomic operation at a specific line
+/// number in a file. These are created by parsing unified diff output
+/// emitted by agent CLI tools.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub enum BlockEdit {
+    /// Insert `content` before the given `line`.
+    Insert {
+        path: String,
+        line: usize,
+        content: String,
+    },
+    /// Delete the line at the given position.
+    Delete {
+        path: String,
+        line: usize,
+    },
+    /// Replace `old` with `new` at the given line.
+    Replace {
+        path: String,
+        line: usize,
+        old: String,
+        new: String,
+    },
+}
+
+impl BlockEdit {
+    /// Return the file path this edit targets.
+    pub fn path(&self) -> &str {
+        match self {
+            BlockEdit::Insert { path, .. }
+            | BlockEdit::Delete { path, .. }
+            | BlockEdit::Replace { path, .. } => path.as_str(),
+        }
+    }
+}
+
+/// Wraps an agent CLI command, capturing its output and parsing diffs
+/// to block-level edits on a [`VirtualFS`].
+///
+/// The execution flow:
+/// 1. Execute the agent CLI command, capturing stdout + stderr.
+/// 2. Parse unified-diff output from the captured output.
+/// 3. Convert parsed diffs to [`BlockEdit`] enum variants.
+/// 4. Store each edit in MemState timeline events (if configured).
+/// 5. Apply each edit to the VFS (converting to the VFS BlockEdit format).
+/// 6. Return the list of edits.
 pub struct AgentWrapper {
-    /// Agent binary to execute (e.g. "agy", "cursor-agent", "kimi").
+    /// Full command string (program + arguments).
     pub command: String,
-    /// Arguments passed to the agent command.
-    pub args: Vec<String>,
-    /// VirtualFS instance that receives [`BlockEdit`] operations.
+    /// VirtualFS instance that receives block-level edit operations.
     pub vfs: Arc<dyn VirtualFS>,
     /// Identifier for the agent instance.
     pub agent_id: String,
     /// Identifier for this execution run.
     pub run_id: String,
-    /// File paths to monitor for changes.
-    pub tracked_paths: Vec<String>,
+    /// Optional MemState for timeline event broadcasting.
+    pub mem_state: Option<MemState>,
 }
 
 impl AgentWrapper {
     /// Create a new [`AgentWrapper`].
+    ///
+    /// Call [`with_mem_state`](Self::with_mem_state) to attach a
+    /// [`MemState`] for live timeline events.
     pub fn new(
-        command: String,
-        args: Vec<String>,
         vfs: Arc<dyn VirtualFS>,
         agent_id: String,
         run_id: String,
-        tracked_paths: Vec<String>,
+        command: String,
     ) -> Self {
         Self {
             command,
-            args,
             vfs,
             agent_id,
             run_id,
-            tracked_paths,
+            mem_state: None,
         }
     }
 
-    /// Run the agent and capture diffs, sending block edits to [`VirtualFS`].
+    /// Attach a [`MemState`] instance for broadcasting timeline events.
+    pub fn with_mem_state(mut self, mem_state: MemState) -> Self {
+        self.mem_state = Some(mem_state);
+        self
+    }
+
+    /// Push a timeline event to MemState if configured.
+    fn push_event(&self, event_type: &str, payload: &str) {
+        if let Some(ref mem) = self.mem_state {
+            mem.push_event(&self.run_id, Some(&self.agent_id), event_type, payload);
+        }
+    }
+
+    /// Run the agent and capture diffs, returning structured [`BlockEdit`] events.
     ///
-    /// The execution flow:
-    /// 1. Snapshot pre-state of all tracked paths via [`VirtualFS::read_file`].
-    /// 2. Execute the agent CLI command.
-    /// 3. Snapshot post-state of all tracked paths.
-    /// 4. Compute a line-level diff for each changed file.
-    /// 5. Send each hunk as a [`BlockEdit`] via [`VirtualFS::write_block`].
-    /// 6. Return the list of changed file paths.
-    pub async fn execute(&self) -> Result<Vec<String>, String> {
+    /// 1. Captures stdout + stderr from the agent subprocess.
+    /// 2. Parses unified-diff hunks (standard `diff -u` format) from output.
+    /// 3. Creates [`BlockEdit`] enum variants for each hunk.
+    /// 4. Broadcasts each edit as a `block_edit` timeline event on MemState.
+    /// 5. Applies each edit to the underlying [`VirtualFS`].
+    /// 6. Returns the list of edits (may be empty if nothing changed).
+    pub async fn execute(&self) -> Result<Vec<BlockEdit>, String> {
         let start = std::time::Instant::now();
         info!(
             agent_id = %self.agent_id,
             run_id = %self.run_id,
             command = %self.command,
-            args = ?self.args,
-            tracked = %self.tracked_paths.len(),
             "AgentWrapper executing",
         );
 
-        // 1. Snapshot pre-state of tracked_paths
-        let pre_snapshots = self.snapshot_all().await;
+        // 1. Run agent command, capturing stdout + stderr
+        let (program, args) = split_command(&self.command);
+        if program.is_empty() {
+            return Err("Empty command".to_string());
+        }
 
-        // 2. Run agent command
-        let status = Command::new(&self.command)
-            .args(&self.args)
-            .status()
+        let output = Command::new(&program)
+            .args(&args)
+            .output()
             .map_err(|e| format!("Failed to run agent command '{}': {}", self.command, e))?;
 
-        if !status.success() {
-            let exit_desc = status
+        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+
+        if !output.status.success() {
+            let exit_desc = output
+                .status
                 .code()
                 .map(|c| c.to_string())
                 .unwrap_or_else(|| "signal".to_string());
@@ -104,178 +177,309 @@ impl AgentWrapper {
             );
         }
 
-        // 3. Snapshot post-state
-        let post_snapshots = self.snapshot_all().await;
+        // 2. Parse unified diffs from combined output
+        let edits = parse_unified_diffs(&stdout, &stderr);
 
-        // 4-5. Compute diffs for each changed file and send BlockEdits
-        let mut changed_files = Vec::new();
+        // 3-4. Store each BlockEdit in MemState timeline + apply to VFS
+        for edit in &edits {
+            let payload = serde_json::to_string(edit)
+                .unwrap_or_else(|_| format!("{:?}", edit));
+            self.push_event("block_edit", &payload);
 
-        for path in &self.tracked_paths {
-            let old = pre_snapshots
-                .get(path)
-                .and_then(|v| v.as_deref())
-                .unwrap_or("");
-            let new = post_snapshots
-                .get(path)
-                .and_then(|v| v.as_deref())
-                .unwrap_or("");
-
-            if old == new {
-                continue;
+            // 5. Apply edit to VFS
+            if let Err(e) = self.apply_edit_to_vfs(edit).await {
+                error!(
+                    path = %edit.path(),
+                    error = %e,
+                    agent_id = %self.agent_id,
+                    "Failed to apply BlockEdit to VFS",
+                );
+                return Err(format!("Failed to apply BlockEdit for '{}': {}", edit.path(), e));
             }
-
-            // Compute block-level edits
-            let edits = self.compute_diff(old, new, path);
-            if edits.is_empty() {
-                continue;
-            }
-
-            // Send each BlockEdit to VirtualFS
-            for edit in &edits {
-                match self.vfs.write_block(path, edit.clone()).await {
-                    Ok(hash) => {
-                        info!(
-                            path = %path,
-                            hash = %hash,
-                            agent_id = %self.agent_id,
-                            "Block edit applied",
-                        );
-                    }
-                    Err(e) => {
-                        error!(
-                            path = %path,
-                            error = %e,
-                            agent_id = %self.agent_id,
-                            "Failed to apply block edit",
-                        );
-                        return Err(format!("Failed to write block for '{}': {}", path, e));
-                    }
-                }
-            }
-
-            changed_files.push(path.clone());
         }
 
         let elapsed = start.elapsed();
         info!(
-            changed = %changed_files.len(),
+            edits = %edits.len(),
             elapsed_ms = %elapsed.as_millis(),
             "AgentWrapper completed",
         );
 
-        Ok(changed_files)
+        Ok(edits)
     }
 
-    /// Capture current state of all tracked paths from [`VirtualFS`].
-    async fn snapshot_all(&self) -> HashMap<String, Option<String>> {
-        let mut snapshots = HashMap::new();
-        for path in &self.tracked_paths {
-            snapshots.insert(path.clone(), self.snapshot(path).await);
+    /// Apply a single [`BlockEdit`] to the [`VirtualFS`].
+    async fn apply_edit_to_vfs(&self, edit: &BlockEdit) -> Result<String, String> {
+        match edit {
+            BlockEdit::Insert {
+                path,
+                line,
+                content,
+            } => {
+                let current = match self.vfs.read_file(path).await {
+                    Ok((c, _)) => c,
+                    Err(VfsError::NotFound(_)) => String::new(),
+                    Err(e) => return Err(e.to_string()),
+                };
+
+                let mut lines: Vec<&str> = current.lines().collect();
+                let line_idx = line.saturating_sub(1); // Convert to 0-based
+                let insert_idx = line_idx.min(lines.len());
+
+                let new_lines: Vec<&str> = content.lines().collect();
+                for (i, l) in new_lines.iter().enumerate() {
+                    lines.insert(insert_idx + i, l);
+                }
+                let new_content = lines.join("\n");
+
+                let block = VfsBlockEdit {
+                    agent_id: self.agent_id.clone(),
+                    run_id: self.run_id.clone(),
+                    old_string: current,
+                    new_string: new_content,
+                    context: String::new(),
+                };
+                self.vfs.write_block(path, block).await.map_err(|e| e.to_string())
+            }
+            BlockEdit::Delete { path, line } => {
+                let current = match self.vfs.read_file(path).await {
+                    Ok((c, _)) => c,
+                    Err(VfsError::NotFound(_)) => return Ok(String::new()),
+                    Err(e) => return Err(e.to_string()),
+                };
+
+                let mut lines: Vec<&str> = current.lines().collect();
+                let line_idx = line.saturating_sub(1);
+                if line_idx < lines.len() {
+                    lines.remove(line_idx);
+                }
+                let new_content = lines.join("\n");
+
+                let block = VfsBlockEdit {
+                    agent_id: self.agent_id.clone(),
+                    run_id: self.run_id.clone(),
+                    old_string: current,
+                    new_string: new_content,
+                    context: String::new(),
+                };
+                self.vfs.write_block(path, block).await.map_err(|e| e.to_string())
+            }
+            BlockEdit::Replace {
+                path,
+                line,
+                old,
+                new,
+            } => {
+                let current = match self.vfs.read_file(path).await {
+                    Ok((c, _)) => c,
+                    Err(VfsError::NotFound(_)) => {
+                        return Err(format!("File not found: {}", path))
+                    }
+                    Err(e) => return Err(e.to_string()),
+                };
+
+                let new_content = if current.contains(old.as_str()) {
+                    current.replacen(old, new, 1)
+                } else {
+                    // Fallback: replace the entire line at the given position
+                    let mut lines: Vec<&str> = current.lines().collect();
+                    let line_idx = line.saturating_sub(1);
+                    if line_idx < lines.len() {
+                        lines[line_idx] = new;
+                        lines.join("\n")
+                    } else {
+                        return Err(format!(
+                            "Cannot replace at line {}: file '{}' has {} lines",
+                            line,
+                            path,
+                            lines.len()
+                        ));
+                    }
+                };
+
+                let block = VfsBlockEdit {
+                    agent_id: self.agent_id.clone(),
+                    run_id: self.run_id.clone(),
+                    old_string: current,
+                    new_string: new_content,
+                    context: String::new(),
+                };
+                self.vfs.write_block(path, block).await.map_err(|e| e.to_string())
+            }
         }
-        snapshots
     }
+}
 
-    /// Capture current state of a single file from [`VirtualFS`].
-    ///
-    /// Returns `None` if the file does not exist (new file case).
-    async fn snapshot(&self, path: &str) -> Option<String> {
-        match self.vfs.read_file(path).await {
-            Ok((content, _hash)) => Some(content),
-            Err(VfsError::NotFound(_)) => None,
-            Err(e) => {
-                warn!(
-                    path = %path,
-                    error = %e,
-                    "Snapshot failed for path",
-                );
-                None
+// ── Unified-Diff Parser ────────────────────────────────────────────────
+
+/// Parse unified-diff output from an agent's stdout and stderr into
+/// structured [`BlockEdit`] variants.
+///
+/// Handles the standard unified diff format produced by `diff -u` and
+/// most version-control tools (`git diff`, `diff --unified`), including
+/// the optional `---` / `+++` path headers and `@@` hunk headers.
+fn parse_unified_diffs(stdout: &str, stderr: &str) -> Vec<BlockEdit> {
+    let combined = if stderr.is_empty() {
+        stdout.to_string()
+    } else if stdout.is_empty() {
+        stderr.to_string()
+    } else {
+        format!("{}\n{}", stdout, stderr)
+    };
+
+    let mut edits: Vec<BlockEdit> = Vec::new();
+    let mut current_file: Option<String> = None;
+    let mut pending_removals: Vec<(usize, String)> = Vec::new();
+    let mut in_hunk = false;
+    let mut old_line_num: usize = 0;
+    let mut new_line_num: usize = 0;
+
+    for line in combined.lines() {
+        if let Some(path) = line.strip_prefix("+++ ") {
+            // e.g. "+++ b/src/main.rs"
+            let path = path.trim().strip_prefix("b/").unwrap_or(path.trim());
+            current_file = Some(path.to_string());
+            in_hunk = false;
+            // Flush any leftovers from a previous file
+            flush_pending_removals(&mut pending_removals, &mut edits, &current_file);
+        } else if line.starts_with("--- ") {
+            // We use +++ for the path, skip ---
+            in_hunk = false;
+        } else if line.starts_with("@@") {
+            // Flush pending removals from the previous hunk before starting a new one
+            flush_pending_removals(&mut pending_removals, &mut edits, &current_file);
+
+            // Parse @@ -old_start,old_count +new_start,new_count @@
+            if let Some((old_start, _old_cnt, new_start, _new_cnt)) = parse_hunk_header(line) {
+                old_line_num = old_start;
+                new_line_num = new_start;
+                in_hunk = true;
+            } else {
+                in_hunk = false;
+            }
+        } else if in_hunk {
+            let file = match current_file.as_ref() {
+                Some(f) => f.clone(),
+                None => continue,
+            };
+
+            if line.starts_with('-') {
+                let content = line.strip_prefix('-').unwrap_or("").to_string();
+                pending_removals.push((old_line_num, content));
+                old_line_num += 1;
+            } else if line.starts_with('+') {
+                let content = line.strip_prefix('+').unwrap_or("").to_string();
+                if !pending_removals.is_empty() {
+                    // Pair last removal with this addition as a Replace
+                    let (removed_line, removed_content) = pending_removals.remove(0);
+                    let old_lines = std::iter::once(removed_content)
+                        .chain(pending_removals.drain(..).map(|(_, c)| c));
+                    edits.push(BlockEdit::Replace {
+                        path: file.clone(),
+                        line: removed_line,
+                        old: old_lines.collect::<Vec<_>>().join("\n"),
+                        new: content,
+                    });
+                } else {
+                    edits.push(BlockEdit::Insert {
+                        path: file.clone(),
+                        line: new_line_num,
+                        content,
+                    });
+                }
+                new_line_num += 1;
+            } else {
+                // Context line — flush pending removals as Deletes
+                flush_pending_removals(&mut pending_removals, &mut edits, &current_file);
+                old_line_num += 1;
+                new_line_num += 1;
             }
         }
     }
 
-    /// Compute block-level edits between old and new content.
-    ///
-    /// Uses a longest-common-prefix/suffix approach to find the changed
-    /// region in the middle. Each changed hunk produces a single
-    /// [`BlockEdit`] with enough surrounding context for the
-    /// [`VirtualFS::write_block`] implementation to locate the replacement.
-    ///
-    /// For new files (empty `old`) a single block with empty
-    /// `old_string` creates the full content. For deletions (empty `new`)
-    /// a single block removes the entire old content.
-    fn compute_diff(&self, old: &str, new: &str, _path: &str) -> Vec<BlockEdit> {
-        if old == new {
-            return vec![];
-        }
+    // Flush any remaining pending removals at end of output
+    flush_pending_removals(&mut pending_removals, &mut edits, &current_file);
 
-        let old_lines: Vec<&str> = old.lines().collect();
-        let new_lines: Vec<&str> = new.lines().collect();
+    edits
+}
 
-        // New file: create with full new content
-        if old.is_empty() {
-            return vec![BlockEdit {
-                agent_id: self.agent_id.clone(),
-                run_id: self.run_id.clone(),
-                old_string: String::new(),
-                new_string: new.to_string(),
-                context: String::new(),
-            }];
-        }
-
-        // File deleted
-        if new.is_empty() {
-            return vec![BlockEdit {
-                agent_id: self.agent_id.clone(),
-                run_id: self.run_id.clone(),
-                old_string: old.to_string(),
-                new_string: String::new(),
-                context: String::new(),
-            }];
-        }
-
-        // Find longest common prefix of lines
-        let max_prefix = old_lines
-            .iter()
-            .zip(new_lines.iter())
-            .take_while(|(a, b)| *a == *b)
-            .count();
-
-        // Find longest common suffix of lines
-        let max_suffix = old_lines
-            .iter()
-            .rev()
-            .zip(new_lines.iter().rev())
-            .take_while(|(a, b)| *a == *b)
-            .count();
-
-        // Clamp so prefix + suffix don't overlap
-        let old_suffix_start = old_lines.len().saturating_sub(max_suffix);
-        let new_suffix_start = new_lines.len().saturating_sub(max_suffix);
-        let max_prefix = max_prefix.min(old_suffix_start).min(new_suffix_start);
-        let old_suffix_start = old_lines.len().saturating_sub(max_suffix);
-        let new_suffix_start = new_lines.len().saturating_sub(max_suffix);
-
-        // Extract the changed middle section
-        let old_mid_start = max_prefix;
-        let old_mid_end = old_suffix_start.max(max_prefix);
-        let new_mid_start = max_prefix;
-        let new_mid_end = new_suffix_start.max(max_prefix);
-
-        let old_mid = old_lines[old_mid_start..old_mid_end].join("\n");
-        let new_mid = new_lines[new_mid_start..new_mid_end].join("\n");
-
-        // Build context: up to 3 lines before the changed block
-        let context_start = if max_prefix >= 3 { max_prefix - 3 } else { 0 };
-        let context = old_lines[context_start..max_prefix].join("\n");
-
-        vec![BlockEdit {
-            agent_id: self.agent_id.clone(),
-            run_id: self.run_id.clone(),
-            old_string: old_mid,
-            new_string: new_mid,
-            context,
-        }]
+/// Flush pending removals as [`BlockEdit::Delete`] variants.
+fn flush_pending_removals(
+    pending: &mut Vec<(usize, String)>,
+    edits: &mut Vec<BlockEdit>,
+    file: &Option<String>,
+) {
+    if pending.is_empty() {
+        return;
     }
+    let file = match file {
+        Some(f) => f.clone(),
+        None => {
+            pending.clear();
+            return;
+        }
+    };
+    for (line_num, _content) in pending.drain(..) {
+        edits.push(BlockEdit::Delete {
+            path: file.clone(),
+            line: line_num,
+        });
+    }
+}
+
+/// Parse a unified-diff hunk header of the form `@@ -old,count +new,count @@`.
+///
+/// Returns `(old_start, old_count, new_start, new_count)` or `None` if
+/// the header cannot be parsed.
+fn parse_hunk_header(header: &str) -> Option<(usize, usize, usize, usize)> {
+    // Find the ranges between @@ markers
+    let stripped = header
+        .strip_prefix("@@")?
+        .strip_suffix("@@")
+        .or_else(|| {
+            // Some diffs may not end with @@ cleanly; try finding last @@
+            let end = header.rfind("@@")?;
+            if end > 2 {
+                Some(&header[2..end])
+            } else {
+                None
+            }
+        })?
+        .trim();
+
+    // Split on space to get "-old,count +new,count"
+    let parts: Vec<&str> = stripped.split_whitespace().collect();
+    if parts.len() < 2 {
+        return None;
+    }
+
+    let old_part = parts[0].strip_prefix('-')?;
+    let new_part = parts[1].strip_prefix('+')?;
+
+    let parse_range = |s: &str| -> Option<(usize, usize)> {
+        if let Some((start, count)) = s.split_once(',') {
+            Some((start.parse().ok()?, count.parse().ok()?))
+        } else {
+            // If no count, it means 1 (hunk of length 1)
+            Some((s.parse().ok()?, 1))
+        }
+    };
+
+    let (old_start, old_count) = parse_range(old_part)?;
+    let (new_start, new_count) = parse_range(new_part)?;
+
+    Some((old_start, old_count, new_start, new_count))
+}
+
+/// Split a command string into (program, args) by whitespace.
+fn split_command(cmd: &str) -> (String, Vec<String>) {
+    let parts: Vec<&str> = cmd.split_whitespace().collect();
+    if parts.is_empty() {
+        return (String::new(), vec![]);
+    }
+    let program = parts[0].to_string();
+    let args: Vec<String> = parts[1..].iter().map(|s| s.to_string()).collect();
+    (program, args)
 }
 
 // ── In-memory VirtualFS for testing ────────────────────────────────────────
@@ -324,7 +528,7 @@ impl VirtualFS for InMemoryVfs {
             .ok_or_else(|| VfsError::NotFound(path.to_string()))
     }
 
-    async fn write_block(&self, path: &str, block: BlockEdit) -> Result<String, VfsError> {
+    async fn write_block(&self, path: &str, block: VfsBlockEdit) -> Result<String, VfsError> {
         let hash = {
             let mut files = self
                 .files
@@ -373,8 +577,6 @@ impl VirtualFS for InMemoryVfs {
     }
 
     async fn get_diff(&self, _path: &str, _from: &str, _to: &str) -> Result<String, VfsError> {
-        // Simple implementation: the in-memory VFS only keeps the latest version,
-        // so cross-version diffing is not supported.
         Ok(String::new())
     }
 
@@ -393,103 +595,218 @@ impl VirtualFS for InMemoryVfs {
 mod tests {
     use super::*;
 
-    fn test_wrapper() -> AgentWrapper {
-        AgentWrapper {
-            command: "echo".into(),
-            args: vec![],
-            vfs: Arc::new(InMemoryVfs::new()),
-            agent_id: "test-agent".into(),
-            run_id: "test-run".into(),
-            tracked_paths: vec!["/test.txt".into()],
+    // ── Diff parser tests ──────────────────────────────────────────────
+
+    #[test]
+    fn test_parse_empty_output() {
+        let edits = parse_unified_diffs("", "");
+        assert!(edits.is_empty(), "expected no edits for empty output");
+    }
+
+    #[test]
+    fn test_parse_simple_replace() {
+        let stdout = "\
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -10,6 +10,7 @@
+  context line 1
+  context line 2
+-old line
++new line
+  context line 3
+";
+        let edits = parse_unified_diffs(stdout, "");
+        assert_eq!(edits.len(), 1, "expected one Replace edit");
+        match &edits[0] {
+            BlockEdit::Replace {
+                path,
+                line,
+                old,
+                new,
+            } => {
+                assert_eq!(path, "src/main.rs");
+                assert_eq!(*line, 12); // line 12 in old file (- region started at old_line_offset + offset)
+                assert_eq!(old, "old line");
+                assert_eq!(new, "new line");
+            }
+            other => panic!("expected Replace, got {:?}", other),
         }
     }
 
     #[test]
-    fn test_compute_diff_no_change() {
-        let wrapper = test_wrapper();
-        let edits = wrapper.compute_diff("same content", "same content", "/f");
-        assert!(edits.is_empty(), "expected no edits for identical content");
+    fn test_parse_insert_only() {
+        let stdout = "\
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -5,6 +5,7 @@
+  existing
++new line here
+  still there
+";
+        let edits = parse_unified_diffs(stdout, "");
+        assert_eq!(edits.len(), 1, "expected one Insert edit");
+        match &edits[0] {
+            BlockEdit::Insert {
+                path,
+                line,
+                content,
+            } => {
+                assert_eq!(path, "src/lib.rs");
+                assert_eq!(*line, 6);
+                assert_eq!(content, "new line here");
+            }
+            other => panic!("expected Insert, got {:?}", other),
+        }
     }
 
     #[test]
-    fn test_compute_diff_new_file() {
-        let wrapper = test_wrapper();
-        let edits = wrapper.compute_diff("", "hello\nworld", "/f");
+    fn test_parse_delete_only() {
+        let stdout = "\
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -8,6 +8,5 @@
+  before
+-deleted line
+  after
+";
+        let edits = parse_unified_diffs(stdout, "");
+        assert_eq!(edits.len(), 1, "expected one Delete edit");
+        match &edits[0] {
+            BlockEdit::Delete { path, line } => {
+                assert_eq!(path, "src/main.rs");
+                assert_eq!(*line, 9);
+            }
+            other => panic!("expected Delete, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_parse_multi_hunk() {
+        let stdout = "\
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -10,6 +10,7 @@
+  keep A
+-old A
++new A
+  keep B
+@@ -20,6 +21,7 @@
+  keep C
+-old C
++new C
+  keep D
+";
+        let edits = parse_unified_diffs(stdout, "");
+        assert_eq!(edits.len(), 2, "expected two edits from two hunks");
+        assert!(matches!(&edits[0], BlockEdit::Replace { .. }));
+        assert!(matches!(&edits[1], BlockEdit::Replace { .. }));
+    }
+
+    #[test]
+    fn test_parse_new_file() {
+        // A new file diff has only + lines and the context is the whole file
+        let stdout = "\
+--- /dev/null
++++ b/new_file.rs
+@@ -0,0 +1,3 @@
++line 1
++line 2
++line 3
+";
+        let edits = parse_unified_diffs(stdout, "");
+        assert_eq!(edits.len(), 3, "expected three Insert edits for new file");
+        for edit in &edits {
+            assert!(matches!(edit, BlockEdit::Insert { .. }));
+            assert_eq!(edit.path(), "new_file.rs");
+        }
+    }
+
+    #[test]
+    fn test_parse_multiple_files() {
+        let stdout = "\
+--- a/a.rs
++++ b/a.rs
+@@ -1,3 +1,3 @@
+-old a
++new a
+--- a/b.rs
++++ b/b.rs
+@@ -5,5 +5,5 @@
+-old b
++new b
+";
+        let edits = parse_unified_diffs(stdout, "");
+        assert_eq!(edits.len(), 2, "expected two Replace edits across files");
+        assert_eq!(edits[0].path(), "a.rs");
+        assert_eq!(edits[1].path(), "b.rs");
+    }
+
+    #[test]
+    fn test_parse_stderr_fallback() {
+        // When diff output is on stderr, it should still be parsed
+        let stderr = "\
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -3,6 +3,6 @@
+  keep
+-remove
++added
+";
+        let edits = parse_unified_diffs("", stderr);
         assert_eq!(edits.len(), 1);
-        assert_eq!(edits[0].old_string, "");
-        assert_eq!(edits[0].new_string, "hello\nworld");
-        assert_eq!(edits[0].agent_id, "test-agent");
-        assert_eq!(edits[0].run_id, "test-run");
+        assert!(matches!(&edits[0], BlockEdit::Replace { .. }));
     }
 
     #[test]
-    fn test_compute_diff_deleted_file() {
-        let wrapper = test_wrapper();
-        let edits = wrapper.compute_diff("delete me", "", "/f");
-        assert_eq!(edits.len(), 1);
-        assert_eq!(edits[0].old_string, "delete me");
-        assert_eq!(edits[0].new_string, "");
+    fn test_parse_no_diff_output() {
+        // Agent output with no diff markers — should produce no edits
+        let stdout = "Hello from agent\nAll done!\n";
+        let edits = parse_unified_diffs(stdout, "");
+        assert!(edits.is_empty());
+    }
+
+    // ── split_command tests ────────────────────────────────────────────
+
+    #[test]
+    fn test_split_command_simple() {
+        let (prog, args) = split_command("echo hello world");
+        assert_eq!(prog, "echo");
+        assert_eq!(args, vec!["hello", "world"]);
     }
 
     #[test]
-    fn test_compute_diff_full_replacement() {
-        let wrapper = test_wrapper();
-        let old = "line1\nline2\nline3";
-        let new = "new1\nnew2\nnew3";
-        let edits = wrapper.compute_diff(old, new, "/f");
-        assert_eq!(edits.len(), 1, "full replacement should produce one edit");
-        assert_eq!(edits[0].old_string, old);
-        assert_eq!(edits[0].new_string, new);
+    fn test_split_command_empty() {
+        let (prog, args) = split_command("");
+        assert_eq!(prog, "");
+        assert!(args.is_empty());
     }
 
     #[test]
-    fn test_compute_diff_partial_change() {
-        let wrapper = test_wrapper();
-        let old = "keep1\nkeep2\nchange_this\nkeep3\nkeep4";
-        let new = "keep1\nkeep2\nchanged\nkeep3\nkeep4";
-        let edits = wrapper.compute_diff(old, new, "/f");
-        assert_eq!(edits.len(), 1);
-        assert_eq!(edits[0].old_string, "change_this");
-        assert_eq!(edits[0].new_string, "changed");
-        // Context should include lines before the change
-        assert!(edits[0].context.contains("keep1"));
+    fn test_split_command_no_args() {
+        let (prog, args) = split_command("ls");
+        assert_eq!(prog, "ls");
+        assert!(args.is_empty());
+    }
+
+    // ── parse_hunk_header tests ────────────────────────────────────────
+
+    #[test]
+    fn test_parse_hunk_header_standard() {
+        let result = parse_hunk_header("@@ -10,6 +11,7 @@");
+        assert_eq!(result, Some((10, 6, 11, 7)));
     }
 
     #[test]
-    fn test_compute_diff_partial_change_front() {
-        let wrapper = test_wrapper();
-        let old = "old_start\nmiddle\nend";
-        let new = "new_start\nmiddle\nend";
-        let edits = wrapper.compute_diff(old, new, "/f");
-        assert_eq!(edits.len(), 1);
-        assert_eq!(edits[0].old_string, "old_start");
-        assert_eq!(edits[0].new_string, "new_start");
+    fn test_parse_hunk_header_no_count() {
+        // Some diffs omit the count when it's 1
+        let result = parse_hunk_header("@@ -1 +2 @@");
+        assert_eq!(result, Some((1, 1, 2, 1)));
     }
 
     #[test]
-    fn test_compute_diff_partial_change_end() {
-        let wrapper = test_wrapper();
-        let old = "start\nmiddle\nold_end";
-        let new = "start\nmiddle\nnew_end";
-        let edits = wrapper.compute_diff(old, new, "/f");
-        assert_eq!(edits.len(), 1);
-        assert_eq!(edits[0].old_string, "old_end");
-        assert_eq!(edits[0].new_string, "new_end");
-    }
-
-    #[test]
-    fn test_compute_diff_multi_hunk() {
-        // When prefix and suffix don't cover everything, the middle
-        // section captures all changes as one block
-        let wrapper = test_wrapper();
-        let old = "aaa\nbbb\nccc\nddd\neee";
-        let new = "aaa\nxxx\nccc\nyyy\neee";
-        let edits = wrapper.compute_diff(old, new, "/f");
-        // bbb -> xxx and ddd -> yyy, but prefix="aaa" and suffix="eee"
-        // so the middle is "bbb\nccc\nddd" -> "xxx\nccc\nyyy"
-        assert_eq!(edits.len(), 1);
-        assert_eq!(edits[0].old_string, "bbb\nccc\nddd");
-        assert_eq!(edits[0].new_string, "xxx\nccc\nyyy");
+    fn test_parse_hunk_header_invalid() {
+        assert!(parse_hunk_header("not a hunk").is_none());
+        assert!(parse_hunk_header("").is_none());
     }
 
     // ── InMemoryVfs tests ──────────────────────────────────────────────
@@ -503,7 +820,7 @@ mod tests {
         assert!(matches!(result, Err(VfsError::NotFound(_))));
 
         // Write a block
-        let block = BlockEdit {
+        let block = VfsBlockEdit {
             agent_id: "test".into(),
             run_id: "r1".into(),
             old_string: String::new(),
@@ -525,7 +842,7 @@ mod tests {
         // Create initial content
         vfs.write_block(
             "/f",
-            BlockEdit {
+            VfsBlockEdit {
                 agent_id: "test".into(),
                 run_id: "r1".into(),
                 old_string: String::new(),
@@ -537,7 +854,7 @@ mod tests {
         .unwrap();
 
         // Replace
-        let block = BlockEdit {
+        let block = VfsBlockEdit {
             agent_id: "test".into(),
             run_id: "r1".into(),
             old_string: "old".into(),
@@ -550,23 +867,59 @@ mod tests {
         assert_eq!(content, "new content");
     }
 
+    // ── AgentWrapper execute integration test ──────────────────────────
+
     #[tokio::test]
-    async fn test_agent_wrapper_execute_new_file() {
-        // Create a wrapper that runs a simple echo command
+    async fn test_agent_wrapper_execute_no_diff_output() {
         let vfs = Arc::new(InMemoryVfs::new());
+        let wrapper = AgentWrapper::new(
+            vfs.clone(),
+            "agent-1".into(),
+            "run-test".into(),
+            "echo hello from agent".into(),
+        );
+
+        // echo outputs plain text, not a diff — no edits expected
+        let edits = wrapper.execute().await.unwrap();
+        assert!(
+            edits.is_empty(),
+            "expected no edits from plain echo output"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_agent_wrapper_execute_with_diff() {
+        let vfs = Arc::new(InMemoryVfs::new());
+
+        // Test: parse unified diff output and verify the edit structure
+        let stdout = "\
+--- a/f.txt
++++ b/f.txt
+@@ -1,2 +1,2 @@
+-old
++new
+";
+        let edits = parse_unified_diffs(stdout, "");
+        assert_eq!(edits.len(), 1, "expected one Replace edit from diff output");
+        assert_eq!(edits[0].path(), "f.txt");
+        assert!(matches!(&edits[0], BlockEdit::Replace { .. }));
+
+        // Test VFS application via AgentWrapper's apply_edit_to_vfs
         let wrapper = AgentWrapper {
             command: "echo".into(),
-            args: vec!["written-by-agent".into()],
             vfs: vfs.clone(),
             agent_id: "agent-1".into(),
             run_id: "run-test".into(),
-            tracked_paths: vec!["/output.txt".into()],
+            mem_state: None,
         };
-
-        // This wont actually write to VFS because `echo` writes to stdout,
-        // not to /output.txt in the VFS. But it exercises the snapshot path.
-        let changed = wrapper.execute().await.unwrap();
-        // No file should be changed since echo doesn't touch our VFS-managed file
-        assert!(changed.is_empty());
+        let insert_edit = BlockEdit::Insert {
+            path: "test.txt".into(),
+            line: 1,
+            content: "hello world".into(),
+        };
+        let hash = wrapper.apply_edit_to_vfs(&insert_edit).await.unwrap();
+        assert!(!hash.is_empty());
+        let (content, _) = vfs.read_file("test.txt").await.unwrap();
+        assert_eq!(content, "hello world");
     }
 }

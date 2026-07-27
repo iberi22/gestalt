@@ -22,7 +22,6 @@ use tokio::task::JoinSet;
 use tracing::{error, info, warn};
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 use ulid::Ulid;
-use uuid::Uuid;
 
 // gestalt-router types
 use gestalt_core::application::agent::xavier::XavierClient;
@@ -39,6 +38,178 @@ pub struct Task {
     pub status: String,
     pub created_at: String,
     pub result: Option<String>,
+}
+
+/// Output captured from execution of a CLI adapter
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct AdapterOutput {
+    pub stdout: String,
+    pub stderr: String,
+    pub exit_code: Option<i32>,
+}
+
+/// A standard interface to invoke external CLIs (such as agy, codex, claude, jules).
+#[async_trait::async_trait]
+pub trait CliAdapter: Send + Sync {
+    /// Unique identifier for this adapter
+    fn id(&self) -> &str;
+    /// CLI command or path to executable
+    fn command(&self) -> &str;
+    /// CLI arguments
+    fn args(&self) -> &[String];
+    /// Environment variables for execution
+    fn env(&self) -> &HashMap<String, String>;
+    /// Paths allowed for read/write access
+    fn allowed_paths(&self) -> &[PathBuf];
+    /// Execution timeout
+    fn timeout(&self) -> Duration;
+    /// Asynchronously execute the external CLI and capture stdout/stderr and exit code
+    async fn execute(&self) -> Result<AdapterOutput, String>;
+}
+
+/// Concrete implementation of the CliAdapter trait for external tools.
+pub struct ExternalCliAdapter {
+    pub id: String,
+    pub command: String,
+    pub args: Vec<String>,
+    pub env: HashMap<String, String>,
+    pub allowed_paths: Vec<PathBuf>,
+    pub timeout: Duration,
+}
+
+impl ExternalCliAdapter {
+    pub fn new(
+        id: String,
+        command: String,
+        args: Vec<String>,
+        env: HashMap<String, String>,
+        allowed_paths: Vec<PathBuf>,
+        timeout: Duration,
+    ) -> Self {
+        Self {
+            id,
+            command,
+            args,
+            env,
+            allowed_paths,
+            timeout,
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl CliAdapter for ExternalCliAdapter {
+    fn id(&self) -> &str {
+        &self.id
+    }
+
+    fn command(&self) -> &str {
+        &self.command
+    }
+
+    fn args(&self) -> &[String] {
+        &self.args
+    }
+
+    fn env(&self) -> &HashMap<String, String> {
+        &self.env
+    }
+
+    fn allowed_paths(&self) -> &[PathBuf] {
+        &self.allowed_paths
+    }
+
+    fn timeout(&self) -> Duration {
+        self.timeout
+    }
+
+    async fn execute(&self) -> Result<AdapterOutput, String> {
+        let mut cmd = tokio::process::Command::new(&self.command);
+        cmd.args(&self.args);
+        cmd.envs(&self.env);
+
+        cmd.stdout(std::process::Stdio::piped());
+        cmd.stderr(std::process::Stdio::piped());
+
+        let mut child = match cmd.spawn() {
+            Ok(c) => c,
+            Err(e) => return Err(format!("Failed to spawn {}: {}", self.command, e)),
+        };
+
+        let mut stdout = child.stdout.take().unwrap();
+        let mut stderr = child.stderr.take().unwrap();
+
+        let mut stdout_bytes = Vec::new();
+        let mut stderr_bytes = Vec::new();
+
+        let read_stdout = tokio::io::AsyncReadExt::read_to_end(&mut stdout, &mut stdout_bytes);
+        let read_stderr = tokio::io::AsyncReadExt::read_to_end(&mut stderr, &mut stderr_bytes);
+        let wait_child = child.wait();
+
+        let timeout_fut = tokio::time::sleep(self.timeout);
+
+        tokio::select! {
+            res = async {
+                tokio::try_join!(read_stdout, read_stderr, wait_child)
+            } => {
+                match res {
+                    Ok((_, _, exit_status)) => {
+                        let stdout_str = String::from_utf8_lossy(&stdout_bytes).into_owned();
+                        let stderr_str = String::from_utf8_lossy(&stderr_bytes).into_owned();
+                        Ok(AdapterOutput {
+                            stdout: stdout_str,
+                            stderr: stderr_str,
+                            exit_code: exit_status.code(),
+                        })
+                    }
+                    Err(e) => Err(format!("Error reading process streams: {}", e)),
+                }
+            }
+            _ = timeout_fut => {
+                let _ = child.kill().await;
+                Err("Timeout reached during execution".to_string())
+            }
+        }
+    }
+}
+
+/// Registry to register and unregister external CLI tools (thread-safe).
+pub struct AdapterRegistry {
+    adapters: std::sync::Mutex<HashMap<String, Arc<dyn CliAdapter>>>,
+}
+
+impl AdapterRegistry {
+    pub fn new() -> Self {
+        Self {
+            adapters: std::sync::Mutex::new(HashMap::new()),
+        }
+    }
+
+    pub fn register(&self, adapter: Arc<dyn CliAdapter>) {
+        let mut lock = self.adapters.lock().unwrap();
+        lock.insert(adapter.id().to_string(), adapter);
+    }
+
+    pub fn unregister(&self, id: &str) -> Option<Arc<dyn CliAdapter>> {
+        let mut lock = self.adapters.lock().unwrap();
+        lock.remove(id)
+    }
+
+    pub fn get(&self, id: &str) -> Option<Arc<dyn CliAdapter>> {
+        let lock = self.adapters.lock().unwrap();
+        lock.get(id).cloned()
+    }
+
+    pub fn list(&self) -> Vec<Arc<dyn CliAdapter>> {
+        let lock = self.adapters.lock().unwrap();
+        lock.values().cloned().collect()
+    }
+}
+
+impl Default for AdapterRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 /// CLI arguments
@@ -409,6 +580,57 @@ async fn run_swarm_task(
         .map_err(|e: anyhow::Error| e.to_string())?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_adapter_registry_and_execution() {
+        let registry = AdapterRegistry::new();
+
+        let adapter = Arc::new(ExternalCliAdapter::new(
+            "echo-adapter".to_string(),
+            "echo".to_string(),
+            vec!["hello world".to_string()],
+            HashMap::new(),
+            vec![],
+            Duration::from_secs(5),
+        ));
+
+        registry.register(adapter.clone());
+
+        let retrieved = registry.get("echo-adapter").unwrap();
+        assert_eq!(retrieved.id(), "echo-adapter");
+        assert_eq!(retrieved.command(), "echo");
+        assert_eq!(retrieved.args(), &["hello world".to_string()]);
+
+        let output = retrieved.execute().await.unwrap();
+        assert!(output.stdout.contains("hello world"));
+        assert_eq!(output.exit_code, Some(0));
+
+        let unregistered = registry.unregister("echo-adapter").unwrap();
+        assert_eq!(unregistered.id(), "echo-adapter");
+        assert!(registry.get("echo-adapter").is_none());
+    }
+
+    #[tokio::test]
+    async fn test_adapter_timeout() {
+        // Sleep command will run for 10 seconds, but timeout is 1 second
+        let adapter = ExternalCliAdapter::new(
+            "sleep-adapter".to_string(),
+            "sleep".to_string(),
+            vec!["10".to_string()],
+            HashMap::new(),
+            vec![],
+            Duration::from_millis(500),
+        );
+
+        let result = adapter.execute().await;
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), "Timeout reached during execution");
+    }
 }
 
 #[tokio::main]

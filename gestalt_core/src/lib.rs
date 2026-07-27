@@ -6,3 +6,5 @@ pub mod db;
 pub mod domain;
 pub mod mcp;
 pub mod ports;
+
+pub use domain::error::{CoreError, Result as CoreResult};

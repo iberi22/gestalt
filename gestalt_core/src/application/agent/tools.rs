@@ -131,7 +131,7 @@ impl Tool for SearchCodeTool {
 
 fn validate_shell_command(command: &str) -> anyhow::Result<()> {
     let forbidden = [
-        ";", "&&", "||", "|", "`", "$(&", "$(", "${", ">", "<", "\n", "\r", "#", "//", "/*", "*/",
+        ";", "&&", "||", "|", "`", "$", "$(", "${", ">", "<", "\n", "\r", "#", "//", "/*", "*/",
     ];
     for token in forbidden {
         if command.contains(token) {

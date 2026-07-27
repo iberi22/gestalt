@@ -21,7 +21,8 @@ Welcome! This document outlines the absolute design non-negotiables (reglas inqu
 - **Fail Gracefully:** Never panic or crash due to rate-limiting or service-down events; always capture structured error logs and return a clean failure/timeout agent state.
 
 ### 5. Workspace Crate Exclusion
-- **No gestalt_swarm workspace inclusion:** The `gestalt_swarm` package is explicitly excluded from the Cargo workspace members in `Cargo.toml` to prevent compilation/link errors regarding `GroqProvider` or `synapse-agentic`. Keep it excluded.
+- **`gestalt_swarm`** is the only crate excluded from the Cargo workspace members in `Cargo.toml` (prevents compilation/link errors regarding `GroqProvider` or `synapse-agentic`).
+- All other crates (`gestalt_core`, `gestalt_cli`, `gestalt-router`, `gestalt-merge`, `gestalt-state`, `gestalt-ws`, `synapse-agentic`) are active workspace members and compile together.
 
 ---
 

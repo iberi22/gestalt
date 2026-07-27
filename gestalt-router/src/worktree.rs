@@ -11,8 +11,103 @@ pub struct WorktreeInfo {
     pub is_active: bool,
 }
 
+fn normalize_path_simple(path: &Path) -> PathBuf {
+    use std::path::Component;
+    let mut components = Vec::new();
+    let mut is_absolute = path.is_absolute();
+    for component in path.components() {
+        match component {
+            Component::ParentDir => {
+                components.pop();
+            }
+            Component::CurDir => {}
+            Component::Normal(c) => {
+                components.push(c);
+            }
+            Component::RootDir => {
+                is_absolute = true;
+            }
+            _ => {}
+        }
+    }
+    let mut result = PathBuf::new();
+    if is_absolute {
+        result.push("/");
+    }
+    for c in components {
+        result.push(c);
+    }
+    result
+}
+
+/// Validator to enforce that file writes occur only within declared allowed paths.
+pub struct WriteSetValidator {
+    pub allowed_paths: Option<Vec<String>>,
+}
+
+impl WriteSetValidator {
+    /// Create a new validator with the given declared allowed paths.
+    pub fn new(allowed_paths: Option<Vec<String>>) -> Self {
+        Self { allowed_paths }
+    }
+
+    /// Validates if a target path is allowed.
+    /// Returns Ok(()) if allowed, or an error if the path lies outside the declared paths.
+    pub fn validate(&self, path: &str) -> Result<(), String> {
+        let allowed = match &self.allowed_paths {
+            None => {
+                tracing::warn!("No allowed write-set declared for the agent. Allowing all writes by default but warning.");
+                return Ok(());
+            }
+            Some(paths) => paths,
+        };
+
+        let target = Path::new(path);
+        let norm_target = normalize_path_simple(target);
+
+        for allowed_raw in allowed {
+            let allowed_path = Path::new(allowed_raw);
+            let norm_allowed = normalize_path_simple(allowed_path);
+
+            // 1. Direct path/prefix match (e.g. if both are relative, or both are absolute)
+            if norm_target == norm_allowed || norm_target.starts_with(&norm_allowed) {
+                return Ok(());
+            }
+
+            // 2. Relative suffix match: if allowed_path is relative (e.g. "src")
+            // and target_path is absolute (e.g. "/tmp/repo/src/main.rs"),
+            // we check if target_path contains the components of allowed_path.
+            if let Ok(cwd) = std::env::current_dir() {
+                let norm_cwd = normalize_path_simple(&cwd);
+                if let Ok(rel_target) = norm_target.strip_prefix(&norm_cwd) {
+                    if rel_target == norm_allowed || rel_target.starts_with(&norm_allowed) {
+                        return Ok(());
+                    }
+                }
+            }
+
+            // 3. Simple component-based subsequence match
+            let target_comps: Vec<_> = norm_target.components().collect();
+            let allowed_comps: Vec<_> = norm_allowed.components().collect();
+            if target_comps.len() >= allowed_comps.len() {
+                for window in target_comps.windows(allowed_comps.len()) {
+                    if window == allowed_comps.as_slice() {
+                        return Ok(());
+                    }
+                }
+            }
+        }
+
+        Err(format!(
+            "Write set violation: path '{}' is outside declared allowed paths: {:?}",
+            path, allowed
+        ))
+    }
+}
+
 pub struct WorktreeManager {
     pub base_dir: PathBuf,
+    pub write_set_allowed_paths: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, Vec<String>>>>,
 }
 
 fn sha256_hex(content: &str) -> String {
@@ -29,7 +124,26 @@ impl Default for WorktreeManager {
 
 impl WorktreeManager {
     pub fn new(base_dir: PathBuf) -> Self {
-        Self { base_dir }
+        Self {
+            base_dir,
+            write_set_allowed_paths: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+        }
+    }
+
+    /// Declare / register the allowed write paths (write-set) for a specific agent.
+    pub fn register_allowed_paths(&self, agent_id: &str, paths: Vec<String>) {
+        if let Ok(mut map) = self.write_set_allowed_paths.lock() {
+            map.insert(agent_id.to_string(), paths);
+        }
+    }
+
+    /// Retrieve the declared allowed write paths for a specific agent.
+    pub fn get_allowed_paths(&self, agent_id: &str) -> Option<Vec<String>> {
+        if let Ok(map) = self.write_set_allowed_paths.lock() {
+            map.get(agent_id).cloned()
+        } else {
+            None
+        }
     }
 
     /// High-level create_worktree: creates a worktree named by run_id + agent_id.
@@ -407,6 +521,14 @@ impl VirtualFS for WorktreeManager {
     }
 
     async fn write_block(&self, path: &str, block: BlockEdit) -> Result<String, VfsError> {
+        // Enforce write-set via WriteSetValidator
+        let allowed_paths = self.get_allowed_paths(&block.agent_id);
+        let validator = WriteSetValidator::new(allowed_paths);
+        if let Err(e) = validator.validate(path) {
+            tracing::error!("WriteSetValidator rejected write: {}", e);
+            return Err(VfsError::Internal(e));
+        }
+
         let repo_path = get_repo_path()?;
         let path = path.to_string();
         tokio::task::spawn_blocking(move || {
@@ -577,5 +699,63 @@ mod tests {
         manager
             .prune_worktrees(&repo_dir.path)
             .expect("Failed to prune worktrees");
+    }
+
+    #[tokio::test]
+    async fn test_write_set_validator_enforcement() {
+        let temp_dir = TempDir::new("gestalt_vfs_test");
+
+        // Initialize repository
+        run_git(&temp_dir.path, &["init"]);
+        run_git(&temp_dir.path, &["config", "user.name", "Gestalt Test"]);
+        run_git(&temp_dir.path, &["config", "user.email", "test@gestalt.ai"]);
+
+        // Initial commit so HEAD:file.txt exists for git show / read_file
+        let test_file = temp_dir.path.join("file.txt");
+        fs::write(&test_file, "initial").unwrap();
+        run_git(&temp_dir.path, &["add", "file.txt"]);
+        run_git(&temp_dir.path, &["commit", "-m", "initial commit"]);
+
+        let manager = WorktreeManager::new(PathBuf::from("/tmp"));
+
+        // Register allowed paths for "agent-test"
+        manager.register_allowed_paths("agent-test", vec!["file.txt".to_string(), "src/".to_string()]);
+
+        // Change current directory to our test repo so that run_git_show can find it
+        let original_dir = std::env::current_dir().unwrap();
+        std::env::set_current_dir(&temp_dir.path).unwrap();
+
+        // 1. Write within declared path (exact match) should succeed
+        let block1 = BlockEdit {
+            agent_id: "agent-test".to_string(),
+            run_id: "run-test".to_string(),
+            old_string: "initial".to_string(),
+            new_string: "updated".to_string(),
+            context: "".to_string(),
+        };
+
+        let res1 = manager.write_block("file.txt", block1).await;
+        std::env::set_current_dir(&original_dir).unwrap(); // Restore directory before assertions
+
+        assert!(res1.is_ok(), "Expected write to succeed inside allowed path. Got error: {:?}", res1);
+
+        // Restore dir again for the second check
+        std::env::set_current_dir(&temp_dir.path).unwrap();
+
+        // 2. Write outside declared path should fail
+        let block2 = BlockEdit {
+            agent_id: "agent-test".to_string(),
+            run_id: "run-test".to_string(),
+            old_string: "".to_string(),
+            new_string: "malicious code".to_string(),
+            context: "".to_string(),
+        };
+
+        let res2 = manager.write_block("forbidden.txt", block2).await;
+        std::env::set_current_dir(&original_dir).unwrap(); // Restore directory
+
+        assert!(res2.is_err(), "Expected write to be rejected outside allowed path");
+        let err_str = res2.unwrap_err().to_string();
+        assert!(err_str.contains("Write set violation"), "Expected Write set violation, got: {}", err_str);
     }
 }

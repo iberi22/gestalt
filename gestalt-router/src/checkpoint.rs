@@ -290,8 +290,9 @@ pub fn checkpoint(
 
 /// Run checkpoint and return a boolean indicating whether changes were committed.
 pub fn run_checkpoint(worktree_dir: &Path, agent_id: &str) -> Result<bool, RouterError> {
+    let checkpointer = AtomicCheckpointer::new(worktree_dir.to_path_buf());
     let commit_msg = format!("gestalt: checkpoint {}", agent_id);
-    match checkpoint(worktree_dir, &commit_msg) {
+    match checkpointer.checkpoint(agent_id, &commit_msg) {
         Ok(result) => {
             if result.commit_sha.is_some() {
                 Ok(true)
@@ -300,5 +301,211 @@ pub fn run_checkpoint(worktree_dir: &Path, agent_id: &str) -> Result<bool, Route
             }
         }
         Err(e) => Err(e),
+    }
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
+pub struct RunManifest {
+    pub agent_id: String,
+    pub files: Vec<String>,
+    pub status: String,
+}
+
+pub struct AtomicCheckpointer {
+    pub worktree_dir: PathBuf,
+    pub simulate_manifest_write_failure: bool,
+}
+
+impl AtomicCheckpointer {
+    pub fn new(worktree_dir: PathBuf) -> Self {
+        Self {
+            worktree_dir,
+            simulate_manifest_write_failure: false,
+        }
+    }
+
+    pub fn with_simulated_failure(worktree_dir: PathBuf) -> Self {
+        Self {
+            worktree_dir,
+            simulate_manifest_write_failure: true,
+        }
+    }
+
+    /// Rollback the git repository to the original SHA
+    fn rollback(&self, original_sha: Option<&str>) -> Result<(), RouterError> {
+        if let Some(sha) = original_sha {
+            // Mixed reset restores the HEAD and index to the specified commit,
+            // while preserving any changes in the working directory (keeping files as modified/uncommitted).
+            run_git_cmd(&self.worktree_dir, &["reset", "--mixed", sha])?;
+        } else {
+            // Empty repository rollback: delete the HEAD and unstage any staged files
+            let _ = run_git_cmd(&self.worktree_dir, &["update-ref", "-d", "HEAD"]);
+            let _ = run_git_cmd(&self.worktree_dir, &["rm", "-r", "--cached", "."]);
+        }
+        Ok(())
+    }
+
+    /// Perform a checkpoint and write/update the RunManifest in an atomic transaction.
+    /// If writing the manifest fails (or is simulated to fail), the git state is rolled back.
+    pub fn checkpoint(
+        &self,
+        agent_id: &str,
+        commit_message: &str,
+    ) -> Result<CheckpointResult, RouterError> {
+        // 1. Capture original HEAD state before committing
+        let original_sha = match run_git_cmd(&self.worktree_dir, &["rev-parse", "HEAD"]) {
+            Ok(sha) => Some(sha.trim().to_string()),
+            Err(_) => None,
+        };
+
+        // 2. Perform the regular git checkpoint
+        let result = checkpoint(&self.worktree_dir, commit_message)?;
+
+        // 3. Construct the updated RunManifest
+        let status = if result.commit_sha.is_some() {
+            "checkpointed".to_string()
+        } else {
+            "no_changes".to_string()
+        };
+
+        let manifest = RunManifest {
+            agent_id: agent_id.to_string(),
+            files: result.files_committed.clone(),
+            status,
+        };
+
+        // 4. Handle simulated manifest write failure (for rollback testing)
+        if self.simulate_manifest_write_failure {
+            if result.commit_sha.is_some() {
+                let _ = self.rollback(original_sha.as_deref());
+            }
+            return Err(RouterError::GitError(
+                "Simulated manifest write failure".to_string(),
+            ));
+        }
+
+        // 5. Serialize and write the RunManifest to a file
+        let manifest_path = self.worktree_dir.join("manifest.json");
+        let serialized = serde_json::to_string_pretty(&manifest).map_err(|e| {
+            if result.commit_sha.is_some() {
+                let _ = self.rollback(original_sha.as_deref());
+            }
+            RouterError::GitError(format!("Failed to serialize RunManifest: {}", e))
+        })?;
+
+        if let Err(e) = std::fs::write(&manifest_path, serialized) {
+            if result.commit_sha.is_some() {
+                let _ = self.rollback(original_sha.as_deref());
+            }
+            Err(RouterError::GitError(format!(
+                "Failed to write RunManifest: {}",
+                e
+            )))
+        } else {
+            Ok(result)
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::process::Command;
+    use uuid::Uuid;
+
+    struct TestRepo {
+        path: PathBuf,
+    }
+
+    impl TestRepo {
+        fn new() -> Self {
+            let path = std::env::temp_dir().join(format!("gestalt-atomic-test-{}", Uuid::new_v4()));
+            fs::create_dir_all(&path).unwrap();
+
+            Command::new("git")
+                .arg("init")
+                .current_dir(&path)
+                .output()
+                .unwrap();
+            Command::new("git")
+                .args(["config", "user.name", "Gestalt Test"])
+                .current_dir(&path)
+                .output()
+                .unwrap();
+            Command::new("git")
+                .args(["config", "user.email", "test@gestalt.local"])
+                .current_dir(&path)
+                .output()
+                .unwrap();
+
+            fs::write(path.join("initial.txt"), "initial content").unwrap();
+            Command::new("git")
+                .args(["add", "initial.txt"])
+                .current_dir(&path)
+                .output()
+                .unwrap();
+            Command::new("git")
+                .args(["commit", "-m", "init"])
+                .current_dir(&path)
+                .output()
+                .unwrap();
+            Command::new("git")
+                .args(["branch", "-m", "main"])
+                .current_dir(&path)
+                .output()
+                .unwrap();
+
+            TestRepo { path }
+        }
+    }
+
+    impl Drop for TestRepo {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.path);
+        }
+    }
+
+    #[test]
+    fn test_rollback_on_manifest_write_failure() {
+        let repo = TestRepo::new();
+        let checkpointer = AtomicCheckpointer::with_simulated_failure(repo.path.clone());
+
+        // Save pre-checkpoint HEAD SHA
+        let pre_sha = run_git_cmd(&repo.path, &["rev-parse", "HEAD"]).unwrap().trim().to_string();
+
+        // Create a new untracked file to trigger a checkpoint commit
+        let test_file = repo.path.join("test_file.txt");
+        fs::write(&test_file, "some test data").unwrap();
+
+        // Perform checkpoint - should fail due to simulated manifest write failure
+        let result = checkpointer.checkpoint("test-agent", "gestalt: checkpoint test-agent");
+        assert!(result.is_err(), "Checkpoint should fail when manifest write fails");
+
+        // Verify that the commit has been rolled back
+        let post_sha = run_git_cmd(&repo.path, &["rev-parse", "HEAD"]).unwrap().trim().to_string();
+        assert_eq!(pre_sha, post_sha, "The HEAD SHA should not have changed (commit was rolled back)");
+
+        // Verify that local file changes are preserved (not deleted)
+        assert!(test_file.exists(), "Local file should still exist");
+        let content = fs::read_to_string(&test_file).unwrap();
+        assert_eq!(content, "some test data", "Local file content should be preserved");
+
+        // Verify that manifest.json does not exist
+        let manifest_path = repo.path.join("manifest.json");
+        assert!(!manifest_path.exists(), "manifest.json should not exist after rollback");
+    }
+
+    #[test]
+    fn test_run_manifest_serialization() {
+        let manifest = RunManifest {
+            agent_id: "agent-123".to_string(),
+            files: vec!["src/main.rs".to_string(), "README.md".to_string()],
+            status: "checkpointed".to_string(),
+        };
+
+        let json = serde_json::to_string(&manifest).unwrap();
+        let deserialized: RunManifest = serde_json::from_str(&json).unwrap();
+        assert_eq!(manifest, deserialized);
     }
 }

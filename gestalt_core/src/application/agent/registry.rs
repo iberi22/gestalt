@@ -272,8 +272,12 @@ impl AgentRegistry {
         // Aplicar estrategia de enrutamiento
         match self.routing.strategy {
             RoutingStrategy::Cheapest => {
-                candidates.sort_by(|a, b| a.cost_per_mtok.partial_cmp(&b.cost_per_mtok).unwrap());
-            }
+                candidates.sort_by(|a, b| {
+                    a.cost_per_mtok
+                        .partial_cmp(&b.cost_per_mtok)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                });
+            },
             RoutingStrategy::MostCapable => {
                 candidates.sort_by(|a, b| b.capabilities.len().cmp(&a.capabilities.len()));
             }
@@ -306,6 +310,7 @@ impl AgentRegistry {
     pub fn mark_available(&mut self, name: &str) {
         if let Some(agent) = self.agents.iter_mut().find(|a| a.name == name) {
             agent.status = AgentStatus::Disponible;
+            agent.ocupado_desde = None;
         }
     }
 

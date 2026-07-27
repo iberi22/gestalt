@@ -20,7 +20,8 @@ impl XavierAgent {
         endpoint: impl Into<String>,
         token: impl Into<String>,
     ) -> anyhow::Result<Self> {
-        let client = XavierClient::new(endpoint.into(), token.into());
+        let client = XavierClient::new(endpoint.into(), token.into())
+            .map_err(|e| anyhow::anyhow!("{}", e))?;
 
         if !client.is_available().await {
             anyhow::bail!("Xavier is not available at the specified endpoint");

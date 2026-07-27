@@ -64,26 +64,26 @@ pub struct HealthResponse {
 
 impl XavierClient {
     /// Create new Xavier client
-    pub fn new(endpoint: String, token: String) -> Self {
+    pub fn new(endpoint: String, token: String) -> Result<Self, String> {
         let client = Client::builder()
             .timeout(Duration::from_secs(30))
             .build()
-            .expect("Failed to create HTTP client");
+            .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
 
-        Self {
+        Ok(Self {
             endpoint,
             token,
             client,
-        }
+        })
     }
 
     /// Create from environment variables
     pub fn from_env() -> Self {
         Self::new(
             std::env::var("XAVIER_URL").unwrap_or_else(|_| "http://localhost:8006".into()),
-            std::env::var("XAVIER_TOKEN")
-                .unwrap_or_else(|_| "mZHbmzjEKrBohyzkWtVkKemWdYytuFEP".into()),
+            std::env::var("XAVIER_TOKEN").unwrap_or_default(),
         )
+        .expect("XavierClient::from_env() failed — check TLS/network configuration")
     }
 
     /// Search memory
@@ -292,7 +292,7 @@ mod tests {
 
     #[test]
     fn test_client_creation() {
-        let client = XavierClient::new("http://localhost:8006".into(), "test-token".into());
+        let client = XavierClient::new("http://localhost:8006".into(), "test-token".into()).unwrap();
 
         assert_eq!(client.endpoint, "http://localhost:8006");
         assert_eq!(client.token, "test-token");

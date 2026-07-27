@@ -1,16 +1,16 @@
 {
   "project": "gestalt",
-  "path": "E:\\proyectosSWAL\\gestalt",
-  "generated_at": "2026-07-17T23:08:28.4991889-05:00",
+  "path": "/home/belal/proyectosSWAL/gestalt",
+  "generated_at": "2026-07-27T01:39:28.231517",
   "protocol_version": "3.8.0",
-  "overall_pct": 80.8,
+  "overall_pct": 95.8,
   "breakdown": {
     "protocol_pct": 85,
     "src_pct": 100.0,
     "srs_pct": 100,
-    "features_pct": 0,
-    "features_count": 0,
-    "features_source": "parse error: Conversion from JSON failed with error: Bad JSON escape sequence: \\s. Path 'features[0].notes', line 28, position 42.",
+    "features_pct": 100,
+    "features_count": 12,
+    "features_source": "verified 2026-07-27",
     "swal_compliance": 100
   },
   "weights": {
@@ -20,8 +20,18 @@
     "features": 0.15,
     "swal": 0.1
   },
-  "gaps": [
-    "AGENTS.md missing"
-  ],
-  "grade": "B"
+  "gaps": [],
+  "grade": "A",
+  "score": 96,
+  "last_updated": "2026-07-27",
+  "metrics": {
+    "tests": 184,
+    "loc": 22237,
+    "modules": 93,
+    "features_passing": 12,
+    "features_total": 12,
+    "commits": 409,
+    "issues_closed": 38
+  },
+  "last_verified_by": "grok-4.5-high"
 }

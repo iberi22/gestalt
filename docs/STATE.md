@@ -1,56 +1,69 @@
-# Gestalt — Project State
+# 📊 STATE.md — Project State
 
-> **Versión:** 2.0.0 (Router) · **Última actualización:** 2026-07-25
-> **Estado:** Diseño completo, MVP en planificación
+## 🟢 Current Version: `1.1.0`
+**Last Update:** 2026-07-25
+**Status:** Stable — Router MVP complete, 119 tests passing
 
-## Workspace (4 crates activos, 1 planeado)
+## 🎯 Project Purpose
+Gestalt is a context-aware AI Agent Orchestration Platform built in Rust. It provides VFS isolation, Swarm parallel execution, timeline-based event logging, git worktree agent isolation, overlap detection, automatic branch integration, and a tool registry — all via CLI/REPL.
 
-| Crate | Type | Lines | Estado |
-|-------|------|-------|--------|
-| `gestalt_core` | Lib | ~1,500 | ✅ Compila |
-| `synapse-agentic` | Lib | ~700 | ✅ Compila |
-| `gestalt_router` | Lib+Bin | 🚧 En diseño | 📋 Planificado |
-| `gestalt_merge` | Lib | 📋 Fase 2 | 📋 Planificado |
-| `gestalt_cli` | Binary | ~300 | 🟡 Por reparar |
-| `gestalt_swarm` | Binary | ~900 | 🟡 Pendiente migración |
-| `gestalt_timeline` | Binary | — | ❌ Eliminado |
+## 🏗️ Architecture Summary
+- **Execution Model:** Async autonomy via `tokio` + `synapse-agentic` (Hive actor model)
+- **State Management:** Timeline events via JSONL event log (`JsonlEventLog`)
+- **Orchestration:** `gestalt-router` crate — Router::execute pipeline with worktree isolation
+- **Agent Isolation:** Per-agent git worktrees with symlink-escape detection
+- **Overlap Detection:** File-intersection analysis via `OverlapDetector` + `git diff --name-only`
+- **Branch Integration:** Sequential `git merge-tree --write-tree` with intermediate commit creation
+- **Cleanup:** Doctor module for orphaned run detection and pruning
+- **Tools:** 12+ built-in (git, shell, file, search, ask_ai, etc.)
 
-## Build Status
+## 📦 Workspace Crates (4 active, 1 excluded)
 
-| Check | Result |
-|-------|--------|
-| `cargo check -p gestalt_core` | ✅ Passes |
-| `cargo check -p synapse-agentic` | ✅ Passes |
-| `cargo check --workspace` | ❌ Falla (timeline eliminado, cli/swarm sin reparar) |
+| Crate | Type | Description |
+|-------|------|-------------|
+| `gestalt_core` | lib | VFS, auth, LLM adapters, agent tools, MCP client |
+| `gestalt_cli` | bin | REPL + CLI commands (includes `gestalt run`) |
+| `gestalt-router` | lib | **Wave 1 — Router MVP** WorktreeManager, Checkpointer, OverlapDetector, Integrate, Timeline, Doctor, Router::execute |
+| `gestalt_swarm` | bin | **EXCLUDED** Legacy swarm coordinator (not in workspace) |
+| `synapse-agentic` | lib | Tool registry + agentic primitives |
 
-## Logros
+## ✅ Completed Milestones
 
-- ✅ Diseño completo del router multi-agente validado por AGY + Kimi
-- ✅ Decisiones arquitectónicas documentadas en REDESIGN.md
-- ✅ SurrealDB eliminado del plan → JSONL event log
-- ✅ FUSE eliminado → git worktree como mecanismo de aislamiento
-- ✅ gestalt_timeline eliminado como crate
+- [x] VFS overlay with OverlayFs merge
+- [x] Swarm coordinator with TaskQueue + HealthMonitor (legacy)
+- [x] LLM adapters (OpenAI + Anthropic) with failover
+- [x] Google OAuth2 + PKCE auth
+- [x] 12+ agent tools (git, shell, file, search, clone, ask_ai...)
+- [x] CLI REPL
+- [x] **Wave 1: Router MVP** — WorktreeManager, SubprocessRunner, Checkpointer, OverlapDetector, integrate_branches, Timeline JSONL, Doctor, Router::execute
+- [x] 119 unit/integration tests passing for gestalt-router
+- [x] `cargo check --workspace` clean
 
-## Pendientes
+## ⚠️ Known Issues
 
-| Prioridad | Tarea | Fase |
-|-----------|-------|------|
-| 🔴 ALTA | Crear `gestalt-router` crate con WorktreeManager | Fase 1 |
-| 🔴 ALTA | Implementar SubprocessRunner (spawn CLI agents) | Fase 1 |
-| 🔴 ALTA | Implementar overlap detection + integrate | Fase 1 |
-| 🔴 ALTA | Reparar `gestalt_cli` para usar router | Fase 1 |
-| 🟡 MEDIA | Crear `gestalt-merge` con tree-sitter | Fase 2 |
-| 🟡 MEDIA | PR creation via gh CLI | Fase 2 |
-| 🟡 MEDIA | PathClaims in-process para coordinación preventiva | Fase 3 |
-| 🔵 BAJA | Migrar `gestalt_swarm` al nuevo modelo | Fase 3 |
-| 🔵 BAJA | FUSE daemon condicional (solo si profiling lo justifica) | Fase 4 |
+- `test_doctor_pruning_and_orphans` flaky in parallel (uses `GESTALT_HOME` env var) — run with `--test-threads=1`
+- No long-term memory system (relies on external vector DB)
+- No telemetry/observability
+- `unwrap()` in production paths (config, indexer) — use `expect()` with messages
 
-## Decisiones Arquitectónicas Recientes
+## 📈 Current Health
 
-| Decisión | Fecha | Detalle |
-|----------|-------|---------|
-| Reemplazar SurrealDB por JSONL | 2026-07-25 | Timeline era append-only, no necesitaba DB document |
-| Reemplazar FUSE por worktree CWD | 2026-07-25 | Worktree da mismo aislamiento a costo 0 |
-| Eliminar gestalt_timeline | 2026-07-25 | 31 errores de compilación, reemplazado por módulo |
-| Adoptar git merge-tree para v1 | 2026-07-25 | Sin dependencias nuevas, funciona hoy |
-| Postergar tree-sitter a Fase 2 | 2026-07-25 | No bloquea el MVP |
+- **CI:** ✅ All 119 tests passing (`cargo test -p gestalt-router`)
+- **Build:** ✅ `cargo check --workspace` clean
+- **Linting:** Zero clippy errors on main
+- **Vulnerabilities:** 5 Dependabot alerts pending (jsonwebtoken, lru, rand, rustls-webpki)
+
+## 🗑️ Removed (2026-04-16)
+
+- gestalt_app (Flutter app)
+- gestalt_terminal (TUI)
+- gestalt_ui (UI components)
+- gestalt_mcp (standalone server)
+- gestaltctl (admin binary)
+- gestalt_infra_github
+- gestalt_infra_embeddings
+- benchmarks/
+
+---
+
+*Gestalt — AI agents that actually execute.*

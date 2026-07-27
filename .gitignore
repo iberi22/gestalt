@@ -1,5 +1,24 @@
+# Build artifacts
+target/
+gestalt_swarm/target/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Xavier runtime
 .xavier/
 data/
 metrics.db
 *.db-shm
 *.db-wal
+*.db
+
+# Environment
+.env
+.env.local
+
+# OS
+.DS_Store
+Thumbs.db

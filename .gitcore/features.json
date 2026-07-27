@@ -1,207 +1,207 @@
 {
-   "_comment": "Feature tracking file for Gestalt-Rust.",
-   "metadata": {
-      "project": "Gestalt-Rust",
-      "created": "2026-03-05",
-      "last_verified": "2026-07-25",
-      "total_features": 12,
-      "passing": 11,
-      "failing": 1
-   },
-   "features": [
-      {
-         "id": "feat-swarm-bridge",
-         "category": "automation",
-         "description": "Gestalt Swarm parallel exec bridge (Python asyncio)",
-         "steps": [
-            "Create swarm_bridge.py with asyncio parallel exec",
-            "Define 15 real CLI agents (rg, cargo, git, curl)",
-            "Delete gestalt_tui (no TUI, LLM UI instead)",
-            "Verify 91ms parallel execution for 3 agents",
-            "Register as OpenClaw tool"
-         ],
-         "passes": true,
-         "verified_by": "manual",
-         "github_issue": null,
-         "last_tested": "2026-04-15",
-         "notes": "swarm_bridge.py at E:scripts-pythongestalt-rustswarm_bridge.py"
-      },
-      {
-         "id": "feat-swarm-smart-selection",
-         "category": "automation",
-         "description": "Smart goal to agent selection (keyword routing)",
-         "steps": [
-            "Implement select_agents(goal) function",
-            "Keyword matching for goal categorization",
-            "Fallback: run all relevant if ambiguous"
-         ],
-         "passes": true,
-         "verified_by": "manual",
-         "github_issue": "263",
-         "last_tested": "2026-04-15",
-         "notes": "Implemented in swarm_bridge.py"
-      },
-      {
-         "id": "feat-swarm-dynamic-count",
-         "category": "automation",
-         "description": "Dynamic agent count based on rate limits and complexity",
-         "steps": [
-            "Configurable max_agents",
-            "Rate limit awareness",
-            "Complexity scoring for goals"
-         ],
-         "passes": true,
-         "verified_by": "manual",
-         "github_issue": "265",
-         "last_tested": "2026-04-15",
-         "notes": "Implemented in swarm_bridge.py"
-      },
-      {
-         "id": "feat-swarm-streaming",
-         "category": "automation",
-         "description": "Streaming partial results as agents complete",
-         "steps": [
-            "Implement --watch flag",
-            "Output file with incremental writes",
-            "Polling from skill with timeout"
-         ],
-         "passes": true,
-         "verified_by": "manual",
-         "github_issue": "266",
-         "last_tested": "2026-04-15",
-         "notes": "Implemented in swarm_bridge.py"
-      },
-      {
-         "id": "feat-unified-storage",
-         "category": "core",
-         "description": "Unified Storage using SurrealDB for Vector and Graph data",
-         "steps": [
-            "Initialize SurrealDB embedded instance",
-            "Store high-dimensional vectors for semantic search",
-            "Store graph nodes for belief relationships"
-         ],
-         "passes": true,
-         "verified_by": "manual",
-         "github_issue": null,
-         "last_tested": "2026-03-10",
-         "notes": "Implemented in memory/surreal_store.rs"
-      },
-      {
-         "id": "feat-hybrid-search",
-         "category": "search",
-         "description": "Hybrid Search combining BM25 keyword matching and Vector retrieval",
-         "steps": [
-            "Index markdown files with Tantivy",
-            "Perform vector search in SurrealDB",
-            "Rerank and combine results"
-         ],
-         "passes": true,
-         "verified_by": "manual",
-         "github_issue": null,
-         "last_tested": "2026-03-10",
-         "notes": "Implemented in memory/qmd_memory.rs"
-      },
-      {
-         "id": "feat-belief-graph",
-         "category": "cognitive",
-         "description": "Belief Graph for conceptual relationship mapping",
-         "steps": [
-            "Define relationship nodes in SurrealDB",
-            "Implement extraction logic for agent insights",
-            "Verify graph traversal performance"
-         ],
-         "passes": false,
-         "verified_by": "manual",
-         "github_issue": null,
-         "last_tested": null,
-         "notes": "Work in progress in memory/belief_graph.rs"
-      },
-      {
-         "id": "feat-mcp-server",
-         "category": "integration",
-         "description": "Model Context Protocol (MCP) Server for OpenClaw integration",
-         "steps": [
-            "Implement MCP tool definitions",
-            "Expose memory search as a tool",
-            "Verify connectivity with OpenClaw"
-         ],
-         "passes": true,
-         "verified_by": "manual",
-         "github_issue": null,
-         "last_tested": "2026-03-09",
-         "notes": "Implemented in server/mcp_server.rs"
-      },
-      {
-         "id": "feat-src-reference",
-         "category": "documentation",
-         "description": "Source Code Reference (SRC) - Comprehensive documentation of all source files",
-         "steps": [
-            "Document directory structure",
-            "Document core modules (a2a, agents, memory, server, tasks)",
-            "Document important types and traits",
-            "Add build/run instructions",
-            "Add CLI reference"
-         ],
-         "passes": true,
-         "verified_by": "system",
-         "github_issue": null,
-         "last_tested": "2026-03-15",
-         "notes": "Implemented in .gitcore/SRC.md"
-      },
-      {
-         "id": "feat-router-mvp",
-         "category": "phase1",
-         "description": "Router MVP — WorktreeManager, SubprocessRunner, Checkpointer, OverlapDetector, integrate_branches, Timeline JSONL, Doctor, Router::execute",
-         "steps": [
-            "Implement WorktreeManager with git worktree lifecycle",
-            "Implement SubprocessRunner with POSIX process group kill",
-            "Implement Checkpointer with symlink escape detection",
-            "Implement OverlapDetector for file intersection testing",
-            "Implement integrate_branches with sequential merge-tree",
-            "Implement Timeline JSONL event log per run",
-            "Implement Doctor cleanup and recovery",
-            "Implement Router::execute pipeline orchestrator"
-         ],
-         "passes": true,
-         "verified_by": "system",
-         "github_issue": "294",
-         "last_tested": "2026-07-25",
-         "notes": "Wave 1 — gestalt-router crate fully implemented. cargo check passes."
-      },
-      {
-         "id": "feat-cli-run",
-         "category": "phase1",
-         "description": "CLI gestalt run command with agent orchestration",
-         "steps": [
-            "Define RunSpec, AgentSpec, RunReport types",
-            "Implement agent lifecycle via tokio JoinSet",
-            "Implement manifest writing for agent state tracking"
-         ],
-         "passes": true,
-         "verified_by": "system",
-         "github_issue": "294",
-         "last_tested": "2026-07-25",
-         "notes": "Router::execute handles full agent orchestration pipeline"
-      },
-      {
-         "id": "feat-event-log",
-         "category": "phase1",
-         "description": "JSONL event log for tracking run lifecycle events",
-         "steps": [
-            "Define Event enum with RunStarted, AgentStateChanged, etc.",
-            "Implement JsonlEventLog with thread-safe file writing",
-            "Define EventLog trait for pluggable backends"
-         ],
-         "passes": true,
-         "verified_by": "system",
-         "github_issue": "314",
-         "last_tested": "2026-07-25",
-         "notes": "JSONL event log implemented in timeline.rs"
-      }
-   ],
-   "verification_commands": {
-      "all": "cargo check --workspace",
-      "tests": "cargo check --tests -p gestalt-router  # 80+ tests, 0 errors",
-      "lint": "cargo clippy"
-   }
+  "_comment": "Feature tracking file for Gestalt-Rust.",
+  "metadata": {
+    "project": "Gestalt-Rust",
+    "created": "2026-03-05",
+    "last_verified": "2026-07-27",
+    "total_features": 12,
+    "passing": 12,
+    "failing": 1
+  },
+  "features": [
+    {
+      "id": "feat-swarm-bridge",
+      "category": "automation",
+      "description": "Gestalt Swarm parallel exec bridge (Python asyncio)",
+      "steps": [
+        "Create swarm_bridge.py with asyncio parallel exec",
+        "Define 15 real CLI agents (rg, cargo, git, curl)",
+        "Delete gestalt_tui (no TUI, LLM UI instead)",
+        "Verify 91ms parallel execution for 3 agents",
+        "Register as OpenClaw tool"
+      ],
+      "passes": true,
+      "verified_by": "manual",
+      "github_issue": null,
+      "last_tested": "2026-04-15",
+      "notes": "swarm_bridge.py at E:scripts-pythongestalt-rustswarm_bridge.py"
+    },
+    {
+      "id": "feat-swarm-smart-selection",
+      "category": "automation",
+      "description": "Smart goal to agent selection (keyword routing)",
+      "steps": [
+        "Implement select_agents(goal) function",
+        "Keyword matching for goal categorization",
+        "Fallback: run all relevant if ambiguous"
+      ],
+      "passes": true,
+      "verified_by": "manual",
+      "github_issue": "263",
+      "last_tested": "2026-04-15",
+      "notes": "Implemented in swarm_bridge.py"
+    },
+    {
+      "id": "feat-swarm-dynamic-count",
+      "category": "automation",
+      "description": "Dynamic agent count based on rate limits and complexity",
+      "steps": [
+        "Configurable max_agents",
+        "Rate limit awareness",
+        "Complexity scoring for goals"
+      ],
+      "passes": true,
+      "verified_by": "manual",
+      "github_issue": "265",
+      "last_tested": "2026-04-15",
+      "notes": "Implemented in swarm_bridge.py"
+    },
+    {
+      "id": "feat-swarm-streaming",
+      "category": "automation",
+      "description": "Streaming partial results as agents complete",
+      "steps": [
+        "Implement --watch flag",
+        "Output file with incremental writes",
+        "Polling from skill with timeout"
+      ],
+      "passes": true,
+      "verified_by": "manual",
+      "github_issue": "266",
+      "last_tested": "2026-04-15",
+      "notes": "Implemented in swarm_bridge.py"
+    },
+    {
+      "id": "feat-unified-storage",
+      "category": "core",
+      "description": "Unified Storage using SurrealDB for Vector and Graph data",
+      "steps": [
+        "Initialize SurrealDB embedded instance",
+        "Store high-dimensional vectors for semantic search",
+        "Store graph nodes for belief relationships"
+      ],
+      "passes": true,
+      "verified_by": "manual",
+      "github_issue": null,
+      "last_tested": "2026-03-10",
+      "notes": "Implemented in memory/surreal_store.rs"
+    },
+    {
+      "id": "feat-hybrid-search",
+      "category": "search",
+      "description": "Hybrid Search combining BM25 keyword matching and Vector retrieval",
+      "steps": [
+        "Index markdown files with Tantivy",
+        "Perform vector search in SurrealDB",
+        "Rerank and combine results"
+      ],
+      "passes": true,
+      "verified_by": "manual",
+      "github_issue": null,
+      "last_tested": "2026-03-10",
+      "notes": "Implemented in memory/qmd_memory.rs"
+    },
+    {
+      "id": "feat-belief-graph",
+      "category": "cognitive",
+      "description": "Belief Graph for conceptual relationship mapping",
+      "steps": [
+        "Define relationship nodes in SurrealDB",
+        "Implement extraction logic for agent insights",
+        "Verify graph traversal performance"
+      ],
+      "passes": false,
+      "verified_by": "manual",
+      "github_issue": null,
+      "last_tested": null,
+      "notes": "Work in progress in memory/belief_graph.rs"
+    },
+    {
+      "id": "feat-mcp-server",
+      "category": "integration",
+      "description": "Model Context Protocol (MCP) Server for OpenClaw integration",
+      "steps": [
+        "Implement MCP tool definitions",
+        "Expose memory search as a tool",
+        "Verify connectivity with OpenClaw"
+      ],
+      "passes": true,
+      "verified_by": "manual",
+      "github_issue": null,
+      "last_tested": "2026-03-09",
+      "notes": "Implemented in server/mcp_server.rs"
+    },
+    {
+      "id": "feat-src-reference",
+      "category": "documentation",
+      "description": "Source Code Reference (SRC) - Comprehensive documentation of all source files",
+      "steps": [
+        "Document directory structure",
+        "Document core modules (a2a, agents, memory, server, tasks)",
+        "Document important types and traits",
+        "Add build/run instructions",
+        "Add CLI reference"
+      ],
+      "passes": true,
+      "verified_by": "system",
+      "github_issue": null,
+      "last_tested": "2026-03-15",
+      "notes": "Implemented in .gitcore/SRC.md"
+    },
+    {
+      "id": "feat-router-mvp",
+      "category": "phase1",
+      "description": "Router MVP \u2014 WorktreeManager, SubprocessRunner, Checkpointer, OverlapDetector, integrate_branches, Timeline JSONL, Doctor, Router::execute",
+      "steps": [
+        "Implement WorktreeManager with git worktree lifecycle",
+        "Implement SubprocessRunner with POSIX process group kill",
+        "Implement Checkpointer with symlink escape detection",
+        "Implement OverlapDetector for file intersection testing",
+        "Implement integrate_branches with sequential merge-tree",
+        "Implement Timeline JSONL event log per run",
+        "Implement Doctor cleanup and recovery",
+        "Implement Router::execute pipeline orchestrator"
+      ],
+      "passes": true,
+      "verified_by": "system",
+      "github_issue": "294",
+      "last_tested": "2026-07-25",
+      "notes": "Wave 1 \u2014 gestalt-router crate fully implemented. cargo check passes."
+    },
+    {
+      "id": "feat-cli-run",
+      "category": "phase1",
+      "description": "CLI gestalt run command with agent orchestration",
+      "steps": [
+        "Define RunSpec, AgentSpec, RunReport types",
+        "Implement agent lifecycle via tokio JoinSet",
+        "Implement manifest writing for agent state tracking"
+      ],
+      "passes": true,
+      "verified_by": "system",
+      "github_issue": "294",
+      "last_tested": "2026-07-25",
+      "notes": "Router::execute handles full agent orchestration pipeline"
+    },
+    {
+      "id": "feat-event-log",
+      "category": "phase1",
+      "description": "JSONL event log for tracking run lifecycle events",
+      "steps": [
+        "Define Event enum with RunStarted, AgentStateChanged, etc.",
+        "Implement JsonlEventLog with thread-safe file writing",
+        "Define EventLog trait for pluggable backends"
+      ],
+      "passes": true,
+      "verified_by": "system",
+      "github_issue": "314",
+      "last_tested": "2026-07-25",
+      "notes": "JSONL event log implemented in timeline.rs"
+    }
+  ],
+  "verification_commands": {
+    "all": "cargo check --workspace",
+    "tests": "cargo check --tests -p gestalt-router  # 80+ tests, 0 errors",
+    "lint": "cargo clippy"
+  }
 }

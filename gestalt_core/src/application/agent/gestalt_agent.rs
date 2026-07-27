@@ -121,7 +121,7 @@ impl GraphNode for GestaltNode {
                     state.set_value("current_step_index", json!(step_index + 1));
 
                     Ok(NodeResult::Continue(None))
-                }
+                },
                 Err(e) => {
                     // Capture error for the ReflectionNode to handle
                     Ok(NodeResult::Error(format!(
@@ -130,7 +130,7 @@ impl GraphNode for GestaltNode {
                         tool_name,
                         e
                     )))
-                }
+                },
             }
         } else {
             tracing::info!("Agent provided final answer.");
@@ -194,7 +194,7 @@ impl Agent for GestaltAgent {
                 let _final_state = graph.execute(initial_state).await?;
 
                 Ok(())
-            }
+            },
             _ => Ok(()),
         }
     }

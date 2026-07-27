@@ -749,7 +749,7 @@ fn test_mergeresult_variants() {
     match &success {
         MergeResult::Success { merged_commit_sha } => {
             assert_eq!(merged_commit_sha, "deadbeef");
-        }
+        },
         _ => panic!("expected Success variant"),
     }
 
@@ -765,7 +765,7 @@ fn test_mergeresult_variants() {
         } => {
             assert_eq!(conflicted_files.len(), 2);
             assert_eq!(branches_preserved.len(), 1);
-        }
+        },
         _ => panic!("expected HardConflict variant"),
     }
 
@@ -1200,7 +1200,7 @@ fn test_merge_test_result_conflicts() {
         MergeTestResult::Conflicts(list) => {
             assert_eq!(list.len(), 2);
             assert_eq!(list[0].path, PathBuf::from("f1.txt"));
-        }
+        },
         _ => panic!("expected Conflicts variant"),
     }
 

@@ -29,18 +29,18 @@ pub fn clean_path(path: &Path) -> PathBuf {
         match component {
             Component::ParentDir => {
                 components.pop();
-            }
-            Component::CurDir => {}
+            },
+            Component::CurDir => {},
             Component::Normal(c) => {
                 components.push(c);
-            }
+            },
             Component::Prefix(p) => {
                 components.push(p.as_os_str());
-            }
+            },
             Component::RootDir => {
                 components.clear();
                 components.push(component.as_os_str());
-            }
+            },
         }
     }
     components.iter().collect()
@@ -276,7 +276,7 @@ pub fn checkpoint(
             } else {
                 return Err(e);
             }
-        }
+        },
     };
 
     Ok(CheckpointResult {
@@ -299,7 +299,7 @@ pub fn run_checkpoint(worktree_dir: &Path, agent_id: &str) -> Result<bool, Route
             } else {
                 Ok(false)
             }
-        }
+        },
         Err(e) => Err(e),
     }
 }
@@ -472,7 +472,10 @@ mod tests {
         let checkpointer = AtomicCheckpointer::with_simulated_failure(repo.path.clone());
 
         // Save pre-checkpoint HEAD SHA
-        let pre_sha = run_git_cmd(&repo.path, &["rev-parse", "HEAD"]).unwrap().trim().to_string();
+        let pre_sha = run_git_cmd(&repo.path, &["rev-parse", "HEAD"])
+            .unwrap()
+            .trim()
+            .to_string();
 
         // Create a new untracked file to trigger a checkpoint commit
         let test_file = repo.path.join("test_file.txt");
@@ -480,20 +483,35 @@ mod tests {
 
         // Perform checkpoint - should fail due to simulated manifest write failure
         let result = checkpointer.checkpoint("test-agent", "gestalt: checkpoint test-agent");
-        assert!(result.is_err(), "Checkpoint should fail when manifest write fails");
+        assert!(
+            result.is_err(),
+            "Checkpoint should fail when manifest write fails"
+        );
 
         // Verify that the commit has been rolled back
-        let post_sha = run_git_cmd(&repo.path, &["rev-parse", "HEAD"]).unwrap().trim().to_string();
-        assert_eq!(pre_sha, post_sha, "The HEAD SHA should not have changed (commit was rolled back)");
+        let post_sha = run_git_cmd(&repo.path, &["rev-parse", "HEAD"])
+            .unwrap()
+            .trim()
+            .to_string();
+        assert_eq!(
+            pre_sha, post_sha,
+            "The HEAD SHA should not have changed (commit was rolled back)"
+        );
 
         // Verify that local file changes are preserved (not deleted)
         assert!(test_file.exists(), "Local file should still exist");
         let content = fs::read_to_string(&test_file).unwrap();
-        assert_eq!(content, "some test data", "Local file content should be preserved");
+        assert_eq!(
+            content, "some test data",
+            "Local file content should be preserved"
+        );
 
         // Verify that manifest.json does not exist
         let manifest_path = repo.path.join("manifest.json");
-        assert!(!manifest_path.exists(), "manifest.json should not exist after rollback");
+        assert!(
+            !manifest_path.exists(),
+            "manifest.json should not exist after rollback"
+        );
     }
 
     #[test]

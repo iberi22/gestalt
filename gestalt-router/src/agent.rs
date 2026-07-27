@@ -76,7 +76,8 @@ fn get_ppid(pid: u32) -> Option<u32> {
 #[cfg(unix)]
 fn get_descendants(parent: u32) -> Vec<u32> {
     let pids = get_all_pids();
-    let mut parent_to_children: std::collections::HashMap<u32, Vec<u32>> = std::collections::HashMap::new();
+    let mut parent_to_children: std::collections::HashMap<u32, Vec<u32>> =
+        std::collections::HashMap::new();
     for pid in pids {
         if let Some(ppid) = get_ppid(pid) {
             parent_to_children.entry(ppid).or_default().push(pid);
@@ -100,8 +101,14 @@ fn get_descendants(parent: u32) -> Vec<u32> {
 fn find_writable_cgroup_base() -> Option<PathBuf> {
     let uid = unsafe { libc::getuid() };
     let mut candidates = vec![
-        PathBuf::from(format!("/sys/fs/cgroup/user.slice/user-{}.slice/user@{}.service/app.slice", uid, uid)),
-        PathBuf::from(format!("/sys/fs/cgroup/user.slice/user-{}.slice/user@{}.service", uid, uid)),
+        PathBuf::from(format!(
+            "/sys/fs/cgroup/user.slice/user-{}.slice/user@{}.service/app.slice",
+            uid, uid
+        )),
+        PathBuf::from(format!(
+            "/sys/fs/cgroup/user.slice/user-{}.slice/user@{}.service",
+            uid, uid
+        )),
     ];
 
     // Parse from self cgroup
@@ -380,13 +387,13 @@ impl AgentRunner for SubprocessRunner {
         match tokio::time::timeout(timeout, &mut wait_fut).await {
             Ok(Ok(status)) => {
                 exit_code = status.code();
-            }
+            },
             Ok(Err(e)) => {
                 return Err(RouterError::AgentError(format!(
                     "Process wait error: {}",
                     e
                 )));
-            }
+            },
             Err(_) => {
                 // Timeout occurred!
                 is_timeout = true;
@@ -399,13 +406,13 @@ impl AgentRunner for SubprocessRunner {
                 match tokio::time::timeout(grace_duration, &mut wait_fut).await {
                     Ok(Ok(status)) => {
                         exit_code = status.code();
-                    }
+                    },
                     Ok(Err(e)) => {
                         return Err(RouterError::AgentError(format!(
                             "Process wait error after SIGTERM: {}",
                             e
                         )));
-                    }
+                    },
                     Err(_) => {
                         // Grace period expired! Send SIGKILL to the process group and descendants forcefully
                         reaper.kill_forcefully();
@@ -414,17 +421,17 @@ impl AgentRunner for SubprocessRunner {
                         match wait_fut.await {
                             Ok(status) => {
                                 exit_code = status.code();
-                            }
+                            },
                             Err(e) => {
                                 return Err(RouterError::AgentError(format!(
                                     "Process reap error after SIGKILL: {}",
                                     e
                                 )));
-                            }
+                            },
                         }
-                    }
+                    },
                 }
-            }
+            },
         }
 
         // Wait for stdout and stderr copying tasks to finish
@@ -530,7 +537,8 @@ mod tests {
 
     impl TestTempDir {
         fn new() -> Self {
-            let path = std::env::temp_dir().join(format!("gestalt_reaper_test_{}", uuid::Uuid::new_v4()));
+            let path =
+                std::env::temp_dir().join(format!("gestalt_reaper_test_{}", uuid::Uuid::new_v4()));
             std::fs::create_dir_all(&path).unwrap();
             Self { path }
         }
@@ -560,24 +568,29 @@ mod tests {
                 command: "sh".to_string(),
                 args: vec![
                     "-c".to_string(),
-                    format!(
-                        "sleep 100 & echo $! > {}; wait",
-                        pid_file.to_string_lossy()
-                    ),
+                    format!("sleep 100 & echo $! > {}; wait", pid_file.to_string_lossy()),
                 ],
                 allowed_paths: None,
                 env: None,
             };
 
             let result = runner
-                .run(&spec, temp_dir.path(), "test cgroup / process tree kill", Duration::from_millis(500))
+                .run(
+                    &spec,
+                    temp_dir.path(),
+                    "test cgroup / process tree kill",
+                    Duration::from_millis(500),
+                )
                 .await
                 .unwrap();
 
             assert_eq!(result.state, AgentState::Timeout);
 
             // Read the pid of the background process
-            assert!(pid_file.exists(), "PID file was not written by background process");
+            assert!(
+                pid_file.exists(),
+                "PID file was not written by background process"
+            );
             let pid_str = std::fs::read_to_string(&pid_file).unwrap();
             let bg_pid: i32 = pid_str.trim().parse().unwrap();
 
@@ -588,7 +601,11 @@ mod tests {
                 res == 0
             };
 
-            assert!(!is_alive, "The background descendant process (PID {}) is still alive!", bg_pid);
+            assert!(
+                !is_alive,
+                "The background descendant process (PID {}) is still alive!",
+                bg_pid
+            );
         }
     }
 }

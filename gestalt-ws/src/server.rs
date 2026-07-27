@@ -76,16 +76,16 @@ impl WsServer {
                 match count {
                     Ok(n) => {
                         debug!("Broadcast WsEvent to {n} subscribers");
-                    }
+                    },
                     Err(_) => {
                         // No receivers — normal when no clients are connected
                         debug!("WsEvent broadcast: no receivers");
-                    }
+                    },
                 }
-            }
+            },
             Err(e) => {
                 error!("Failed to serialise WsEvent for broadcast: {e}");
-            }
+            },
         }
     }
 
@@ -104,12 +104,12 @@ impl WsServer {
                     tokio::spawn(async move {
                         Self::handle_connection(stream, peer_addr, peer_rx).await;
                     });
-                }
+                },
                 Err(e) => {
                     error!("Failed to accept connection: {e}");
                     // Brief pause to avoid busy-loop on persistent errors
                     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-                }
+                },
             }
         }
     }
@@ -128,7 +128,7 @@ impl WsServer {
             Err(e) => {
                 warn!("WebSocket handshake failed for {peer_addr}: {e}");
                 return;
-            }
+            },
         };
 
         let (mut write, mut read) = ws_stream.split();

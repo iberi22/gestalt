@@ -66,9 +66,7 @@ impl OverlapDetector {
                             if let Ok(payload) =
                                 serde_json::from_str::<serde_json::Value>(&event.payload)
                             {
-                                if let Some(path) =
-                                    payload.get("path").and_then(|v| v.as_str())
-                                {
+                                if let Some(path) = payload.get("path").and_then(|v| v.as_str()) {
                                     if let Some(ref agent_id) = event.agent_id {
                                         if let Some(holder) =
                                             Self::check_lock(&mem_state, path, agent_id)
@@ -92,7 +90,7 @@ impl OverlapDetector {
                                     }
                                 }
                             }
-                        }
+                        },
                         "lock_conflict" => {
                             // A lock attempt failed — forward as conflict_detected
                             // so downstream consumers only need to listen for one type
@@ -118,18 +116,18 @@ impl OverlapDetector {
                                     &conflict_payload,
                                 );
                             }
-                        }
+                        },
                         _ => {
                             // Ignore other event types
-                        }
+                        },
                     },
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
                         tracing::warn!("OverlapDetector lagged by {n} events");
-                    }
+                    },
                     Err(tokio::sync::broadcast::error::RecvError::Closed) => {
                         tracing::debug!("OverlapDetector: MemState broadcast closed");
                         break;
-                    }
+                    },
                 }
             }
         });
@@ -207,9 +205,7 @@ impl LiveConflictDetector {
                         if let Ok(payload) =
                             serde_json::from_str::<serde_json::Value>(&event.payload)
                         {
-                            if let Some(path) =
-                                payload.get("path").and_then(|v| v.as_str())
-                            {
+                            if let Some(path) = payload.get("path").and_then(|v| v.as_str()) {
                                 if let Some(ref agent_id) = event.agent_id {
                                     if let Some(holder) =
                                         Self::check_lock(&self.state, path, agent_id)
@@ -229,16 +225,13 @@ impl LiveConflictDetector {
                                 }
                             }
                         }
-                    }
+                    },
                     "lock_conflict" => {
                         // A lock attempt failed — forward as ConflictDetected
                         if let Ok(payload) =
                             serde_json::from_str::<serde_json::Value>(&event.payload)
                         {
-                            let path = payload
-                                .get("path")
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("?");
+                            let path = payload.get("path").and_then(|v| v.as_str()).unwrap_or("?");
                             let holder = payload
                                 .get("held_by")
                                 .and_then(|v| v.as_str())
@@ -253,24 +246,22 @@ impl LiveConflictDetector {
                                 holder,
                                 agent_b,
                                 path,
-                                &format!(
-                                    "Lock conflict on {path} between {holder} and {agent_b}"
-                                ),
+                                &format!("Lock conflict on {path} between {holder} and {agent_b}"),
                             )
                             .await;
                         }
-                    }
+                    },
                     _ => {
                         // Ignore other event types
-                    }
+                    },
                 },
                 Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
                     tracing::warn!("LiveConflictDetector lagged by {n} events");
-                }
+                },
                 Err(tokio::sync::broadcast::error::RecvError::Closed) => {
                     tracing::debug!("LiveConflictDetector: MemState broadcast closed");
                     break;
-                }
+                },
             }
         }
     }
@@ -421,10 +412,10 @@ pub fn merge_independent_agents(
                 if let Some(branch) = &agent.branch {
                     branches_to_merge.push((agent.agent_id.clone(), branch.clone()));
                 }
-            }
+            },
             IndependentRunStatus::Failed(err) => {
                 failed_agents.insert(agent.agent_id.clone(), err.clone());
-            }
+            },
         }
     }
 
@@ -818,7 +809,10 @@ mod tests {
         let path = repo_path.join(file);
         fs::write(&path, content).unwrap();
         run_git_test(repo_path, &["add", file]);
-        run_git_test(repo_path, &["commit", "-m", &format!("changes on {}", branch)]);
+        run_git_test(
+            repo_path,
+            &["commit", "-m", &format!("changes on {}", branch)],
+        );
         run_git_test(repo_path, &["checkout", "main"]);
     }
 
@@ -851,11 +845,17 @@ mod tests {
 
         // Check A is reported as failed separately
         assert_eq!(result.failed_agents.len(), 1);
-        assert_eq!(result.failed_agents.get("agent_a").unwrap(), "Agent A crashed");
+        assert_eq!(
+            result.failed_agents.get("agent_a").unwrap(),
+            "Agent A crashed"
+        );
 
         // Verify file_b.txt exists in the merged commit
         let merge_sha = result.merge_sha.unwrap();
-        let cat_output = run_git_test(&repo_path, &["cat-file", "-p", &format!("{}:file_b.txt", merge_sha)]);
+        let cat_output = run_git_test(
+            &repo_path,
+            &["cat-file", "-p", &format!("{}:file_b.txt", merge_sha)],
+        );
         assert_eq!(cat_output, "content from agent B");
 
         // Cleanup

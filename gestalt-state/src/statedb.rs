@@ -3,8 +3,8 @@ use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use rusqlite::Connection;
 use std::path::Path;
-use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 
 /// Metrics tracked during database transactions.
 #[derive(Debug, Default)]
@@ -93,15 +93,19 @@ impl StateDb {
             let run_attempt = || {
                 let mut conn = match self.conn.lock() {
                     Ok(guard) => guard,
-                    Err(e) => return TxAttemptResult::UserError(anyhow::anyhow!("DB lock poisoned: {e}")),
+                    Err(e) => {
+                        return TxAttemptResult::UserError(anyhow::anyhow!("DB lock poisoned: {e}"))
+                    },
                 };
 
-                let tx = match conn.transaction_with_behavior(rusqlite::TransactionBehavior::Exclusive) {
+                let tx = match conn
+                    .transaction_with_behavior(rusqlite::TransactionBehavior::Exclusive)
+                {
                     Ok(t) => t,
                     Err(e) => {
                         let is_busy = matches!(e, rusqlite::Error::SqliteFailure(ref err, _) if err.code == rusqlite::ErrorCode::DatabaseBusy || err.code == rusqlite::ErrorCode::DatabaseLocked);
                         return TxAttemptResult::DbError { is_busy, err: e };
-                    }
+                    },
                 };
 
                 match f(&tx) {
@@ -111,11 +115,11 @@ impl StateDb {
                             return TxAttemptResult::DbError { is_busy, err: e };
                         }
                         TxAttemptResult::Success(res)
-                    }
+                    },
                     Err(err) => {
                         let _ = tx.rollback();
                         TxAttemptResult::UserError(err)
-                    }
+                    },
                 }
             };
 
@@ -123,14 +127,16 @@ impl StateDb {
                 TxAttemptResult::Success(val) => {
                     // Success! Record metrics and return result
                     let elapsed = start_time.elapsed().as_millis() as u64;
-                    self.metrics.write_latency_ms.fetch_add(elapsed, Ordering::SeqCst);
+                    self.metrics
+                        .write_latency_ms
+                        .fetch_add(elapsed, Ordering::SeqCst);
                     self.metrics.write_count.fetch_add(1, Ordering::SeqCst);
                     return Ok(val);
-                }
+                },
                 TxAttemptResult::UserError(user_err) => {
                     // Non-retryable closure/user error. Rollback was handled or is automatic.
                     return Err(user_err);
-                }
+                },
                 TxAttemptResult::DbError { is_busy, err } => {
                     if is_busy && attempts < max_retries {
                         attempts += 1;
@@ -139,8 +145,10 @@ impl StateDb {
                         std::thread::sleep(std::time::Duration::from_millis(50 * attempts));
                         continue;
                     }
-                    return Err(anyhow::anyhow!("Database error during transaction execution: {err}"));
-                }
+                    return Err(anyhow::anyhow!(
+                        "Database error during transaction execution: {err}"
+                    ));
+                },
             }
         }
     }
@@ -200,7 +208,9 @@ impl StateDb {
     ///
     /// This is crate-internal so that [`super::virtual_fs::StateDbVfs`]
     /// can share the same database for the `file_versions` table.
-    pub(crate) fn conn(&self) -> Result<std::sync::MutexGuard<'_, rusqlite::Connection>, anyhow::Error> {
+    pub(crate) fn conn(
+        &self,
+    ) -> Result<std::sync::MutexGuard<'_, rusqlite::Connection>, anyhow::Error> {
         self.conn
             .lock()
             .map_err(|e| anyhow::anyhow!("DB lock poisoned: {e}"))
@@ -724,7 +734,15 @@ mod tests {
                 for w in 0..writes_per_thread {
                     let agent_id = format!("agent-{t}-{w}");
                     db_clone
-                        .upsert_agent("run-shared", &agent_id, "success", Some("ok"), None, 100, "[]")
+                        .upsert_agent(
+                            "run-shared",
+                            &agent_id,
+                            "success",
+                            Some("ok"),
+                            None,
+                            100,
+                            "[]",
+                        )
                         .expect("Concurrent upsert failed");
                 }
             });
@@ -747,12 +765,20 @@ mod tests {
         // Verify metrics
         let metrics = db.metrics();
         let total_expected_writes = 1 + (num_threads * writes_per_thread); // 1 for create_run + thread writes
-        assert_eq!(metrics.write_count.load(Ordering::SeqCst), total_expected_writes as u64);
+        assert_eq!(
+            metrics.write_count.load(Ordering::SeqCst),
+            total_expected_writes as u64
+        );
 
         // Under high concurrency, conflicts/retries may or may not occur depending on execution speed,
         // but we verify that the metrics exist and can be safely read.
         let conflicts = metrics.conflict_count.load(Ordering::SeqCst);
         let retries = metrics.retry_count.load(Ordering::SeqCst);
-        println!("Concurrency metrics: conflicts={}, retries={}, write_latency_ms={}", conflicts, retries, metrics.write_latency_ms.load(Ordering::SeqCst));
+        println!(
+            "Concurrency metrics: conflicts={}, retries={}, write_latency_ms={}",
+            conflicts,
+            retries,
+            metrics.write_latency_ms.load(Ordering::SeqCst)
+        );
     }
 }

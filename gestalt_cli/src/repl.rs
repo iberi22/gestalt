@@ -206,23 +206,23 @@ impl<H: ReplHandler + Default> InteractiveRepl<H> {
                                 }
                             }
                             println!();
-                        }
-                        Ok(None) => {}
+                        },
+                        Ok(None) => {},
                         Err(ReplError::Command(cmd)) if cmd == "exit" => {
                             break;
-                        }
+                        },
                         Err(e) => eprintln!("Error: {}", e),
                     }
-                }
+                },
                 Err(ReadlineError::Interrupted) => {
                     println!("\nUse 'exit' to quit.");
-                }
+                },
                 Err(ReadlineError::Eof) => {
                     break;
-                }
+                },
                 Err(e) => {
                     return Err(ReplError::Readline(e));
-                }
+                },
             }
         }
 
@@ -262,7 +262,7 @@ impl<H: ReplHandler + Default> InteractiveRepl<H> {
                 // Clear screen
                 print!("\x1B[2J\x1B[3J\x1B[H");
                 Ok(Some("Console cleared.".to_string()))
-            }
+            },
 
             "history" => {
                 let state = self.state.lock().await;
@@ -271,7 +271,7 @@ impl<H: ReplHandler + Default> InteractiveRepl<H> {
                     output.push_str(&format!("[{}] {}: {}\n", i, msg.role, msg.content));
                 }
                 Ok(Some(output))
-            }
+            },
 
             "context" => {
                 let mut state = self.state.lock().await;
@@ -285,7 +285,7 @@ impl<H: ReplHandler + Default> InteractiveRepl<H> {
                     // Show context
                     Ok(Some(format!("{:?}", state.context)))
                 }
-            }
+            },
 
             "set" => {
                 if args.len() < 2 {
@@ -304,7 +304,7 @@ impl<H: ReplHandler + Default> InteractiveRepl<H> {
                 let mut state = self.state.lock().await;
                 state.set_var(name, value);
                 Ok(Some(format!("Set {}={}", name, value)))
-            }
+            },
 
             "get" => {
                 if args.is_empty() {
@@ -316,7 +316,7 @@ impl<H: ReplHandler + Default> InteractiveRepl<H> {
                 } else {
                     Ok(Some(format!("Variable '{}' not found", args[0])))
                 }
-            }
+            },
 
             "run" => {
                 if args.is_empty() {
@@ -325,7 +325,7 @@ impl<H: ReplHandler + Default> InteractiveRepl<H> {
                 let expr = args.join(" ");
                 let mut handler = self.handler.lock().await;
                 Ok(Some(handler.handle_input(&expr).await?))
-            }
+            },
 
             _ => {
                 // Pass to handler
@@ -337,7 +337,7 @@ impl<H: ReplHandler + Default> InteractiveRepl<H> {
                 state.add_message("assistant", &response);
 
                 Ok(Some(response))
-            }
+            },
         }
     }
 

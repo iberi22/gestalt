@@ -187,10 +187,10 @@ impl VirtualFileSystem for OverlayFs {
                     path.display(),
                     current_owner
                 );
-            }
+            },
             _ => {
                 state.locks.insert(path.to_path_buf(), owner.to_string());
-            }
+            },
         }
         state.text_files.remove(path);
         state.binary_files.insert(path.to_path_buf(), data);
@@ -400,7 +400,7 @@ impl VirtualFileSystem for OverlayFs {
             None => {
                 state.locks.insert(path.to_path_buf(), owner.to_string());
                 LockStatus::Acquired
-            }
+            },
             Some(current_owner) if current_owner == owner => LockStatus::AlreadyHeldByOwner,
             Some(current_owner) => LockStatus::HeldByOther {
                 owner: current_owner.clone(),
@@ -505,7 +505,7 @@ impl FileWatcher for OverlayFs {
                         Err(_) => {
                             tokio::time::sleep(interval).await;
                             continue;
-                        }
+                        },
                     };
                     while let Ok(Some(entry)) = dir.next_entry().await {
                         let p = entry.path();
@@ -531,7 +531,7 @@ impl FileWatcher for OverlayFs {
                             .is_err() =>
                         {
                             return;
-                        }
+                        },
                         Some(old)
                             if old != state
                                 && tx
@@ -543,8 +543,8 @@ impl FileWatcher for OverlayFs {
                                     .is_err() =>
                         {
                             return;
-                        }
-                        _ => {}
+                        },
+                        _ => {},
                     }
                 }
 

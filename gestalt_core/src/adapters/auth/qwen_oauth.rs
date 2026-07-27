@@ -58,11 +58,11 @@ pub async fn load_cached_credentials() -> Option<QwenCredentials> {
             Ok(creds) => {
                 info!("Loaded Qwen credentials from {:?}", path);
                 Some(creds)
-            }
+            },
             Err(e) => {
                 tracing::warn!("Failed to parse Qwen credentials: {}", e);
                 None
-            }
+            },
         }
     } else {
         None
@@ -218,10 +218,10 @@ pub async fn run_device_flow_login() -> anyhow::Result<QwenCredentials> {
                 save_credentials(&creds).await?;
                 println!("✅ Qwen authentication successful!");
                 return Ok(creds);
-            }
+            },
             Ok(None) => {
                 debug!("Authorization pending...");
-            }
+            },
             Err(e) => {
                 if e.to_string().contains("slow_down") {
                     poll_interval =
@@ -230,7 +230,7 @@ pub async fn run_device_flow_login() -> anyhow::Result<QwenCredentials> {
                 } else {
                     return Err(e);
                 }
-            }
+            },
         }
     }
 

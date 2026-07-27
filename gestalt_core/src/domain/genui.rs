@@ -69,7 +69,10 @@ mod tests {
 
         assert_eq!(deserialized.text_response, "Hello user!");
         assert!(deserialized.ui_component.is_some());
-        assert_eq!(deserialized.ui_component.unwrap().widget_type, WidgetType::Card);
+        assert_eq!(
+            deserialized.ui_component.unwrap().widget_type,
+            WidgetType::Card
+        );
     }
 
     #[test]

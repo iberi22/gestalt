@@ -55,7 +55,7 @@ pub fn scan_markdown_files(root: &Path) -> Vec<FileContext> {
                         });
                     }
                 }
-            }
+            },
             Err(err) => tracing::warn!("Error walking directory: {}", err),
         }
     }

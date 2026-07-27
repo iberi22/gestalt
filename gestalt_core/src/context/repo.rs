@@ -81,7 +81,7 @@ fn get_current_branch(repo: &Repository) -> Option<String> {
                 head.target()
                     .map(|oid| format!("(detached at {})", &oid.to_string()[..7]))
             }
-        }
+        },
         Err(_) => {
             // If head() fails, we might be on a new branch with no commits.
             // We can try to get the symbolic reference HEAD points to.
@@ -89,7 +89,7 @@ fn get_current_branch(repo: &Repository) -> Option<String> {
                 refs.symbolic_target()
                     .map(|s| s.strip_prefix("refs/heads/").unwrap_or(s).to_string())
             })
-        }
+        },
     }
 }
 

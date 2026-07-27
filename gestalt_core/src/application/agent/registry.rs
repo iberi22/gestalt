@@ -66,7 +66,9 @@ pub struct AgentEntry {
     pub ocupado_desde: Option<Instant>,
 }
 
-fn default_max_context() -> u64 { 4096 }
+fn default_max_context() -> u64 {
+    4096
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum AgentType {
@@ -98,12 +100,21 @@ pub struct RateLimit {
     pub current_tpm: u64,
 }
 
-fn default_rpm() -> u32 { 60 }
-fn default_tpm() -> u64 { 100_000 }
+fn default_rpm() -> u32 {
+    60
+}
+fn default_tpm() -> u64 {
+    100_000
+}
 
 impl Default for RateLimit {
     fn default() -> Self {
-        Self { rpm: default_rpm(), tpm: default_tpm(), current_rpm: 0, current_tpm: 0 }
+        Self {
+            rpm: default_rpm(),
+            tpm: default_tpm(),
+            current_rpm: 0,
+            current_tpm: 0,
+        }
     }
 }
 
@@ -115,7 +126,9 @@ pub enum AgentStatus {
 }
 
 impl Default for AgentStatus {
-    fn default() -> Self { AgentStatus::Disponible }
+    fn default() -> Self {
+        AgentStatus::Disponible
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -157,8 +170,12 @@ pub struct RoutingConfig {
     pub tiny_agents_for_precise_edits: bool,
 }
 
-fn default_prefer_local_simple() -> bool { true }
-fn default_tiny_for_precise() -> bool { true }
+fn default_prefer_local_simple() -> bool {
+    true
+}
+fn default_tiny_for_precise() -> bool {
+    true
+}
 
 impl Default for RoutingConfig {
     fn default() -> Self {
@@ -183,7 +200,9 @@ pub enum RoutingStrategy {
 }
 
 impl Default for RoutingStrategy {
-    fn default() -> Self { Self::CapabilityMatch }
+    fn default() -> Self {
+        Self::CapabilityMatch
+    }
 }
 
 impl AgentRegistry {
@@ -201,7 +220,11 @@ impl AgentRegistry {
     }
 
     /// Selecciona el mejor agente para una tarea
-    pub fn select_agent(&mut self, task: &str, required_capability: Option<&str>) -> Option<&AgentEntry> {
+    pub fn select_agent(
+        &mut self,
+        task: &str,
+        required_capability: Option<&str>,
+    ) -> Option<&AgentEntry> {
         // Recuperar agentes que excedieron el timeout de Ocupado
         for agent in &mut self.agents {
             if agent.status == AgentStatus::Ocupado {
@@ -217,7 +240,9 @@ impl AgentRegistry {
         let provider_states = &self.provider_states;
         let providers = &self.providers;
 
-        let mut candidates: Vec<&AgentEntry> = self.agents.iter()
+        let mut candidates: Vec<&AgentEntry> = self
+            .agents
+            .iter()
             .filter(|a| a.status == AgentStatus::Disponible)
             .filter(|a| {
                 if let Some(cap) = required_capability {
@@ -226,12 +251,8 @@ impl AgentRegistry {
                     true
                 }
             })
-            .filter(|a| {
-                a.rate_limit.current_rpm < a.rate_limit.rpm
-            })
-            .filter(|a| {
-                a.rate_limit.current_tpm < a.rate_limit.tpm
-            })
+            .filter(|a| a.rate_limit.current_rpm < a.rate_limit.rpm)
+            .filter(|a| a.rate_limit.current_tpm < a.rate_limit.tpm)
             .filter(|a| {
                 // Check provider-level rate limits
                 if let Some(state) = provider_states.get(&a.provider) {
@@ -280,19 +301,27 @@ impl AgentRegistry {
             },
             RoutingStrategy::MostCapable => {
                 candidates.sort_by(|a, b| b.capabilities.len().cmp(&a.capabilities.len()));
-            }
+            },
             RoutingStrategy::CapabilityMatch => {
                 // Prefiere el que tenga más capacidades relevantes para la tarea
                 let task_lower = task.to_lowercase();
                 candidates.sort_by(|a, b| {
-                    let a_score = a.capabilities.iter().filter(|c| task_lower.contains(&c.to_lowercase())).count();
-                    let b_score = b.capabilities.iter().filter(|c| task_lower.contains(&c.to_lowercase())).count();
+                    let a_score = a
+                        .capabilities
+                        .iter()
+                        .filter(|c| task_lower.contains(&c.to_lowercase()))
+                        .count();
+                    let b_score = b
+                        .capabilities
+                        .iter()
+                        .filter(|c| task_lower.contains(&c.to_lowercase()))
+                        .count();
                     b_score.cmp(&a_score)
                 });
-            }
+            },
             RoutingStrategy::RoundRobin => {
                 // Mantiene orden actual (rotación implícita)
-            }
+            },
         }
 
         candidates.first().copied()
@@ -316,7 +345,9 @@ impl AgentRegistry {
 
     /// Registra uso de rate limit
     pub fn record_usage(&mut self, name: &str, tokens: u64) {
-        let provider = self.agents.iter_mut()
+        let provider = self
+            .agents
+            .iter_mut()
             .find(|a| a.name == name)
             .map(|agent| {
                 agent.rate_limit.current_rpm += 1;
@@ -352,7 +383,8 @@ impl AgentRegistry {
 
     /// Busca agentes por capacidad (coincidencia exacta)
     pub fn find_by_capability(&self, capability: &str) -> Vec<&AgentEntry> {
-        self.agents.iter()
+        self.agents
+            .iter()
             .filter(|a| a.capabilities.iter().any(|c| c == capability))
             .collect()
     }
@@ -364,7 +396,8 @@ impl AgentRegistry {
 
     /// Agentes locales (tiny + CLI)
     pub fn local_agents(&self) -> Vec<&AgentEntry> {
-        self.agents.iter()
+        self.agents
+            .iter()
             .filter(|a| matches!(a.agent_type, AgentType::Tiny | AgentType::Cli))
             .collect()
     }
@@ -372,8 +405,16 @@ impl AgentRegistry {
     /// Resumen de capacidades del registry
     pub fn summary(&self) -> AgentSummary {
         let total = self.agents.len();
-        let available = self.agents.iter().filter(|a| a.status == AgentStatus::Disponible).count();
-        let tiny = self.agents.iter().filter(|a| a.agent_type == AgentType::Tiny).count();
+        let available = self
+            .agents
+            .iter()
+            .filter(|a| a.status == AgentStatus::Disponible)
+            .count();
+        let tiny = self
+            .agents
+            .iter()
+            .filter(|a| a.agent_type == AgentType::Tiny)
+            .count();
         let editors = self.editors().len();
         let all_caps: Vec<String> = self
             .agents
@@ -383,7 +424,13 @@ impl AgentRegistry {
             .into_iter()
             .collect();
 
-        AgentSummary { total, available, tiny, editors, unique_capabilities: all_caps }
+        AgentSummary {
+            total,
+            available,
+            tiny,
+            editors,
+            unique_capabilities: all_caps,
+        }
     }
 }
 

@@ -65,7 +65,10 @@ impl AgentHealth {
     pub fn is_alive(&self) -> bool {
         matches!(
             self.status,
-            HealthStatus::Starting | HealthStatus::Healthy | HealthStatus::Degraded | HealthStatus::Recovering
+            HealthStatus::Starting
+                | HealthStatus::Healthy
+                | HealthStatus::Degraded
+                | HealthStatus::Recovering
         )
     }
 
@@ -119,11 +122,25 @@ pub struct SwarmHealthMonitor {
 
 #[derive(Debug, Clone)]
 pub enum HealthEvent {
-    AgentDied { agent_id: usize, reason: String },
-    AgentRecovered { agent_id: usize },
-    AgentRestarted { agent_id: usize, attempt: u64 },
-    AgentUnhealthy { agent_id: usize, reason: String },
-    SwarmDegraded { healthy_count: usize, total_count: usize },
+    AgentDied {
+        agent_id: usize,
+        reason: String,
+    },
+    AgentRecovered {
+        agent_id: usize,
+    },
+    AgentRestarted {
+        agent_id: usize,
+        attempt: u64,
+    },
+    AgentUnhealthy {
+        agent_id: usize,
+        reason: String,
+    },
+    SwarmDegraded {
+        healthy_count: usize,
+        total_count: usize,
+    },
     SwarmHealthy,
 }
 
@@ -278,7 +295,8 @@ impl HealthChecker {
     }
 
     pub async fn run(&self) {
-        let mut check_interval = interval(Duration::from_millis(self.config.health_check_interval_ms));
+        let mut check_interval =
+            interval(Duration::from_millis(self.config.health_check_interval_ms));
 
         loop {
             check_interval.tick().await;
@@ -302,7 +320,10 @@ impl HealthChecker {
 
             let (status, healthy, total) = self.monitor.get_swarm_status().await;
             if status == HealthStatus::Unhealthy && total > 0 && healthy == 0 {
-                let _ = self.monitor.events_tx.send(HealthEvent::SwarmDegraded { healthy_count: healthy, total_count: total });
+                let _ = self.monitor.events_tx.send(HealthEvent::SwarmDegraded {
+                    healthy_count: healthy,
+                    total_count: total,
+                });
             }
         }
     }
@@ -366,17 +387,17 @@ impl RecoveryManager {
                     );
 
                     let agents = self.monitor.agents.read().await;
-                    let restart_count = agents
-                        .get(agent_id)
-                        .map(|h| h.restart_count)
-                        .unwrap_or(0);
+                    let restart_count = agents.get(agent_id).map(|h| h.restart_count).unwrap_or(0);
 
                     if restart_count < self.config.max_restart_attempts {
-                        let _ = self.recovery_tx.send(RecoveryAction {
-                            agent_id: *agent_id,
-                            action: RecoveryActionType::Restart,
-                            reason: reason.clone(),
-                        }).await;
+                        let _ = self
+                            .recovery_tx
+                            .send(RecoveryAction {
+                                agent_id: *agent_id,
+                                action: RecoveryActionType::Restart,
+                                reason: reason.clone(),
+                            })
+                            .await;
                     } else {
                         tracing::error!(
                             "Agent {} exceeded max restart attempts ({}). Marking as dead.",
@@ -386,8 +407,8 @@ impl RecoveryManager {
                         self.monitor.mark_dead(*agent_id).await;
                     }
                 }
-            }
-            _ => {}
+            },
+            _ => {},
         }
     }
 }

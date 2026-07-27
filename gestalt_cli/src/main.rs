@@ -683,7 +683,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .status()?;
 
             std::process::exit(status.code().unwrap_or(0));
-        }
+        },
 
         Commands::Status => {
             let tools_url = format!("{}/tools", url);
@@ -695,15 +695,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     info!("MCP Server is online at {}", url);
                     println!("✅ Gestalt MCP Server: Online");
                     println!("📍 {}", url);
-                }
+                },
                 _ => {
                     warn!("MCP Server is offline at {}", url);
                     println!("❌ Gestalt MCP Server: Offline");
                     println!("📍 {}", url);
                     std::process::exit(1);
-                }
+                },
             }
-        }
+        },
 
         Commands::Tools => {
             let tools_url = format!("{}/tools", url);
@@ -722,7 +722,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .unwrap_or("");
                 println!("  • {}: {}", name, desc);
             }
-        }
+        },
 
         Commands::Exec { tool, args } => {
             info!("Executing tool: {}", tool);
@@ -743,13 +743,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         "{}",
                         serde_json::to_string_pretty(&result).expect("Failed to serialize result")
                     );
-                }
+                },
                 Err(e) => {
                     error!("Failed to execute tool {}: {}", tool, e);
                     return Err(e.into());
-                }
+                },
             }
-        }
+        },
 
         Commands::TaskCreate {
             id,
@@ -774,7 +774,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             info!("Task {} created successfully", id);
             println!("✅ Task created: {} ({})", name, id);
-        }
+        },
 
         Commands::TaskList { status, db } => {
             let db_path = db.unwrap_or_else(|| default_db.to_string());
@@ -800,7 +800,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     status_icon, task.status, task.id, task.name
                 );
             }
-        }
+        },
 
         Commands::TaskStatus { id, db } => {
             let db_path = db.unwrap_or_else(|| default_db.to_string());
@@ -814,13 +814,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     if let Some(ref result) = task.result {
                         println!("   Result: {}", result);
                     }
-                }
+                },
                 None => {
                     println!("❌ Task not found: {}", id);
                     std::process::exit(1);
-                }
+                },
             }
-        }
+        },
 
         Commands::Analyze { path } => {
             let args = json!({ "path": path });
@@ -848,7 +848,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
             }
-        }
+        },
 
         Commands::Search { pattern, path, ext } => {
             let args = json!({
@@ -886,7 +886,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
             }
-        }
+        },
 
         Commands::Git { subcommand, path } => {
             let tool = match subcommand.as_str() {
@@ -912,7 +912,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             {
                 println!("{}", content.as_str().unwrap_or(""));
             }
-        }
+        },
 
         Commands::Read { path, lines } => {
             let args = json!({ "path": path, "lines": lines });
@@ -932,7 +932,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             {
                 println!("{}", content.as_str().unwrap_or(""));
             }
-        }
+        },
 
         Commands::Tree { path, depth } => {
             let args = json!({ "path": path, "depth": depth });
@@ -959,7 +959,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
             }
-        }
+        },
 
         Commands::SysInfo => {
             let args = json!({});
@@ -991,13 +991,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
             }
-        }
+        },
 
         Commands::Repl => {
             info!("Starting interactive REPL");
             let mut repl = InteractiveRepl::with_handler(EchoHandler)?;
             repl.run().await?;
-        }
+        },
 
         Commands::Swarm { task, workspace } => {
             if task.is_empty() {
@@ -1069,11 +1069,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         Ok(_) => {
                             info!("[{}] Task COMPLETE: {}", task_id, task_desc);
                             println!("  ✅ [{}] Done: {}", task_id, task_desc);
-                        }
+                        },
                         Err(e) => {
                             info!("[{}] Task FAILED: {} - {}", task_id, task_desc, e);
                             println!("  ❌ [{}] Failed: {} ({})", task_id, task_desc, e);
-                        }
+                        },
                     }
 
                     (task_id, task_desc, result)
@@ -1086,10 +1086,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 match res {
                     Ok((task_id, task_desc, result)) => {
                         results.push((task_id, task_desc, result));
-                    }
+                    },
                     Err(e) => {
                         error!("Task panicked: {:?}", e);
-                    }
+                    },
                 }
             }
 
@@ -1136,11 +1136,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             );
                         }
                     }
-                }
+                },
                 Err(e) => {
                     error!("Flush failed: {}", e);
                     println!("  ❌ Flush failed: {}", e);
-                }
+                },
             }
 
             let end_time = chrono::Utc::now();
@@ -1158,7 +1158,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             if failures > 0 {
                 std::process::exit(1);
             }
-        }
+        },
 
         Commands::Run {
             task,
@@ -1328,14 +1328,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     // Also output the full report as JSON for machine consumption
                     println!();
                     println!("{}", serde_json::to_string_pretty(&report)?);
-                }
+                },
                 Err(e) => {
                     error!("Router execution failed: {}", e);
                     eprintln!("❌ Router execution failed: {}", e);
                     std::process::exit(1);
-                }
+                },
             }
-        }
+        },
 
         Commands::Xavier { action } => {
             match action {
@@ -1354,12 +1354,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let mem = r["memory"].as_str().unwrap_or("");
                         let kind = r["metadata"]["kind"].as_str().unwrap_or("?");
                         let first_line = mem.lines().next().unwrap_or("");
-                        let preview = first_line
-                            .get(0..80.min(first_line.len()))
-                            .unwrap_or("");
+                        let preview = first_line.get(0..80.min(first_line.len())).unwrap_or("");
                         println!(" {}. [{}] {}", i + 1, kind, preview);
                     }
-                }
+                },
                 XavierAction::Add {
                     content,
                     path,
@@ -1373,7 +1371,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .await?;
                     let body: serde_json::Value = resp.json().await?;
                     println!("Archived: {}", body["id"].as_str().unwrap_or("ok"));
-                }
+                },
                 XavierAction::Stats => {
                     let client = reqwest::Client::new();
                     let resp = client
@@ -1382,12 +1380,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .send()
                         .await?;
                     let body: serde_json::Value = resp.json().await?;
-                    let count = body["results"]
-                        .as_array()
-                        .map(|a| a.len())
-                        .unwrap_or(0);
+                    let count = body["results"].as_array().map(|a| a.len()).unwrap_or(0);
                     println!("Xavier: {} memories found", count);
-                }
+                },
                 XavierAction::Cycle {
                     task,
                     agent,
@@ -1446,9 +1441,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .await?;
                     let search_body: serde_json::Value = resp.json().await?;
                     let empty_vec = vec![];
-                    let search_results = search_body["results"]
-                        .as_array()
-                        .unwrap_or(&empty_vec);
+                    let search_results = search_body["results"].as_array().unwrap_or(&empty_vec);
                     let result_count = search_results.len();
 
                     // Build readable search context for archive
@@ -1498,7 +1491,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let (program, args) = if parts.is_empty() {
                             (String::new(), vec![])
                         } else {
-                            (parts[0].to_string(), parts[1..].iter().map(|s| s.to_string()).collect::<Vec<_>>())
+                            (
+                                parts[0].to_string(),
+                                parts[1..].iter().map(|s| s.to_string()).collect::<Vec<_>>(),
+                            )
                         };
 
                         // Run with 300s timeout
@@ -1535,25 +1531,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 if !out_stderr.is_empty() {
                                     println!("stderr: {}", out_stderr);
                                 }
-                            }
+                            },
                             Ok(Ok(Err(e))) => {
                                 agent_state = AgentState::Crashed;
                                 agent_stderr = format!("Agent subprocess error: {}", e);
                                 agent_exit_status = "error".to_string();
                                 eprintln!("Agent failed: {}", e);
-                            }
+                            },
                             Ok(Err(join_err)) => {
                                 agent_state = AgentState::Crashed;
                                 agent_stderr = format!("Agent task panicked: {}", join_err);
                                 agent_exit_status = "panic".to_string();
                                 eprintln!("Agent task panicked: {}", join_err);
-                            }
+                            },
                             Err(_elapsed) => {
                                 agent_state = AgentState::Timeout;
                                 agent_stderr = "Agent timed out after 300s".to_string();
                                 agent_exit_status = "timeout".to_string();
                                 eprintln!("Agent timed out after 300s");
-                            }
+                            },
                         }
                     }
 
@@ -1569,8 +1565,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         {
                             Ok(output) => {
                                 if output.status.success() {
-                                    vfs_diff =
-                                        "No changes detected between VFS base and overlay".to_string();
+                                    vfs_diff = "No changes detected between VFS base and overlay"
+                                        .to_string();
                                 } else {
                                     let diff_text =
                                         String::from_utf8_lossy(&output.stdout).to_string();
@@ -1588,11 +1584,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         &vfs_diff[..vfs_diff.len().min(2000)]
                                     );
                                 }
-                            }
+                            },
                             Err(e) => {
                                 vfs_diff = format!("(diff command unavailable: {})", e);
                                 eprintln!("⚠️ Could not compute VFS diff: {}", e);
-                            }
+                            },
                         }
                     }
 
@@ -1647,17 +1643,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     match archive_result {
                         Ok(resp) => {
                             let body: serde_json::Value = resp.json().await.unwrap_or_default();
-                            println!("POST: archived (id={})", body["id"].as_str().unwrap_or("ok"));
-                        }
+                            println!(
+                                "POST: archived (id={})",
+                                body["id"].as_str().unwrap_or("ok")
+                            );
+                        },
                         Err(e) => {
                             eprintln!("POST archive failed: {}", e);
-                        }
+                        },
                     }
 
                     println!("Cycle complete — final state: {:?}", state);
-                }
+                },
             }
-        }
+        },
     }
 
     Ok(())

@@ -380,7 +380,7 @@ pub mod prelude {
                     Err(e) => {
                         last_err = Some(e);
                         continue;
-                    }
+                    },
                 }
             }
             Err(last_err.unwrap_or_else(|| anyhow::anyhow!("All providers failed")))
@@ -879,7 +879,7 @@ pub mod framework {
                     match node.execute(&mut state).await? {
                         NodeResult::Halt => break,
                         NodeResult::Continue(Some(next)) => current = next,
-                        NodeResult::Continue(None) => {}
+                        NodeResult::Continue(None) => {},
                         NodeResult::Error(err) => {
                             state.set_value("error", Value::String(err));
                             if let Some(handler) = self.error_handler.clone() {
@@ -887,7 +887,7 @@ pub mod framework {
                             } else {
                                 break;
                             }
-                        }
+                        },
                     }
                 }
 

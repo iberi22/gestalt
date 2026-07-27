@@ -55,7 +55,10 @@ mod tests {
     #[test]
     fn test_core_error_formatting() {
         let err_vfs = CoreError::Vfs(VfsError::NotFound("src/main.rs".to_string()));
-        assert_eq!(err_vfs.to_string(), "VFS error: path not found: src/main.rs");
+        assert_eq!(
+            err_vfs.to_string(),
+            "VFS error: path not found: src/main.rs"
+        );
 
         let err_repo = CoreError::Repository("Git clone failed".to_string());
         assert_eq!(err_repo.to_string(), "Repository error: Git clone failed");
@@ -67,19 +70,31 @@ mod tests {
         assert_eq!(err_db.to_string(), "Database error: Connection failed");
 
         let err_embed = CoreError::Embedding("Dimension mismatch".to_string());
-        assert_eq!(err_embed.to_string(), "Embedding / RAG error: Dimension mismatch");
+        assert_eq!(
+            err_embed.to_string(),
+            "Embedding / RAG error: Dimension mismatch"
+        );
 
         let err_agent = CoreError::Agent("Context timeout".to_string());
-        assert_eq!(err_agent.to_string(), "Agent execution error: Context timeout");
+        assert_eq!(
+            err_agent.to_string(),
+            "Agent execution error: Context timeout"
+        );
 
         let err_idx = CoreError::Indexing("WalkDir failed".to_string());
         assert_eq!(err_idx.to_string(), "Indexing error: WalkDir failed");
 
         let err_cfg = CoreError::Config("Missing environment variable".to_string());
-        assert_eq!(err_cfg.to_string(), "Configuration error: Missing environment variable");
+        assert_eq!(
+            err_cfg.to_string(),
+            "Configuration error: Missing environment variable"
+        );
 
         let err_val = CoreError::Validation("Forbidden metacharacter found".to_string());
-        assert_eq!(err_val.to_string(), "Validation error: Forbidden metacharacter found");
+        assert_eq!(
+            err_val.to_string(),
+            "Validation error: Forbidden metacharacter found"
+        );
 
         let err_int = CoreError::Internal("Unknown crash".to_string());
         assert_eq!(err_int.to_string(), "Internal/Other error: Unknown crash");
@@ -89,6 +104,9 @@ mod tests {
     fn test_vfs_error_from_conversion() {
         let vfs_err = VfsError::LockContention("Already held".to_string());
         let core_err: CoreError = vfs_err.into();
-        assert!(matches!(core_err, CoreError::Vfs(VfsError::LockContention(_))));
+        assert!(matches!(
+            core_err,
+            CoreError::Vfs(VfsError::LockContention(_))
+        ));
     }
 }

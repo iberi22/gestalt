@@ -504,7 +504,11 @@ impl AgentPool {
                 "Pool checkout: agent {} (wait: {}ms, reuse: {})",
                 id,
                 wait_time_ms,
-                agents.iter().find(|a| a.id == id).map(|a| a.reuse_count).unwrap_or(0)
+                agents
+                    .iter()
+                    .find(|a| a.id == id)
+                    .map(|a| a.reuse_count)
+                    .unwrap_or(0)
             );
 
             Some(id)

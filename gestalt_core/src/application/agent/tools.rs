@@ -207,7 +207,7 @@ impl Tool for ExecuteShellTool {
                     "stdout": stdout,
                     "stderr": stderr
                 }))
-            }
+            },
             Err(e) => Err(anyhow::anyhow!("Failed to execute '{}': {}", command, e)),
         }
     }
@@ -531,7 +531,7 @@ impl Tool for GitBranchTool {
                 } else {
                     run_git(&[String::from("branch"), name.to_string()]).await
                 }
-            }
+            },
             "checkout" => {
                 let name = args
                     .get("name")
@@ -539,7 +539,7 @@ impl Tool for GitBranchTool {
                     .ok_or_else(|| anyhow::anyhow!("Missing 'name' parameter"))?;
                 validate_branch_name(name)?;
                 run_git(&[String::from("checkout"), name.to_string()]).await
-            }
+            },
             _ => anyhow::bail!("unsupported git_branch action '{}'", action),
         }
     }

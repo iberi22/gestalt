@@ -54,9 +54,15 @@ pub fn classify_git_error(err_msg: &str) -> ClassifiedMergeError {
     let lower = err_msg.to_lowercase();
     if lower.contains("conflict") || lower.contains("merge conflict") {
         ClassifiedMergeError::Conflict(err_msg.to_string())
-    } else if lower.contains("lock") || lower.contains("timeout") || lower.contains("unable to create") {
+    } else if lower.contains("lock")
+        || lower.contains("timeout")
+        || lower.contains("unable to create")
+    {
         ClassifiedMergeError::LockTimeout(err_msg.to_string())
-    } else if lower.contains("corrupt") || lower.contains("bad object") || lower.contains("not a valid") {
+    } else if lower.contains("corrupt")
+        || lower.contains("bad object")
+        || lower.contains("not a valid")
+    {
         ClassifiedMergeError::CorruptBranch(err_msg.to_string())
     } else {
         ClassifiedMergeError::Other(err_msg.to_string())
@@ -131,7 +137,10 @@ pub fn integrate_branches(
         // Attempt sequential integration from the clean base_sha
         match integrate_branches_attempt(repo_dir, base_sha, integration_branch, &branches_local) {
             Ok(result) => {
-                if !result.conflicts.is_empty() && policy.retry_on_conflict && attempts < policy.max_attempts {
+                if !result.conflicts.is_empty()
+                    && policy.retry_on_conflict
+                    && attempts < policy.max_attempts
+                {
                     let err = ClassifiedMergeError::Conflict("Merge conflict detected".to_string());
                     if err.is_retryable(&policy) {
                         std::thread::sleep(policy.backoff);
@@ -139,7 +148,7 @@ pub fn integrate_branches(
                     }
                 }
                 return Ok(result);
-            }
+            },
             Err(e) => {
                 let classified = classify_router_error(&e);
                 if classified.is_retryable(&policy) && attempts < policy.max_attempts {
@@ -147,7 +156,7 @@ pub fn integrate_branches(
                     continue;
                 }
                 return Err(e);
-            }
+            },
         }
     }
 }
@@ -195,7 +204,10 @@ fn integrate_branches_attempt(
             conflicts: conflicted_binaries
                 .iter()
                 .map(|f| ConflictInfo {
-                    agent_id: binary_mods.get(f).and_then(|v| v.first().cloned()).unwrap_or_default(),
+                    agent_id: binary_mods
+                        .get(f)
+                        .and_then(|v| v.first().cloned())
+                        .unwrap_or_default(),
                     path: f.clone(),
                 })
                 .collect(),
@@ -207,7 +219,14 @@ fn integrate_branches_attempt(
     let mut conflicted_files = Vec::new();
 
     for (_agent_id, branch_or_sha) in branches {
-        let args = ["merge-tree", "--write-tree", "--merge-base", base_sha, &current_tree, branch_or_sha];
+        let args = [
+            "merge-tree",
+            "--write-tree",
+            "--merge-base",
+            base_sha,
+            &current_tree,
+            branch_or_sha,
+        ];
         let result = checkpoint::run_git_cmd(repo_dir, &args);
 
         match result {
@@ -229,12 +248,12 @@ fn integrate_branches_attempt(
                 match checkpoint::run_git_cmd(repo_dir, &intermediate_args) {
                     Ok(sha) => {
                         current_tree = sha.trim().to_string();
-                    }
+                    },
                     Err(e) => {
                         conflicted_files.push(format!("commit-tree-failed: {}", e));
-                    }
+                    },
                 }
-            }
+            },
             Err(e) => {
                 // There is a merge conflict. stdout contains the conflict info.
                 let err_msg = e.to_string();
@@ -256,7 +275,7 @@ fn integrate_branches_attempt(
                     files.push(format!("conflict-in-branch-{}", branch_or_sha));
                 }
                 conflicted_files.extend(files);
-            }
+            },
         }
     }
 
@@ -287,7 +306,7 @@ fn integrate_branches_attempt(
             Err(_) => {
                 // Fall back: the last merge-tree output may already be a tree
                 current_tree.clone()
-            }
+            },
         }
     } else {
         base_sha.to_string()
@@ -327,7 +346,7 @@ fn integrate_branches_attempt(
                     err_msg
                 )));
             }
-        }
+        },
     };
 
     let merged_branches: Vec<String> = branches.iter().map(|(_, b)| b.clone()).collect();
@@ -353,7 +372,8 @@ mod tests {
 
     impl TempDir {
         fn new() -> Self {
-            let path = std::env::temp_dir().join(format!("gestalt_integrate_test_{}", Uuid::new_v4()));
+            let path =
+                std::env::temp_dir().join(format!("gestalt_integrate_test_{}", Uuid::new_v4()));
             fs::create_dir_all(&path).unwrap();
             Self { path }
         }
@@ -366,15 +386,43 @@ mod tests {
     }
 
     fn init_git_repo(repo_path: &Path) {
-        Command::new("git").arg("init").current_dir(repo_path).status().unwrap();
-        Command::new("git").args(["config", "user.name", "Tester"]).current_dir(repo_path).status().unwrap();
-        Command::new("git").args(["config", "user.email", "test@example.com"]).current_dir(repo_path).status().unwrap();
+        Command::new("git")
+            .arg("init")
+            .current_dir(repo_path)
+            .status()
+            .unwrap();
+        Command::new("git")
+            .args(["config", "user.name", "Tester"])
+            .current_dir(repo_path)
+            .status()
+            .unwrap();
+        Command::new("git")
+            .args(["config", "user.email", "test@example.com"])
+            .current_dir(repo_path)
+            .status()
+            .unwrap();
         // Force the initial branch to be named 'main'
-        Command::new("git").args(["checkout", "-b", "main"]).current_dir(repo_path).status().unwrap();
+        Command::new("git")
+            .args(["checkout", "-b", "main"])
+            .current_dir(repo_path)
+            .status()
+            .unwrap();
 
-        fs::write(repo_path.join("file.txt"), "line 1\nline 2\nline 3\nline 4\nline 5\nline 6\nline 7\nline 8\nline 9\nline 10\n").unwrap();
-        Command::new("git").args(["add", "file.txt"]).current_dir(repo_path).status().unwrap();
-        Command::new("git").args(["commit", "-m", "initial"]).current_dir(repo_path).status().unwrap();
+        fs::write(
+            repo_path.join("file.txt"),
+            "line 1\nline 2\nline 3\nline 4\nline 5\nline 6\nline 7\nline 8\nline 9\nline 10\n",
+        )
+        .unwrap();
+        Command::new("git")
+            .args(["add", "file.txt"])
+            .current_dir(repo_path)
+            .status()
+            .unwrap();
+        Command::new("git")
+            .args(["commit", "-m", "initial"])
+            .current_dir(repo_path)
+            .status()
+            .unwrap();
     }
 
     #[test]
@@ -391,27 +439,98 @@ mod tests {
             .unwrap();
 
         // Branch A modifies file.txt line 2 to "A"
-        Command::new("git").args(["checkout", "-b", "branch_a"]).current_dir(&repo_path).status().unwrap();
-        fs::write(repo_path.join("file.txt"), "line 1\nA\nline 3\nline 4\nline 5\nline 6\nline 7\nline 8\nline 9\nline 10\n").unwrap();
-        Command::new("git").args(["add", "file.txt"]).current_dir(&repo_path).status().unwrap();
-        Command::new("git").args(["commit", "-m", "commit A"]).current_dir(&repo_path).status().unwrap();
-        let sha_a = Command::new("git").args(["rev-parse", "HEAD"]).current_dir(&repo_path).output().map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string()).unwrap();
+        Command::new("git")
+            .args(["checkout", "-b", "branch_a"])
+            .current_dir(&repo_path)
+            .status()
+            .unwrap();
+        fs::write(
+            repo_path.join("file.txt"),
+            "line 1\nA\nline 3\nline 4\nline 5\nline 6\nline 7\nline 8\nline 9\nline 10\n",
+        )
+        .unwrap();
+        Command::new("git")
+            .args(["add", "file.txt"])
+            .current_dir(&repo_path)
+            .status()
+            .unwrap();
+        Command::new("git")
+            .args(["commit", "-m", "commit A"])
+            .current_dir(&repo_path)
+            .status()
+            .unwrap();
+        let sha_a = Command::new("git")
+            .args(["rev-parse", "HEAD"])
+            .current_dir(&repo_path)
+            .output()
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+            .unwrap();
 
         // Branch B modifies file.txt line 2 to "B" (conflicting!)
-        Command::new("git").args(["checkout", "main"]).current_dir(&repo_path).status().unwrap();
-        Command::new("git").args(["checkout", "-b", "branch_b"]).current_dir(&repo_path).status().unwrap();
-        fs::write(repo_path.join("file.txt"), "line 1\nB\nline 3\nline 4\nline 5\nline 6\nline 7\nline 8\nline 9\nline 10\n").unwrap();
-        Command::new("git").args(["add", "file.txt"]).current_dir(&repo_path).status().unwrap();
-        Command::new("git").args(["commit", "-m", "commit B"]).current_dir(&repo_path).status().unwrap();
-        let sha_b = Command::new("git").args(["rev-parse", "HEAD"]).current_dir(&repo_path).output().map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string()).unwrap();
+        Command::new("git")
+            .args(["checkout", "main"])
+            .current_dir(&repo_path)
+            .status()
+            .unwrap();
+        Command::new("git")
+            .args(["checkout", "-b", "branch_b"])
+            .current_dir(&repo_path)
+            .status()
+            .unwrap();
+        fs::write(
+            repo_path.join("file.txt"),
+            "line 1\nB\nline 3\nline 4\nline 5\nline 6\nline 7\nline 8\nline 9\nline 10\n",
+        )
+        .unwrap();
+        Command::new("git")
+            .args(["add", "file.txt"])
+            .current_dir(&repo_path)
+            .status()
+            .unwrap();
+        Command::new("git")
+            .args(["commit", "-m", "commit B"])
+            .current_dir(&repo_path)
+            .status()
+            .unwrap();
+        let sha_b = Command::new("git")
+            .args(["rev-parse", "HEAD"])
+            .current_dir(&repo_path)
+            .output()
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+            .unwrap();
 
         // Branch B2 (non-conflicting fallback!) modifies line 9 to "B2"
-        Command::new("git").args(["checkout", "main"]).current_dir(&repo_path).status().unwrap();
-        Command::new("git").args(["checkout", "-b", "branch_b2"]).current_dir(&repo_path).status().unwrap();
-        fs::write(repo_path.join("file.txt"), "line 1\nline 2\nline 3\nline 4\nline 5\nline 6\nline 7\nline 8\nB2\nline 10\n").unwrap();
-        Command::new("git").args(["add", "file.txt"]).current_dir(&repo_path).status().unwrap();
-        Command::new("git").args(["commit", "-m", "commit B2"]).current_dir(&repo_path).status().unwrap();
-        let sha_b2 = Command::new("git").args(["rev-parse", "HEAD"]).current_dir(&repo_path).output().map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string()).unwrap();
+        Command::new("git")
+            .args(["checkout", "main"])
+            .current_dir(&repo_path)
+            .status()
+            .unwrap();
+        Command::new("git")
+            .args(["checkout", "-b", "branch_b2"])
+            .current_dir(&repo_path)
+            .status()
+            .unwrap();
+        fs::write(
+            repo_path.join("file.txt"),
+            "line 1\nline 2\nline 3\nline 4\nline 5\nline 6\nline 7\nline 8\nB2\nline 10\n",
+        )
+        .unwrap();
+        Command::new("git")
+            .args(["add", "file.txt"])
+            .current_dir(&repo_path)
+            .status()
+            .unwrap();
+        Command::new("git")
+            .args(["commit", "-m", "commit B2"])
+            .current_dir(&repo_path)
+            .status()
+            .unwrap();
+        let sha_b2 = Command::new("git")
+            .args(["rev-parse", "HEAD"])
+            .current_dir(&repo_path)
+            .output()
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+            .unwrap();
 
         // Configure RETRY_POLICY to retry on conflict
         RETRY_POLICY.with(|p| {
@@ -452,8 +571,14 @@ mod tests {
         let result = integrate_branches(&repo_path, &base_sha, "integration", &branches).unwrap();
 
         // Verify that it successfully completed on retry (no conflicts, got a valid merge sha)
-        assert!(!result.merge_sha.is_empty(), "Should have a valid merge SHA after retry");
-        assert!(result.conflicts.is_empty(), "Conflicts list should be empty after retry");
+        assert!(
+            !result.merge_sha.is_empty(),
+            "Should have a valid merge SHA after retry"
+        );
+        assert!(
+            result.conflicts.is_empty(),
+            "Conflicts list should be empty after retry"
+        );
 
         // Reset the thread-local state
         RETRY_POLICY.with(|p| {

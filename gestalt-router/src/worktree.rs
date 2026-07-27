@@ -19,15 +19,15 @@ fn normalize_path_simple(path: &Path) -> PathBuf {
         match component {
             Component::ParentDir => {
                 components.pop();
-            }
-            Component::CurDir => {}
+            },
+            Component::CurDir => {},
             Component::Normal(c) => {
                 components.push(c);
-            }
+            },
             Component::RootDir => {
                 is_absolute = true;
-            }
-            _ => {}
+            },
+            _ => {},
         }
     }
     let mut result = PathBuf::new();
@@ -58,7 +58,7 @@ impl WriteSetValidator {
             None => {
                 tracing::warn!("No allowed write-set declared for the agent. Allowing all writes by default but warning.");
                 return Ok(());
-            }
+            },
             Some(paths) => paths,
         };
 
@@ -107,7 +107,8 @@ impl WriteSetValidator {
 
 pub struct WorktreeManager {
     pub base_dir: PathBuf,
-    pub write_set_allowed_paths: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, Vec<String>>>>,
+    pub write_set_allowed_paths:
+        std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, Vec<String>>>>,
 }
 
 fn sha256_hex(content: &str) -> String {
@@ -126,7 +127,9 @@ impl WorktreeManager {
     pub fn new(base_dir: PathBuf) -> Self {
         Self {
             base_dir,
-            write_set_allowed_paths: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+            write_set_allowed_paths: std::sync::Arc::new(std::sync::Mutex::new(
+                std::collections::HashMap::new(),
+            )),
         }
     }
 
@@ -262,7 +265,6 @@ impl WorktreeManager {
         branch: &str,
         worktree_path: &Path,
     ) -> Result<(), RouterError> {
-
         // Idempotency: cleanup existing worktree at worktree_path if registered
         if let Ok(list) = self.list_worktrees_locked(repo_path) {
             if list.iter().any(|wt| wt.path == worktree_path) {
@@ -310,7 +312,7 @@ impl WorktreeManager {
             self.run_git_command_locked(repo_path, &["worktree", "remove", "--force", path_str]);
 
         match res {
-            Ok(_) => {}
+            Ok(_) => {},
             Err(e) => {
                 let err_str = e.to_string();
                 if err_str.contains("not a valid worktree")
@@ -323,7 +325,7 @@ impl WorktreeManager {
                 } else {
                     return Err(e);
                 }
-            }
+            },
         }
 
         let _ = self.run_git_command_locked(repo_path, &["worktree", "prune"]);
@@ -425,9 +427,7 @@ fn run_git_show(repo_path: &Path, path: &str) -> Result<String, VfsError> {
         if stderr.contains("fatal: bad revision") || stderr.contains("fatal: Path") {
             return Err(VfsError::NotFound(format!("path not found: {path}")));
         }
-        return Err(VfsError::Internal(format!(
-            "git show error: {stderr}"
-        )));
+        return Err(VfsError::Internal(format!("git show error: {stderr}")));
     }
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
@@ -435,13 +435,7 @@ fn run_git_show(repo_path: &Path, path: &str) -> Result<String, VfsError> {
 fn run_git_log(repo_path: &Path, path: &str) -> Result<Vec<FileVersion>, VfsError> {
     let output = std::process::Command::new("git")
         .current_dir(repo_path)
-        .args([
-            "log",
-            "--format=%H|%ai|%an",
-            "--follow",
-            "--",
-            path,
-        ])
+        .args(["log", "--format=%H|%ai|%an", "--follow", "--", path])
         .output()
         .map_err(|e| VfsError::Internal(format!("git log failed: {e}")))?;
 
@@ -719,7 +713,10 @@ mod tests {
         let manager = WorktreeManager::new(PathBuf::from("/tmp"));
 
         // Register allowed paths for "agent-test"
-        manager.register_allowed_paths("agent-test", vec!["file.txt".to_string(), "src/".to_string()]);
+        manager.register_allowed_paths(
+            "agent-test",
+            vec!["file.txt".to_string(), "src/".to_string()],
+        );
 
         // Change current directory to our test repo so that run_git_show can find it
         let original_dir = std::env::current_dir().unwrap();
@@ -737,7 +734,11 @@ mod tests {
         let res1 = manager.write_block("file.txt", block1).await;
         std::env::set_current_dir(&original_dir).unwrap(); // Restore directory before assertions
 
-        assert!(res1.is_ok(), "Expected write to succeed inside allowed path. Got error: {:?}", res1);
+        assert!(
+            res1.is_ok(),
+            "Expected write to succeed inside allowed path. Got error: {:?}",
+            res1
+        );
 
         // Restore dir again for the second check
         std::env::set_current_dir(&temp_dir.path).unwrap();
@@ -754,8 +755,15 @@ mod tests {
         let res2 = manager.write_block("forbidden.txt", block2).await;
         std::env::set_current_dir(&original_dir).unwrap(); // Restore directory
 
-        assert!(res2.is_err(), "Expected write to be rejected outside allowed path");
+        assert!(
+            res2.is_err(),
+            "Expected write to be rejected outside allowed path"
+        );
         let err_str = res2.unwrap_err().to_string();
-        assert!(err_str.contains("Write set violation"), "Expected Write set violation, got: {}", err_str);
+        assert!(
+            err_str.contains("Write set violation"),
+            "Expected Write set violation, got: {}",
+            err_str
+        );
     }
 }

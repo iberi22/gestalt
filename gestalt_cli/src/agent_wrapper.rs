@@ -53,10 +53,7 @@ pub enum BlockEdit {
         content: String,
     },
     /// Delete the line at the given position.
-    Delete {
-        path: String,
-        line: usize,
-    },
+    Delete { path: String, line: usize },
     /// Replace `old` with `new` at the given line.
     Replace {
         path: String,
@@ -105,12 +102,7 @@ impl AgentWrapper {
     ///
     /// Call [`with_mem_state`](Self::with_mem_state) to attach a
     /// [`MemState`] for live timeline events.
-    pub fn new(
-        vfs: Arc<dyn VirtualFS>,
-        agent_id: String,
-        run_id: String,
-        command: String,
-    ) -> Self {
+    pub fn new(vfs: Arc<dyn VirtualFS>, agent_id: String, run_id: String, command: String) -> Self {
         Self {
             command,
             vfs,
@@ -182,8 +174,7 @@ impl AgentWrapper {
 
         // 3-4. Store each BlockEdit in MemState timeline + apply to VFS
         for edit in &edits {
-            let payload = serde_json::to_string(edit)
-                .unwrap_or_else(|_| format!("{:?}", edit));
+            let payload = serde_json::to_string(edit).unwrap_or_else(|_| format!("{:?}", edit));
             self.push_event("block_edit", &payload);
 
             // 5. Apply edit to VFS
@@ -194,7 +185,11 @@ impl AgentWrapper {
                     agent_id = %self.agent_id,
                     "Failed to apply BlockEdit to VFS",
                 );
-                return Err(format!("Failed to apply BlockEdit for '{}': {}", edit.path(), e));
+                return Err(format!(
+                    "Failed to apply BlockEdit for '{}': {}",
+                    edit.path(),
+                    e
+                ));
             }
         }
 
@@ -239,8 +234,11 @@ impl AgentWrapper {
                     new_string: new_content,
                     context: String::new(),
                 };
-                self.vfs.write_block(path, block).await.map_err(|e| e.to_string())
-            }
+                self.vfs
+                    .write_block(path, block)
+                    .await
+                    .map_err(|e| e.to_string())
+            },
             BlockEdit::Delete { path, line } => {
                 let current = match self.vfs.read_file(path).await {
                     Ok((c, _)) => c,
@@ -262,8 +260,11 @@ impl AgentWrapper {
                     new_string: new_content,
                     context: String::new(),
                 };
-                self.vfs.write_block(path, block).await.map_err(|e| e.to_string())
-            }
+                self.vfs
+                    .write_block(path, block)
+                    .await
+                    .map_err(|e| e.to_string())
+            },
             BlockEdit::Replace {
                 path,
                 line,
@@ -272,9 +273,7 @@ impl AgentWrapper {
             } => {
                 let current = match self.vfs.read_file(path).await {
                     Ok((c, _)) => c,
-                    Err(VfsError::NotFound(_)) => {
-                        return Err(format!("File not found: {}", path))
-                    }
+                    Err(VfsError::NotFound(_)) => return Err(format!("File not found: {}", path)),
                     Err(e) => return Err(e.to_string()),
                 };
 
@@ -304,8 +303,11 @@ impl AgentWrapper {
                     new_string: new_content,
                     context: String::new(),
                 };
-                self.vfs.write_block(path, block).await.map_err(|e| e.to_string())
-            }
+                self.vfs
+                    .write_block(path, block)
+                    .await
+                    .map_err(|e| e.to_string())
+            },
         }
     }
 }
@@ -417,7 +419,7 @@ fn flush_pending_removals(
         None => {
             pending.clear();
             return;
-        }
+        },
     };
     for (line_num, _content) in pending.drain(..) {
         edits.push(BlockEdit::Delete {
@@ -628,7 +630,7 @@ mod tests {
                 assert_eq!(*line, 12); // line 12 in old file (- region started at old_line_offset + offset)
                 assert_eq!(old, "old line");
                 assert_eq!(new, "new line");
-            }
+            },
             other => panic!("expected Replace, got {:?}", other),
         }
     }
@@ -654,7 +656,7 @@ mod tests {
                 assert_eq!(path, "src/lib.rs");
                 assert_eq!(*line, 6);
                 assert_eq!(content, "new line here");
-            }
+            },
             other => panic!("expected Insert, got {:?}", other),
         }
     }
@@ -675,7 +677,7 @@ mod tests {
             BlockEdit::Delete { path, line } => {
                 assert_eq!(path, "src/main.rs");
                 assert_eq!(*line, 9);
-            }
+            },
             other => panic!("expected Delete, got {:?}", other),
         }
     }
@@ -881,10 +883,7 @@ mod tests {
 
         // echo outputs plain text, not a diff — no edits expected
         let edits = wrapper.execute().await.unwrap();
-        assert!(
-            edits.is_empty(),
-            "expected no edits from plain echo output"
-        );
+        assert!(edits.is_empty(), "expected no edits from plain echo output");
     }
 
     #[tokio::test]

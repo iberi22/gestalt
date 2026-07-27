@@ -12,8 +12,8 @@ use gestalt_ws::WsEvent;
 use gestalt_ws::WsServer;
 
 use crate::agent::AgentRunner;
-use crate::run::{AgentResult, RouterError, RunReport, RunSpec, ConflictInfo};
 use crate::overlap::{LiveConflictDetector, OverlapDetector};
+use crate::run::{AgentResult, ConflictInfo, RouterError, RunReport, RunSpec};
 use crate::timeline::{Event, EventLog};
 use crate::worktree::WorktreeManager;
 use gestalt_core::ports::outbound::vfs::VirtualFS;
@@ -58,18 +58,16 @@ impl Router {
             log,
             xavier: None,
             ws_server,
-            worktrees: Arc::new(WorktreeManager::new(
-                std::path::PathBuf::from("/tmp/gestalt"),
-            )),
+            worktrees: Arc::new(WorktreeManager::new(std::path::PathBuf::from(
+                "/tmp/gestalt",
+            ))),
             dry_run: false,
         };
 
         // Spawn LiveConflictDetector if a WebSocket server is configured
         if router.ws_server.is_some() {
-            let detector = LiveConflictDetector::new(
-                router.mem_state.clone(),
-                router.ws_server.clone(),
-            );
+            let detector =
+                LiveConflictDetector::new(router.mem_state.clone(), router.ws_server.clone());
             tokio::spawn(detector.run());
         }
 
@@ -175,10 +173,7 @@ impl Router {
                 );
                 Some(ctx)
             } else {
-                tracing::info!(
-                    "No Xavier context found for task (run {})",
-                    run_id
-                );
+                tracing::info!("No Xavier context found for task (run {})", run_id);
                 None
             }
         } else {
@@ -217,7 +212,7 @@ impl Router {
                 Ok(path) => {
                     created_wts.push(path.clone());
                     wt_paths.insert(agent.id.clone(), path);
-                }
+                },
                 Err(e) => {
                     // Cleanup already created worktrees
                     for wt in &created_wts {
@@ -227,7 +222,7 @@ impl Router {
                         "Failed to create worktree for agent {}: {}",
                         agent.id, e
                     )));
-                }
+                },
             }
         }
 
@@ -279,10 +274,7 @@ impl Router {
                 }
 
                 // Check for lock conflicts before running the agent
-                let conflicts = OverlapDetector::check_all_locks_for_agent(
-                    &mem_state,
-                    &agent_id,
-                );
+                let conflicts = OverlapDetector::check_all_locks_for_agent(&mem_state, &agent_id);
                 for (path, holder_id) in &conflicts {
                     let conflict_payload = serde_json::json!({
                         "path": path,
@@ -329,16 +321,16 @@ impl Router {
                         Err(e) => {
                             run_result.error = Some(format!("Checkpoint failed: {}", e));
                             AgentState::Crashed
-                        }
+                        },
                     },
                     AgentState::Crashed => {
                         let _ = checkpoint_res;
                         AgentState::Crashed
-                    }
+                    },
                     AgentState::Timeout => {
                         let _ = checkpoint_res;
                         AgentState::Timeout
-                    }
+                    },
                     other => other,
                 };
 
@@ -390,14 +382,14 @@ impl Router {
             match res {
                 Ok(Ok(agent_result)) => {
                     agent_results.push(agent_result);
-                }
+                },
                 Ok(Err(e)) => {
                     // Cleanup worktrees
                     for wt in &created_wts {
                         let _ = self.worktrees.cleanup_worktree(wt);
                     }
                     return Err(e);
-                }
+                },
                 Err(e) => {
                     // Cleanup worktrees
                     for wt in &created_wts {
@@ -407,7 +399,7 @@ impl Router {
                         "Agent task panicked or cancelled: {}",
                         e
                     )));
-                }
+                },
             }
         }
 
@@ -489,14 +481,14 @@ impl Router {
                     }
 
                     let _ = self.worktrees.cleanup_worktree(&integrate_wt_path);
-                }
+                },
                 Err(e) => {
                     // Cleanup other worktrees
                     for wt in &created_wts {
                         let _ = self.worktrees.cleanup_worktree(wt);
                     }
                     return Err(e);
-                }
+                },
             }
         }
 
@@ -547,17 +539,20 @@ impl Router {
             .to_string();
         let duration_ms = _timer_start.elapsed().as_millis() as u64;
         if let Some(ref xavier) = self.xavier {
-            let content = serde_json::to_string_pretty(&RunReport {
-                run_id,
-                task: spec.task.clone(),
-                agents: agent_results.clone(),
-                duration_ms,
-                merged_branches: merged_branches.clone(),
-                conflicts: conflicts.clone(),
-                events_path: events_path.clone(),
-                success: true,
-            }.to_json())
-                .unwrap_or_else(|_| "{}".to_string());
+            let content = serde_json::to_string_pretty(
+                &RunReport {
+                    run_id,
+                    task: spec.task.clone(),
+                    agents: agent_results.clone(),
+                    duration_ms,
+                    merged_branches: merged_branches.clone(),
+                    conflicts: conflicts.clone(),
+                    events_path: events_path.clone(),
+                    success: true,
+                }
+                .to_json(),
+            )
+            .unwrap_or_else(|_| "{}".to_string());
             let metadata = serde_json::json!({
                 "run_id": run_id.to_string(),
                 "task": spec.task,
@@ -573,10 +568,10 @@ impl Router {
                         run_id,
                         memory_id
                     );
-                }
+                },
                 Err(e) => {
                     tracing::warn!("Xavier archive_run failed (non-fatal): {}", e);
-                }
+                },
             }
         }
 
@@ -649,7 +644,7 @@ impl SerialMergeQueue {
                     "Failed to run git diff --numstat for {}: {}",
                     agent_id, e
                 )));
-            }
+            },
         };
         if !git_out.success {
             return Err(RouterError::GitError(format!(
@@ -700,7 +695,7 @@ impl SerialMergeQueue {
                     "Failed to execute git merge-tree: {}",
                     e
                 )));
-            }
+            },
         };
 
         if merge_out.success {
@@ -734,7 +729,7 @@ impl SerialMergeQueue {
                             "Failed to execute git commit-tree: {}",
                             e
                         )));
-                    }
+                    },
                 };
                 if commit_out.success {
                     self.current_commit_or_tree = commit_out.stdout.trim().to_string();
@@ -825,7 +820,8 @@ mod tests {
 
     #[test]
     fn test_serial_merge_queue_success() {
-        let temp = std::env::temp_dir().join(format!("gestalt_test_success_{}", uuid::Uuid::new_v4()));
+        let temp =
+            std::env::temp_dir().join(format!("gestalt_test_success_{}", uuid::Uuid::new_v4()));
         fs::create_dir_all(&temp).unwrap();
 
         let base_sha = setup_test_git_repo(&temp);
@@ -842,8 +838,12 @@ mod tests {
         run_git_command(&temp, &["commit", "-am", "agent 2 change"]).unwrap();
 
         let mut queue = SerialMergeQueue::new(temp.clone(), base_sha, false);
-        queue.enqueue_and_merge("agent-1", "agent-1-branch").unwrap();
-        queue.enqueue_and_merge("agent-2", "agent-2-branch").unwrap();
+        queue
+            .enqueue_and_merge("agent-1", "agent-1-branch")
+            .unwrap();
+        queue
+            .enqueue_and_merge("agent-2", "agent-2-branch")
+            .unwrap();
 
         assert_eq!(queue.merged_branches.len(), 2);
         assert!(queue.conflicts.is_empty());
@@ -856,7 +856,8 @@ mod tests {
 
     #[test]
     fn test_serial_merge_queue_rollback_on_conflict() {
-        let temp = std::env::temp_dir().join(format!("gestalt_test_rollback_{}", uuid::Uuid::new_v4()));
+        let temp =
+            std::env::temp_dir().join(format!("gestalt_test_rollback_{}", uuid::Uuid::new_v4()));
         fs::create_dir_all(&temp).unwrap();
 
         let base_sha = setup_test_git_repo(&temp);
@@ -873,11 +874,15 @@ mod tests {
         run_git_command(&temp, &["commit", "-am", "agent 2 change"]).unwrap();
 
         let mut queue = SerialMergeQueue::new(temp.clone(), base_sha, false);
-        queue.enqueue_and_merge("agent-1", "agent-1-branch").unwrap();
+        queue
+            .enqueue_and_merge("agent-1", "agent-1-branch")
+            .unwrap();
 
         let commit_after_agent_1 = queue.current_commit_or_tree.clone();
 
-        queue.enqueue_and_merge("agent-2", "agent-2-branch").unwrap();
+        queue
+            .enqueue_and_merge("agent-2", "agent-2-branch")
+            .unwrap();
 
         assert_eq!(queue.merged_branches.len(), 1);
         assert_eq!(queue.merged_branches[0], "agent-1-branch");
@@ -891,7 +896,8 @@ mod tests {
 
     #[test]
     fn test_serial_merge_queue_dry_run() {
-        let temp = std::env::temp_dir().join(format!("gestalt_test_dry_run_{}", uuid::Uuid::new_v4()));
+        let temp =
+            std::env::temp_dir().join(format!("gestalt_test_dry_run_{}", uuid::Uuid::new_v4()));
         fs::create_dir_all(&temp).unwrap();
 
         let base_sha = setup_test_git_repo(&temp);
@@ -908,8 +914,12 @@ mod tests {
         run_git_command(&temp, &["commit", "-am", "agent 2 change"]).unwrap();
 
         let mut queue = SerialMergeQueue::new(temp.clone(), base_sha, true);
-        queue.enqueue_and_merge("agent-1", "agent-1-branch").unwrap();
-        queue.enqueue_and_merge("agent-2", "agent-2-branch").unwrap();
+        queue
+            .enqueue_and_merge("agent-1", "agent-1-branch")
+            .unwrap();
+        queue
+            .enqueue_and_merge("agent-2", "agent-2-branch")
+            .unwrap();
 
         assert_eq!(queue.merged_branches.len(), 2);
         assert!(queue.conflicts.is_empty());

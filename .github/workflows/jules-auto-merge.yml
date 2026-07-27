@@ -15,7 +15,7 @@ jobs:
     if: contains(github.event.pull_request.body, 'PR created automatically by Jules') || contains(github.event.pull_request.labels.*.name, 'jules')
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Set up Python
         uses: actions/setup-python@v6

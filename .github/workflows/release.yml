@@ -18,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 180
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Install Rust Toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -52,7 +52,7 @@ jobs:
     runs-on: windows-latest
     needs: [quality-gate]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Install Rust Toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -93,7 +93,7 @@ jobs:
             binary_path: target/release/gestalt_cli
             rename_binary: gestalt-cli-macos
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Install Rust Toolchain
         uses: dtolnay/rust-toolchain@stable
       - name: Rust Cache
@@ -119,7 +119,7 @@ jobs:
       run:
         working-directory: ./gestalt_app
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Setup Java
         uses: actions/setup-java@v5

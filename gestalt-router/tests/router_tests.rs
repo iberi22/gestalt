@@ -929,7 +929,10 @@ fn test_state_db_event_log_creation_and_logging() {
     log.append(event3.clone()).unwrap();
 
     // Read back
-    let events = log.read_events(run_id).unwrap();
+    let mut events = log.read_events(run_id).unwrap();
+    // Since StateDb::get_timeline returns events in seq DESC order (reverse chronological),
+    // we reverse the retrieved list here to assert they match the chronological order of append.
+    events.reverse();
     assert_eq!(events.len(), 3);
     assert_eq!(events[0], event1);
     assert_eq!(events[1], event2);

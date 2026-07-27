@@ -239,7 +239,7 @@ impl SwarmHealthMonitor {
         stale
     }
 
-    pub fn should_restart(&self, agent_id: usize) -> bool {
+    pub fn should_restart(&self, _agent_id: usize) -> bool {
         if !self.config.enable_auto_recovery {
             return false;
         }

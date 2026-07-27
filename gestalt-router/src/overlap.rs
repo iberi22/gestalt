@@ -380,6 +380,84 @@ pub enum MergeTestResult {
     Conflicts(Vec<ConflictInfo>),
 }
 
+/// The run status of an individual agent, independent of other agents.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum IndependentRunStatus {
+    Success,
+    Failed(String),
+}
+
+/// A report on an individual agent's run status and branch.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AgentRunReport {
+    pub agent_id: String,
+    pub status: IndependentRunStatus,
+    pub branch: Option<String>,
+}
+
+/// The result of an independent multi-agent merge, containing partial success results.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IndependentMergeResult {
+    pub merge_sha: Option<String>,
+    pub merged_branches: Vec<String>,
+    pub failed_agents: HashMap<String, String>,
+    pub conflicts: Vec<crate::run::ConflictInfo>,
+}
+
+/// Integrates branches of successful agents independently, while reporting failed agents separately.
+/// One agent failure does not block the integration/merging of other successful agents.
+pub fn merge_independent_agents(
+    repo_path: &Path,
+    base_sha: &str,
+    integration_branch: &str,
+    agents: &[AgentRunReport],
+) -> Result<IndependentMergeResult, RouterError> {
+    let mut branches_to_merge = Vec::new();
+    let mut failed_agents = HashMap::new();
+
+    for agent in agents {
+        match &agent.status {
+            IndependentRunStatus::Success => {
+                if let Some(branch) = &agent.branch {
+                    branches_to_merge.push((agent.agent_id.clone(), branch.clone()));
+                }
+            }
+            IndependentRunStatus::Failed(err) => {
+                failed_agents.insert(agent.agent_id.clone(), err.clone());
+            }
+        }
+    }
+
+    if branches_to_merge.is_empty() {
+        return Ok(IndependentMergeResult {
+            merge_sha: None,
+            merged_branches: Vec::new(),
+            failed_agents,
+            conflicts: Vec::new(),
+        });
+    }
+
+    let integrate_res = crate::integrate::integrate_branches(
+        repo_path,
+        base_sha,
+        integration_branch,
+        &branches_to_merge,
+    )?;
+
+    let merge_sha = if integrate_res.merge_sha.is_empty() {
+        None
+    } else {
+        Some(integrate_res.merge_sha)
+    };
+
+    Ok(IndependentMergeResult {
+        merge_sha,
+        merged_branches: integrate_res.merged_branches,
+        failed_agents,
+        conflicts: integrate_res.conflicts,
+    })
+}
+
 /// Run git diff --name-only base_sha..branch to get the list of modified files.
 pub fn get_modified_files(
     repo_path: &Path,
@@ -700,5 +778,87 @@ pub fn test_mergeability(
 
         conflicts.sort_by(|a, b| a.path.cmp(&b.path));
         Ok(MergeTestResult::Conflicts(conflicts))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    fn run_git_test(repo_path: &Path, args: &[&str]) -> String {
+        let output = Command::new("git")
+            .args(args)
+            .current_dir(repo_path)
+            .output()
+            .expect("failed to execute git command");
+        String::from_utf8_lossy(&output.stdout).trim().to_string()
+    }
+
+    fn create_test_git_repo() -> PathBuf {
+        let mut temp_dir = std::env::temp_dir();
+        temp_dir.push(format!("gestalt-independent-test-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        run_git_test(&temp_dir, &["init"]);
+        run_git_test(&temp_dir, &["config", "user.name", "Test User"]);
+        run_git_test(&temp_dir, &["config", "user.email", "test@example.com"]);
+
+        let file1 = temp_dir.join("file1.txt");
+        fs::write(&file1, "base content\n").unwrap();
+        run_git_test(&temp_dir, &["add", "file1.txt"]);
+        run_git_test(&temp_dir, &["commit", "-m", "initial commit"]);
+        run_git_test(&temp_dir, &["branch", "-m", "main"]);
+
+        temp_dir
+    }
+
+    fn create_test_branch(repo_path: &Path, branch: &str, file: &str, content: &str) {
+        run_git_test(repo_path, &["checkout", "-b", branch]);
+        let path = repo_path.join(file);
+        fs::write(&path, content).unwrap();
+        run_git_test(repo_path, &["add", file]);
+        run_git_test(repo_path, &["commit", "-m", &format!("changes on {}", branch)]);
+        run_git_test(repo_path, &["checkout", "main"]);
+    }
+
+    #[test]
+    fn test_agent_a_fails_agent_b_completes_results_merged() {
+        let repo_path = create_test_git_repo();
+        let base_sha = run_git_test(&repo_path, &["rev-parse", "HEAD"]);
+
+        // Create branch for successful agent B
+        create_test_branch(&repo_path, "branch-b", "file_b.txt", "content from agent B");
+
+        let agents = vec![
+            AgentRunReport {
+                agent_id: "agent_a".to_string(),
+                status: IndependentRunStatus::Failed("Agent A crashed".to_string()),
+                branch: None,
+            },
+            AgentRunReport {
+                agent_id: "agent_b".to_string(),
+                status: IndependentRunStatus::Success,
+                branch: Some("branch-b".to_string()),
+            },
+        ];
+
+        let result = merge_independent_agents(&repo_path, &base_sha, "main", &agents).unwrap();
+
+        // Check B results are merged
+        assert!(result.merge_sha.is_some());
+        assert_eq!(result.merged_branches, vec!["branch-b".to_string()]);
+
+        // Check A is reported as failed separately
+        assert_eq!(result.failed_agents.len(), 1);
+        assert_eq!(result.failed_agents.get("agent_a").unwrap(), "Agent A crashed");
+
+        // Verify file_b.txt exists in the merged commit
+        let merge_sha = result.merge_sha.unwrap();
+        let cat_output = run_git_test(&repo_path, &["cat-file", "-p", &format!("{}:file_b.txt", merge_sha)]);
+        assert_eq!(cat_output, "content from agent B");
+
+        // Cleanup
+        let _ = fs::remove_dir_all(repo_path);
     }
 }

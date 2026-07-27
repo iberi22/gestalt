@@ -10,6 +10,7 @@ use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 mod health;
 mod ingest;
 mod load_test;
+pub mod pool;
 mod shared;
 
 use gestalt_core::application::agent::tools::{AskAiTool, ExecuteShellTool, GitStatusTool};

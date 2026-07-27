@@ -133,6 +133,86 @@ pub mod prelude {
     }
 
     #[derive(Debug, Clone)]
+    pub struct GroqProvider {
+        api_key: String,
+        model: String,
+    }
+    impl GroqProvider {
+        pub fn new(api_key: String, model: String) -> Self {
+            Self { api_key, model }
+        }
+    }
+    #[async_trait]
+    impl LLMProvider for GroqProvider {
+        fn name(&self) -> &str {
+            &self.model
+        }
+        fn cost_per_1k_tokens(&self) -> f64 {
+            0.0
+        }
+        async fn generate(&self, prompt: &str) -> anyhow::Result<String> {
+            let api_key = std::env::var("GROQ_API_KEY")
+                .or_else(|_| Ok(self.api_key.clone()))
+                .map_err(|_: std::env::VarError| anyhow::anyhow!("GROQ_API_KEY not set"))?;
+
+            let client = reqwest::Client::new();
+            let url = "https://api.groq.com/openai/v1/chat/completions";
+
+            let body = serde_json::json!({
+                "model": self.model,
+                "messages": [
+                    {"role": "user", "content": prompt}
+                ],
+                "temperature": 0.7,
+                "max_tokens": 2048
+            });
+
+            let response = client
+                .post(url)
+                .header("Authorization", format!("Bearer {}", api_key))
+                .header("Content-Type", "application/json")
+                .json(&body)
+                .send()
+                .await
+                .map_err(|e| anyhow::anyhow!("Groq API request failed: {}", e))?;
+
+            let status = response.status();
+            if !status.is_success() {
+                let error_text = response.text().await.unwrap_or_default();
+                tracing::error!("Groq API error ({}): {}", status, error_text);
+                return Err(anyhow::anyhow!("Groq API returned error: {}", status));
+            }
+
+            #[derive(Deserialize)]
+            struct GroqResponse {
+                choices: Option<Vec<Choice>>,
+            }
+            #[derive(Deserialize)]
+            struct Choice {
+                message: Option<MessageDetail>,
+            }
+            #[derive(Deserialize)]
+            struct MessageDetail {
+                content: Option<String>,
+            }
+
+            let resp: GroqResponse = response
+                .json()
+                .await
+                .map_err(|e| anyhow::anyhow!("Failed to parse Groq response: {}", e))?;
+
+            let text = resp
+                .choices
+                .and_then(|c| c.into_iter().next())
+                .and_then(|c| c.message)
+                .and_then(|m| m.content)
+                .ok_or_else(|| anyhow::anyhow!("No text in Groq response"))?;
+
+            Ok(text)
+        }
+    }
+
+    #[derive(Debug, Clone)]
     pub struct MinimaxProvider {
         api_key: String,
         group_id: String,

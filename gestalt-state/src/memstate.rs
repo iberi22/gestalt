@@ -106,7 +106,7 @@ impl MemState {
             Entry::Vacant(v) => {
                 v.insert(lock);
                 true
-            }
+            },
             Entry::Occupied(_) => false,
         };
 

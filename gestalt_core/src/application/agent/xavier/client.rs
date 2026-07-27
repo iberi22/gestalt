@@ -201,7 +201,7 @@ impl XavierClient {
             Err(e) => {
                 tracing::warn!("Xavier search_context failed (non-fatal): {e}");
                 Vec::new()
-            }
+            },
         }
     }
 
@@ -236,7 +236,12 @@ impl XavierClient {
     }
 
     /// Generic memory add with kind
-    pub async fn add_memory(&self, content: &str, path: &str, kind: &str) -> Result<String, String> {
+    pub async fn add_memory(
+        &self,
+        content: &str,
+        path: &str,
+        kind: &str,
+    ) -> Result<String, String> {
         let url = format!("{}/v1/memories", self.endpoint);
         let body = serde_json::json!({
             "content": content,
@@ -251,7 +256,9 @@ impl XavierClient {
             .send()
             .await
             .map_err(|e| format!("Xavier request failed: {}", e))?;
-        let data: serde_json::Value = resp.json().await
+        let data: serde_json::Value = resp
+            .json()
+            .await
             .map_err(|e| format!("Xavier response parse failed: {}", e))?;
         Ok(data["id"].as_str().unwrap_or("ok").to_string())
     }
@@ -265,7 +272,9 @@ impl XavierClient {
             .send()
             .await
             .map_err(|e| format!("Health check failed: {}", e))?;
-        let data: serde_json::Value = resp.json().await
+        let data: serde_json::Value = resp
+            .json()
+            .await
             .map_err(|e| format!("Health response parse failed: {}", e))?;
         Ok(data["status"].as_str().unwrap_or("unknown").to_string())
     }
@@ -279,7 +288,9 @@ impl XavierClient {
             .send()
             .await
             .map_err(|e| format!("Health check failed: {}", e))?;
-        let data: serde_json::Value = resp.json().await
+        let data: serde_json::Value = resp
+            .json()
+            .await
             .map_err(|e| format!("Health response parse failed: {}", e))?;
         let mode = data["mode"].as_str().unwrap_or("unknown");
         Ok(mode.to_string())
@@ -292,7 +303,8 @@ mod tests {
 
     #[test]
     fn test_client_creation() {
-        let client = XavierClient::new("http://localhost:8006".into(), "test-token".into()).unwrap();
+        let client =
+            XavierClient::new("http://localhost:8006".into(), "test-token".into()).unwrap();
 
         assert_eq!(client.endpoint, "http://localhost:8006");
         assert_eq!(client.token, "test-token");

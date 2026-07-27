@@ -1919,7 +1919,6 @@ name = "gestalt_swarm"
 version = "1.0.0"
 dependencies = [
  "anyhow",
- "chrono",
  "clap",
  "gestalt_core",
  "reqwest 0.12.28",

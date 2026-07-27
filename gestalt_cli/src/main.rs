@@ -22,7 +22,6 @@ use tokio::task::JoinSet;
 use tracing::{error, info, warn};
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 use ulid::Ulid;
-use uuid::Uuid;
 
 // gestalt-router types
 use gestalt_core::application::agent::xavier::XavierClient;
@@ -39,6 +38,178 @@ pub struct Task {
     pub status: String,
     pub created_at: String,
     pub result: Option<String>,
+}
+
+/// Output captured from execution of a CLI adapter
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct AdapterOutput {
+    pub stdout: String,
+    pub stderr: String,
+    pub exit_code: Option<i32>,
+}
+
+/// A standard interface to invoke external CLIs (such as agy, codex, claude, jules).
+#[async_trait::async_trait]
+pub trait CliAdapter: Send + Sync {
+    /// Unique identifier for this adapter
+    fn id(&self) -> &str;
+    /// CLI command or path to executable
+    fn command(&self) -> &str;
+    /// CLI arguments
+    fn args(&self) -> &[String];
+    /// Environment variables for execution
+    fn env(&self) -> &HashMap<String, String>;
+    /// Paths allowed for read/write access
+    fn allowed_paths(&self) -> &[PathBuf];
+    /// Execution timeout
+    fn timeout(&self) -> Duration;
+    /// Asynchronously execute the external CLI and capture stdout/stderr and exit code
+    async fn execute(&self) -> Result<AdapterOutput, String>;
+}
+
+/// Concrete implementation of the CliAdapter trait for external tools.
+pub struct ExternalCliAdapter {
+    pub id: String,
+    pub command: String,
+    pub args: Vec<String>,
+    pub env: HashMap<String, String>,
+    pub allowed_paths: Vec<PathBuf>,
+    pub timeout: Duration,
+}
+
+impl ExternalCliAdapter {
+    pub fn new(
+        id: String,
+        command: String,
+        args: Vec<String>,
+        env: HashMap<String, String>,
+        allowed_paths: Vec<PathBuf>,
+        timeout: Duration,
+    ) -> Self {
+        Self {
+            id,
+            command,
+            args,
+            env,
+            allowed_paths,
+            timeout,
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl CliAdapter for ExternalCliAdapter {
+    fn id(&self) -> &str {
+        &self.id
+    }
+
+    fn command(&self) -> &str {
+        &self.command
+    }
+
+    fn args(&self) -> &[String] {
+        &self.args
+    }
+
+    fn env(&self) -> &HashMap<String, String> {
+        &self.env
+    }
+
+    fn allowed_paths(&self) -> &[PathBuf] {
+        &self.allowed_paths
+    }
+
+    fn timeout(&self) -> Duration {
+        self.timeout
+    }
+
+    async fn execute(&self) -> Result<AdapterOutput, String> {
+        let mut cmd = tokio::process::Command::new(&self.command);
+        cmd.args(&self.args);
+        cmd.envs(&self.env);
+
+        cmd.stdout(std::process::Stdio::piped());
+        cmd.stderr(std::process::Stdio::piped());
+
+        let mut child = match cmd.spawn() {
+            Ok(c) => c,
+            Err(e) => return Err(format!("Failed to spawn {}: {}", self.command, e)),
+        };
+
+        let mut stdout = child.stdout.take().unwrap();
+        let mut stderr = child.stderr.take().unwrap();
+
+        let mut stdout_bytes = Vec::new();
+        let mut stderr_bytes = Vec::new();
+
+        let read_stdout = tokio::io::AsyncReadExt::read_to_end(&mut stdout, &mut stdout_bytes);
+        let read_stderr = tokio::io::AsyncReadExt::read_to_end(&mut stderr, &mut stderr_bytes);
+        let wait_child = child.wait();
+
+        let timeout_fut = tokio::time::sleep(self.timeout);
+
+        tokio::select! {
+            res = async {
+                tokio::try_join!(read_stdout, read_stderr, wait_child)
+            } => {
+                match res {
+                    Ok((_, _, exit_status)) => {
+                        let stdout_str = String::from_utf8_lossy(&stdout_bytes).into_owned();
+                        let stderr_str = String::from_utf8_lossy(&stderr_bytes).into_owned();
+                        Ok(AdapterOutput {
+                            stdout: stdout_str,
+                            stderr: stderr_str,
+                            exit_code: exit_status.code(),
+                        })
+                    }
+                    Err(e) => Err(format!("Error reading process streams: {}", e)),
+                }
+            }
+            _ = timeout_fut => {
+                let _ = child.kill().await;
+                Err("Timeout reached during execution".to_string())
+            }
+        }
+    }
+}
+
+/// Registry to register and unregister external CLI tools (thread-safe).
+pub struct AdapterRegistry {
+    adapters: std::sync::Mutex<HashMap<String, Arc<dyn CliAdapter>>>,
+}
+
+impl AdapterRegistry {
+    pub fn new() -> Self {
+        Self {
+            adapters: std::sync::Mutex::new(HashMap::new()),
+        }
+    }
+
+    pub fn register(&self, adapter: Arc<dyn CliAdapter>) {
+        let mut lock = self.adapters.lock().unwrap();
+        lock.insert(adapter.id().to_string(), adapter);
+    }
+
+    pub fn unregister(&self, id: &str) -> Option<Arc<dyn CliAdapter>> {
+        let mut lock = self.adapters.lock().unwrap();
+        lock.remove(id)
+    }
+
+    pub fn get(&self, id: &str) -> Option<Arc<dyn CliAdapter>> {
+        let lock = self.adapters.lock().unwrap();
+        lock.get(id).cloned()
+    }
+
+    pub fn list(&self) -> Vec<Arc<dyn CliAdapter>> {
+        let lock = self.adapters.lock().unwrap();
+        lock.values().cloned().collect()
+    }
+}
+
+impl Default for AdapterRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 /// CLI arguments
@@ -411,6 +582,57 @@ async fn run_swarm_task(
     Ok(())
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_adapter_registry_and_execution() {
+        let registry = AdapterRegistry::new();
+
+        let adapter = Arc::new(ExternalCliAdapter::new(
+            "echo-adapter".to_string(),
+            "echo".to_string(),
+            vec!["hello world".to_string()],
+            HashMap::new(),
+            vec![],
+            Duration::from_secs(5),
+        ));
+
+        registry.register(adapter.clone());
+
+        let retrieved = registry.get("echo-adapter").unwrap();
+        assert_eq!(retrieved.id(), "echo-adapter");
+        assert_eq!(retrieved.command(), "echo");
+        assert_eq!(retrieved.args(), &["hello world".to_string()]);
+
+        let output = retrieved.execute().await.unwrap();
+        assert!(output.stdout.contains("hello world"));
+        assert_eq!(output.exit_code, Some(0));
+
+        let unregistered = registry.unregister("echo-adapter").unwrap();
+        assert_eq!(unregistered.id(), "echo-adapter");
+        assert!(registry.get("echo-adapter").is_none());
+    }
+
+    #[tokio::test]
+    async fn test_adapter_timeout() {
+        // Sleep command will run for 10 seconds, but timeout is 1 second
+        let adapter = ExternalCliAdapter::new(
+            "sleep-adapter".to_string(),
+            "sleep".to_string(),
+            vec!["10".to_string()],
+            HashMap::new(),
+            vec![],
+            Duration::from_millis(500),
+        );
+
+        let result = adapter.execute().await;
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), "Timeout reached during execution");
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = CliConfig::load().unwrap_or_default();
@@ -461,7 +683,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .status()?;
 
             std::process::exit(status.code().unwrap_or(0));
-        }
+        },
 
         Commands::Status => {
             let tools_url = format!("{}/tools", url);
@@ -473,15 +695,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     info!("MCP Server is online at {}", url);
                     println!("✅ Gestalt MCP Server: Online");
                     println!("📍 {}", url);
-                }
+                },
                 _ => {
                     warn!("MCP Server is offline at {}", url);
                     println!("❌ Gestalt MCP Server: Offline");
                     println!("📍 {}", url);
                     std::process::exit(1);
-                }
+                },
             }
-        }
+        },
 
         Commands::Tools => {
             let tools_url = format!("{}/tools", url);
@@ -500,7 +722,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .unwrap_or("");
                 println!("  • {}: {}", name, desc);
             }
-        }
+        },
 
         Commands::Exec { tool, args } => {
             info!("Executing tool: {}", tool);
@@ -521,13 +743,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         "{}",
                         serde_json::to_string_pretty(&result).expect("Failed to serialize result")
                     );
-                }
+                },
                 Err(e) => {
                     error!("Failed to execute tool {}: {}", tool, e);
                     return Err(e.into());
-                }
+                },
             }
-        }
+        },
 
         Commands::TaskCreate {
             id,
@@ -552,7 +774,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             info!("Task {} created successfully", id);
             println!("✅ Task created: {} ({})", name, id);
-        }
+        },
 
         Commands::TaskList { status, db } => {
             let db_path = db.unwrap_or_else(|| default_db.to_string());
@@ -578,7 +800,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     status_icon, task.status, task.id, task.name
                 );
             }
-        }
+        },
 
         Commands::TaskStatus { id, db } => {
             let db_path = db.unwrap_or_else(|| default_db.to_string());
@@ -592,13 +814,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     if let Some(ref result) = task.result {
                         println!("   Result: {}", result);
                     }
-                }
+                },
                 None => {
                     println!("❌ Task not found: {}", id);
                     std::process::exit(1);
-                }
+                },
             }
-        }
+        },
 
         Commands::Analyze { path } => {
             let args = json!({ "path": path });
@@ -626,7 +848,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
             }
-        }
+        },
 
         Commands::Search { pattern, path, ext } => {
             let args = json!({
@@ -664,7 +886,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
             }
-        }
+        },
 
         Commands::Git { subcommand, path } => {
             let tool = match subcommand.as_str() {
@@ -690,7 +912,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             {
                 println!("{}", content.as_str().unwrap_or(""));
             }
-        }
+        },
 
         Commands::Read { path, lines } => {
             let args = json!({ "path": path, "lines": lines });
@@ -710,7 +932,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             {
                 println!("{}", content.as_str().unwrap_or(""));
             }
-        }
+        },
 
         Commands::Tree { path, depth } => {
             let args = json!({ "path": path, "depth": depth });
@@ -737,7 +959,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
             }
-        }
+        },
 
         Commands::SysInfo => {
             let args = json!({});
@@ -769,13 +991,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
             }
-        }
+        },
 
         Commands::Repl => {
             info!("Starting interactive REPL");
             let mut repl = InteractiveRepl::with_handler(EchoHandler)?;
             repl.run().await?;
-        }
+        },
 
         Commands::Swarm { task, workspace } => {
             if task.is_empty() {
@@ -847,11 +1069,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         Ok(_) => {
                             info!("[{}] Task COMPLETE: {}", task_id, task_desc);
                             println!("  ✅ [{}] Done: {}", task_id, task_desc);
-                        }
+                        },
                         Err(e) => {
                             info!("[{}] Task FAILED: {} - {}", task_id, task_desc, e);
                             println!("  ❌ [{}] Failed: {} ({})", task_id, task_desc, e);
-                        }
+                        },
                     }
 
                     (task_id, task_desc, result)
@@ -864,10 +1086,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 match res {
                     Ok((task_id, task_desc, result)) => {
                         results.push((task_id, task_desc, result));
-                    }
+                    },
                     Err(e) => {
                         error!("Task panicked: {:?}", e);
-                    }
+                    },
                 }
             }
 
@@ -914,11 +1136,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             );
                         }
                     }
-                }
+                },
                 Err(e) => {
                     error!("Flush failed: {}", e);
                     println!("  ❌ Flush failed: {}", e);
-                }
+                },
             }
 
             let end_time = chrono::Utc::now();
@@ -936,7 +1158,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             if failures > 0 {
                 std::process::exit(1);
             }
-        }
+        },
 
         Commands::Run {
             task,
@@ -1106,14 +1328,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     // Also output the full report as JSON for machine consumption
                     println!();
                     println!("{}", serde_json::to_string_pretty(&report)?);
-                }
+                },
                 Err(e) => {
                     error!("Router execution failed: {}", e);
                     eprintln!("❌ Router execution failed: {}", e);
                     std::process::exit(1);
-                }
+                },
             }
-        }
+        },
 
         Commands::Xavier { action } => {
             match action {
@@ -1132,12 +1354,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let mem = r["memory"].as_str().unwrap_or("");
                         let kind = r["metadata"]["kind"].as_str().unwrap_or("?");
                         let first_line = mem.lines().next().unwrap_or("");
-                        let preview = first_line
-                            .get(0..80.min(first_line.len()))
-                            .unwrap_or("");
+                        let preview = first_line.get(0..80.min(first_line.len())).unwrap_or("");
                         println!(" {}. [{}] {}", i + 1, kind, preview);
                     }
-                }
+                },
                 XavierAction::Add {
                     content,
                     path,
@@ -1151,7 +1371,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .await?;
                     let body: serde_json::Value = resp.json().await?;
                     println!("Archived: {}", body["id"].as_str().unwrap_or("ok"));
-                }
+                },
                 XavierAction::Stats => {
                     let client = reqwest::Client::new();
                     let resp = client
@@ -1160,12 +1380,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .send()
                         .await?;
                     let body: serde_json::Value = resp.json().await?;
-                    let count = body["results"]
-                        .as_array()
-                        .map(|a| a.len())
-                        .unwrap_or(0);
+                    let count = body["results"].as_array().map(|a| a.len()).unwrap_or(0);
                     println!("Xavier: {} memories found", count);
-                }
+                },
                 XavierAction::Cycle {
                     task,
                     agent,
@@ -1224,9 +1441,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .await?;
                     let search_body: serde_json::Value = resp.json().await?;
                     let empty_vec = vec![];
-                    let search_results = search_body["results"]
-                        .as_array()
-                        .unwrap_or(&empty_vec);
+                    let search_results = search_body["results"].as_array().unwrap_or(&empty_vec);
                     let result_count = search_results.len();
 
                     // Build readable search context for archive
@@ -1276,7 +1491,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let (program, args) = if parts.is_empty() {
                             (String::new(), vec![])
                         } else {
-                            (parts[0].to_string(), parts[1..].iter().map(|s| s.to_string()).collect::<Vec<_>>())
+                            (
+                                parts[0].to_string(),
+                                parts[1..].iter().map(|s| s.to_string()).collect::<Vec<_>>(),
+                            )
                         };
 
                         // Run with 300s timeout
@@ -1313,25 +1531,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 if !out_stderr.is_empty() {
                                     println!("stderr: {}", out_stderr);
                                 }
-                            }
+                            },
                             Ok(Ok(Err(e))) => {
                                 agent_state = AgentState::Crashed;
                                 agent_stderr = format!("Agent subprocess error: {}", e);
                                 agent_exit_status = "error".to_string();
                                 eprintln!("Agent failed: {}", e);
-                            }
+                            },
                             Ok(Err(join_err)) => {
                                 agent_state = AgentState::Crashed;
                                 agent_stderr = format!("Agent task panicked: {}", join_err);
                                 agent_exit_status = "panic".to_string();
                                 eprintln!("Agent task panicked: {}", join_err);
-                            }
+                            },
                             Err(_elapsed) => {
                                 agent_state = AgentState::Timeout;
                                 agent_stderr = "Agent timed out after 300s".to_string();
                                 agent_exit_status = "timeout".to_string();
                                 eprintln!("Agent timed out after 300s");
-                            }
+                            },
                         }
                     }
 
@@ -1347,8 +1565,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         {
                             Ok(output) => {
                                 if output.status.success() {
-                                    vfs_diff =
-                                        "No changes detected between VFS base and overlay".to_string();
+                                    vfs_diff = "No changes detected between VFS base and overlay"
+                                        .to_string();
                                 } else {
                                     let diff_text =
                                         String::from_utf8_lossy(&output.stdout).to_string();
@@ -1366,11 +1584,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         &vfs_diff[..vfs_diff.len().min(2000)]
                                     );
                                 }
-                            }
+                            },
                             Err(e) => {
                                 vfs_diff = format!("(diff command unavailable: {})", e);
                                 eprintln!("⚠️ Could not compute VFS diff: {}", e);
-                            }
+                            },
                         }
                     }
 
@@ -1425,17 +1643,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     match archive_result {
                         Ok(resp) => {
                             let body: serde_json::Value = resp.json().await.unwrap_or_default();
-                            println!("POST: archived (id={})", body["id"].as_str().unwrap_or("ok"));
-                        }
+                            println!(
+                                "POST: archived (id={})",
+                                body["id"].as_str().unwrap_or("ok")
+                            );
+                        },
                         Err(e) => {
                             eprintln!("POST archive failed: {}", e);
-                        }
+                        },
                     }
 
                     println!("Cycle complete — final state: {:?}", state);
-                }
+                },
             }
-        }
+        },
     }
 
     Ok(())

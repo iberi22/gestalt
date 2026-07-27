@@ -56,10 +56,10 @@ impl McpService {
                     for tool in tools_list {
                         tools.push(format!("{}::{}", name, tool.name));
                     }
-                }
+                },
                 Err(e) => {
                     error!("Failed to list tools for {}: {}", name, e);
-                }
+                },
             }
         }
         tools

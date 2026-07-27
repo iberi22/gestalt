@@ -64,7 +64,7 @@ pub trait VirtualFileSystem: Send + Sync {
     /// ```
     /// # use std::path::Path;
     /// # use gestalt_core::ports::outbound::vfs::{VirtualFileSystem, OverlayFs};
-    /// # tokio_test::block_on(async {
+    /// # tokio::runtime::Builder::new_current_thread().build().unwrap().block_on(async {
     /// let vfs = OverlayFs::new();
     /// let data = vfs.read(Path::new("hello.txt")).await;
     /// # });
@@ -78,7 +78,7 @@ pub trait VirtualFileSystem: Send + Sync {
     /// ```
     /// # use std::path::Path;
     /// # use gestalt_core::ports::outbound::vfs::{VirtualFileSystem, OverlayFs};
-    /// # tokio_test::block_on(async {
+    /// # tokio::runtime::Builder::new_current_thread().build().unwrap().block_on(async {
     /// let vfs = OverlayFs::new();
     /// vfs.write(Path::new("hello.txt"), b"world".to_vec(), "agent-1").await.unwrap();
     /// # });
@@ -92,7 +92,7 @@ pub trait VirtualFileSystem: Send + Sync {
     /// ```
     /// # use std::path::Path;
     /// # use gestalt_core::ports::outbound::vfs::{VirtualFileSystem, OverlayFs};
-    /// # tokio_test::block_on(async {
+    /// # tokio::runtime::Builder::new_current_thread().build().unwrap().block_on(async {
     /// let vfs = OverlayFs::new();
     /// let entries = vfs.list(Path::new(".")).await.unwrap();
     /// # });
@@ -129,7 +129,18 @@ pub trait VirtualFileSystem: Send + Sync {
     async fn version(&self) -> u64;
 }
 
+/// A trait defining capabilities for watching filesystem paths and emitting change events.
+///
+/// This provides agents with real-time feedback on edits made inside their workspaces or VFS.
 pub trait FileWatcher: Send + Sync {
+    /// Monitors a specific file or directory for structural changes.
+    ///
+    /// # Parameters
+    /// - `path`: The path of the file or directory to watch.
+    /// - `interval`: Frequency of checking the path status (polling rate).
+    ///
+    /// # Returns
+    /// - `mpsc::Receiver<FileWatchEvent>`: A receiver channel yielding change events (Created, Modified, Deleted).
     fn watch(&self, path: PathBuf, interval: Duration) -> mpsc::Receiver<FileWatchEvent>;
 }
 
@@ -176,10 +187,10 @@ impl VirtualFileSystem for OverlayFs {
                     path.display(),
                     current_owner
                 );
-            }
+            },
             _ => {
                 state.locks.insert(path.to_path_buf(), owner.to_string());
-            }
+            },
         }
         state.text_files.remove(path);
         state.binary_files.insert(path.to_path_buf(), data);
@@ -389,7 +400,7 @@ impl VirtualFileSystem for OverlayFs {
             None => {
                 state.locks.insert(path.to_path_buf(), owner.to_string());
                 LockStatus::Acquired
-            }
+            },
             Some(current_owner) if current_owner == owner => LockStatus::AlreadyHeldByOwner,
             Some(current_owner) => LockStatus::HeldByOther {
                 owner: current_owner.clone(),
@@ -494,7 +505,7 @@ impl FileWatcher for OverlayFs {
                         Err(_) => {
                             tokio::time::sleep(interval).await;
                             continue;
-                        }
+                        },
                     };
                     while let Ok(Some(entry)) = dir.next_entry().await {
                         let p = entry.path();
@@ -520,7 +531,7 @@ impl FileWatcher for OverlayFs {
                             .is_err() =>
                         {
                             return;
-                        }
+                        },
                         Some(old)
                             if old != state
                                 && tx
@@ -532,8 +543,8 @@ impl FileWatcher for OverlayFs {
                                     .is_err() =>
                         {
                             return;
-                        }
-                        _ => {}
+                        },
+                        _ => {},
                     }
                 }
 

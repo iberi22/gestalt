@@ -10,13 +10,12 @@ use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 mod health;
 mod ingest;
 mod load_test;
+pub mod pool;
 mod shared;
 
 use gestalt_core::application::agent::tools::{AskAiTool, ExecuteShellTool, GitStatusTool};
 use health::{HealthChecker, HealthConfig, SwarmHealthMonitor};
-use synapse_agentic::prelude::{
-    GeminiProvider, LLMProvider, MinimaxProvider, ToolRegistry,
-};
+use synapse_agentic::prelude::{GeminiProvider, LLMProvider, MinimaxProvider, ToolRegistry};
 
 #[derive(Debug, Clone)]
 pub struct GroqProvider {
@@ -150,12 +149,12 @@ fn build_llm_provider(provider: LlmProviderKind, model: String) -> Result<Arc<dy
             let api_key = std::env::var("GEMINI_API_KEY")
                 .map_err(|_| anyhow::anyhow!("GEMINI_API_KEY is required for --provider gemini"))?;
             Ok(Arc::new(GeminiProvider::new(api_key, model)))
-        }
+        },
         LlmProviderKind::Groq => {
             let api_key = std::env::var("GROQ_API_KEY")
                 .map_err(|_| anyhow::anyhow!("GROQ_API_KEY is required for --provider groq"))?;
             Ok(Arc::new(GroqProvider::new(api_key, model)))
-        }
+        },
         LlmProviderKind::Minimax => {
             let api_key = std::env::var("MINIMAX_API_KEY").map_err(|_| {
                 anyhow::anyhow!("MINIMAX_API_KEY is required for --provider minimax")
@@ -164,7 +163,7 @@ fn build_llm_provider(provider: LlmProviderKind, model: String) -> Result<Arc<dy
                 anyhow::anyhow!("MINIMAX_GROUP_ID is required for --provider minimax")
             })?;
             Ok(Arc::new(MinimaxProvider::new(api_key, group_id, model)))
-        }
+        },
     }
 }
 
@@ -189,7 +188,7 @@ async fn run_agent(
         Err(e) => {
             eprintln!("Failed to acquire permit: {}", e);
             return;
-        }
+        },
     };
 
     if !quiet {
@@ -233,7 +232,7 @@ async fn run_agent(
             monitor.unregister_agent(agent_id).await;
             drop(permit);
             return;
-        }
+        },
     };
 
     // Build minimal tool registry for this agent
@@ -266,7 +265,7 @@ async fn run_agent(
             if !quiet {
                 println!("✅ Agent {} completed successfully", agent_id);
             }
-        }
+        },
         Err(e) => {
             success = false;
             output = format!("Agent {} failed: {}", agent_id, e);
@@ -275,7 +274,7 @@ async fn run_agent(
             if !quiet {
                 println!("❌ Agent {} failed: {}", agent_id, e);
             }
-        }
+        },
     }
 
     let duration_ms = start.elapsed().as_millis() as u64;
@@ -316,8 +315,12 @@ async fn main() -> Result<()> {
     match args.command {
         Commands::Run(run_args) => run_swarm(run_args, args.quiet).await?,
         Commands::Ingest { run_id, file } => ingest::handle_ingest(&run_id, file).await?,
-        Commands::Priorities { agent_type } => ingest::show_priorities(agent_type.as_deref()).await?,
-        Commands::NextSteps { agent_type } => ingest::show_next_steps(agent_type.as_deref()).await?,
+        Commands::Priorities { agent_type } => {
+            ingest::show_priorities(agent_type.as_deref()).await?
+        },
+        Commands::NextSteps { agent_type } => {
+            ingest::show_next_steps(agent_type.as_deref()).await?
+        },
     }
 
     Ok(())

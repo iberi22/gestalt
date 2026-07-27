@@ -220,15 +220,15 @@ fn normalize_path(path: &Path) -> PathBuf {
         match component {
             Component::ParentDir => {
                 components.pop();
-            }
-            Component::CurDir => {}
+            },
+            Component::CurDir => {},
             Component::Normal(c) => {
                 components.push(c);
-            }
+            },
             Component::RootDir => {
                 is_absolute = true;
-            }
-            _ => {}
+            },
+            _ => {},
         }
     }
     let mut result = PathBuf::new();

@@ -12,8 +12,8 @@ use gestalt_ws::WsEvent;
 use gestalt_ws::WsServer;
 
 use crate::agent::AgentRunner;
-use crate::run::{AgentResult, RouterError, RunReport, RunSpec};
 use crate::overlap::{LiveConflictDetector, OverlapDetector};
+use crate::run::{AgentResult, ConflictInfo, RouterError, RunReport, RunSpec};
 use crate::timeline::{Event, EventLog};
 use crate::worktree::WorktreeManager;
 use gestalt_core::ports::outbound::vfs::VirtualFS;
@@ -29,6 +29,8 @@ pub struct Router {
     pub ws_server: Option<WsServer>,
     /// Internal WorktreeManager for git worktree operations (legacy).
     worktrees: Arc<WorktreeManager>,
+    /// Enable dry run mode (simulate merges without writing).
+    pub dry_run: bool,
 }
 
 impl Router {
@@ -56,17 +58,16 @@ impl Router {
             log,
             xavier: None,
             ws_server,
-            worktrees: Arc::new(WorktreeManager::new(
-                std::path::PathBuf::from("/tmp/gestalt"),
-            )),
+            worktrees: Arc::new(WorktreeManager::new(std::path::PathBuf::from(
+                "/tmp/gestalt",
+            ))),
+            dry_run: false,
         };
 
         // Spawn LiveConflictDetector if a WebSocket server is configured
         if router.ws_server.is_some() {
-            let detector = LiveConflictDetector::new(
-                router.mem_state.clone(),
-                router.ws_server.clone(),
-            );
+            let detector =
+                LiveConflictDetector::new(router.mem_state.clone(), router.ws_server.clone());
             tokio::spawn(detector.run());
         }
 
@@ -82,6 +83,12 @@ impl Router {
     /// Attach a WebSocket server for timeline event broadcasting.
     pub fn with_ws_server(mut self, ws_server: WsServer) -> Self {
         self.ws_server = Some(ws_server);
+        self
+    }
+
+    /// Enable dry run mode (simulate merges without writing).
+    pub fn with_dry_run(mut self, dry_run: bool) -> Self {
+        self.dry_run = dry_run;
         self
     }
 
@@ -166,10 +173,7 @@ impl Router {
                 );
                 Some(ctx)
             } else {
-                tracing::info!(
-                    "No Xavier context found for task (run {})",
-                    run_id
-                );
+                tracing::info!("No Xavier context found for task (run {})", run_id);
                 None
             }
         } else {
@@ -208,7 +212,7 @@ impl Router {
                 Ok(path) => {
                     created_wts.push(path.clone());
                     wt_paths.insert(agent.id.clone(), path);
-                }
+                },
                 Err(e) => {
                     // Cleanup already created worktrees
                     for wt in &created_wts {
@@ -218,7 +222,7 @@ impl Router {
                         "Failed to create worktree for agent {}: {}",
                         agent.id, e
                     )));
-                }
+                },
             }
         }
 
@@ -270,10 +274,7 @@ impl Router {
                 }
 
                 // Check for lock conflicts before running the agent
-                let conflicts = OverlapDetector::check_all_locks_for_agent(
-                    &mem_state,
-                    &agent_id,
-                );
+                let conflicts = OverlapDetector::check_all_locks_for_agent(&mem_state, &agent_id);
                 for (path, holder_id) in &conflicts {
                     let conflict_payload = serde_json::json!({
                         "path": path,
@@ -320,16 +321,16 @@ impl Router {
                         Err(e) => {
                             run_result.error = Some(format!("Checkpoint failed: {}", e));
                             AgentState::Crashed
-                        }
+                        },
                     },
                     AgentState::Crashed => {
                         let _ = checkpoint_res;
                         AgentState::Crashed
-                    }
+                    },
                     AgentState::Timeout => {
                         let _ = checkpoint_res;
                         AgentState::Timeout
-                    }
+                    },
                     other => other,
                 };
 
@@ -381,14 +382,14 @@ impl Router {
             match res {
                 Ok(Ok(agent_result)) => {
                     agent_results.push(agent_result);
-                }
+                },
                 Ok(Err(e)) => {
                     // Cleanup worktrees
                     for wt in &created_wts {
                         let _ = self.worktrees.cleanup_worktree(wt);
                     }
                     return Err(e);
-                }
+                },
                 Err(e) => {
                     // Cleanup worktrees
                     for wt in &created_wts {
@@ -398,7 +399,7 @@ impl Router {
                         "Agent task panicked or cancelled: {}",
                         e
                     )));
-                }
+                },
             }
         }
 
@@ -429,7 +430,10 @@ impl Router {
             });
         }
 
-        // 8. Sequential branch integration
+        // 8. Sequential branch integration via SerialMergeQueue
+        let mut merged_branches = Vec::new();
+        let mut conflicts = Vec::new();
+
         let branches_to_merge: Vec<(String, String)> = agent_results
             .iter()
             .filter(|r| r.state == AgentState::Success)
@@ -441,26 +445,20 @@ impl Router {
             })
             .collect();
 
-        let mut merged_branches = Vec::new();
-        let mut conflicts = Vec::new();
-
         if !branches_to_merge.is_empty() {
             match self
                 .worktrees
                 .create_worktree(run_id, "_integrate", &base_sha)
             {
                 Ok(integrate_wt_path) => {
-                    match crate::integrate::integrate_branches(
-                        &integrate_wt_path,
-                        &base_sha,
-                        spec.integration_branch.as_deref().unwrap_or("main"),
-                        &branches_to_merge,
-                    ) {
-                        Ok(integration_res) => {
-                            merged_branches = integration_res.merged_branches;
-                            conflicts = integration_res.conflicts;
-                        }
-                        Err(e) => {
+                    let mut queue = SerialMergeQueue::new(
+                        integrate_wt_path.clone(),
+                        base_sha.clone(),
+                        self.dry_run,
+                    );
+
+                    for (agent_id, branch) in &branches_to_merge {
+                        if let Err(e) = queue.enqueue_and_merge(agent_id, branch) {
                             let _ = self.worktrees.cleanup_worktree(&integrate_wt_path);
                             // Cleanup other worktrees
                             for wt in &created_wts {
@@ -469,15 +467,28 @@ impl Router {
                             return Err(e);
                         }
                     }
+
+                    merged_branches = queue.merged_branches.clone();
+                    conflicts = queue.conflicts.clone();
+
+                    if let Err(e) = queue.finish(spec.integration_branch.as_deref()) {
+                        let _ = self.worktrees.cleanup_worktree(&integrate_wt_path);
+                        // Cleanup other worktrees
+                        for wt in &created_wts {
+                            let _ = self.worktrees.cleanup_worktree(wt);
+                        }
+                        return Err(e);
+                    }
+
                     let _ = self.worktrees.cleanup_worktree(&integrate_wt_path);
-                }
+                },
                 Err(e) => {
                     // Cleanup other worktrees
                     for wt in &created_wts {
                         let _ = self.worktrees.cleanup_worktree(wt);
                     }
                     return Err(e);
-                }
+                },
             }
         }
 
@@ -528,17 +539,20 @@ impl Router {
             .to_string();
         let duration_ms = _timer_start.elapsed().as_millis() as u64;
         if let Some(ref xavier) = self.xavier {
-            let content = serde_json::to_string_pretty(&RunReport {
-                run_id,
-                task: spec.task.clone(),
-                agents: agent_results.clone(),
-                duration_ms,
-                merged_branches: merged_branches.clone(),
-                conflicts: conflicts.clone(),
-                events_path: events_path.clone(),
-                success: true,
-            }.to_json())
-                .unwrap_or_else(|_| "{}".to_string());
+            let content = serde_json::to_string_pretty(
+                &RunReport {
+                    run_id,
+                    task: spec.task.clone(),
+                    agents: agent_results.clone(),
+                    duration_ms,
+                    merged_branches: merged_branches.clone(),
+                    conflicts: conflicts.clone(),
+                    events_path: events_path.clone(),
+                    success: true,
+                }
+                .to_json(),
+            )
+            .unwrap_or_else(|_| "{}".to_string());
             let metadata = serde_json::json!({
                 "run_id": run_id.to_string(),
                 "task": spec.task,
@@ -554,10 +568,10 @@ impl Router {
                         run_id,
                         memory_id
                     );
-                }
+                },
                 Err(e) => {
                     tracing::warn!("Xavier archive_run failed (non-fatal): {}", e);
-                }
+                },
             }
         }
 
@@ -571,5 +585,348 @@ impl Router {
             events_path,
             success: true,
         })
+    }
+}
+
+pub struct GitOutput {
+    pub success: bool,
+    pub stdout: String,
+    pub stderr: String,
+}
+
+fn run_git_command(repo_dir: &std::path::Path, args: &[&str]) -> Result<GitOutput, String> {
+    let output = std::process::Command::new("git")
+        .args(args)
+        .current_dir(repo_dir)
+        .output()
+        .map_err(|e| e.to_string())?;
+
+    Ok(GitOutput {
+        success: output.status.success(),
+        stdout: String::from_utf8_lossy(&output.stdout).trim().to_string(),
+        stderr: String::from_utf8_lossy(&output.stderr).trim().to_string(),
+    })
+}
+
+pub struct SerialMergeQueue {
+    pub dry_run: bool,
+    pub base_sha: String,
+    pub current_commit_or_tree: String,
+    pub merged_branches: Vec<String>,
+    pub conflicts: Vec<ConflictInfo>,
+    pub repo_dir: std::path::PathBuf,
+    pub binary_mods: HashMap<String, String>, // file_path -> agent_id
+}
+
+impl SerialMergeQueue {
+    pub fn new(repo_dir: std::path::PathBuf, base_sha: String, dry_run: bool) -> Self {
+        Self {
+            dry_run,
+            base_sha: base_sha.clone(),
+            current_commit_or_tree: base_sha,
+            merged_branches: Vec::new(),
+            conflicts: Vec::new(),
+            repo_dir,
+            binary_mods: HashMap::new(),
+        }
+    }
+
+    /// Enqueues and attempts to merge a branch into the current integrated commit/tree.
+    /// If successful, updates the current_commit_or_tree and adds to merged_branches.
+    /// If it fails due to conflict, rolls back (does not update current_commit_or_tree) and records conflict.
+    pub fn enqueue_and_merge(&mut self, agent_id: &str, branch: &str) -> Result<(), RouterError> {
+        // 1. Detect binary files modified by this branch
+        let args = ["diff", "--numstat", &self.base_sha, branch];
+        let git_out = match run_git_command(&self.repo_dir, &args) {
+            Ok(out) => out,
+            Err(e) => {
+                return Err(RouterError::GitError(format!(
+                    "Failed to run git diff --numstat for {}: {}",
+                    agent_id, e
+                )));
+            },
+        };
+        if !git_out.success {
+            return Err(RouterError::GitError(format!(
+                "Failed to run git diff --numstat for {}: {}",
+                agent_id, git_out.stderr
+            )));
+        }
+
+        let mut branch_binary_mods = Vec::new();
+        for line in git_out.stdout.lines() {
+            let parts: Vec<&str> = line.split('\t').collect();
+            if parts.len() >= 3 && parts[0] == "-" && parts[1] == "-" {
+                branch_binary_mods.push(parts[2].to_string());
+            }
+        }
+
+        // Check for binary conflicts
+        let mut has_conflict = false;
+        for path in &branch_binary_mods {
+            if let Some(_existing_agent) = self.binary_mods.get(path) {
+                // Conflict detected!
+                self.conflicts.push(ConflictInfo {
+                    agent_id: agent_id.to_string(),
+                    path: path.clone(),
+                });
+                has_conflict = true;
+            }
+        }
+
+        if has_conflict {
+            // Auto-rollback/discard this merge: do not update current_commit_or_tree
+            return Ok(());
+        }
+
+        // 2. Perform merge using git merge-tree
+        let merge_args = [
+            "merge-tree",
+            "--write-tree",
+            "--merge-base",
+            &self.base_sha,
+            &self.current_commit_or_tree,
+            branch,
+        ];
+        let merge_out = match run_git_command(&self.repo_dir, &merge_args) {
+            Ok(out) => out,
+            Err(e) => {
+                return Err(RouterError::GitError(format!(
+                    "Failed to execute git merge-tree: {}",
+                    e
+                )));
+            },
+        };
+
+        if merge_out.success {
+            let merged_tree = merge_out.stdout.trim().to_string();
+            if self.dry_run {
+                // In dry_run mode, simulate merge without writing any commit object.
+                // We just update current_commit_or_tree to the merged tree SHA.
+                self.current_commit_or_tree = merged_tree;
+                self.merged_branches.push(branch.to_string());
+                for path in branch_binary_mods {
+                    self.binary_mods.insert(path, agent_id.to_string());
+                }
+            } else {
+                // Create intermediate commit so we have parent references and tree structure
+                let commit_args = [
+                    "-c",
+                    "core.hooksPath=/dev/null",
+                    "commit-tree",
+                    &merged_tree,
+                    "-p",
+                    &self.current_commit_or_tree,
+                    "-p",
+                    branch,
+                    "-m",
+                    &format!("gestalt: intermediate merge of {}", agent_id),
+                ];
+                let commit_out = match run_git_command(&self.repo_dir, &commit_args) {
+                    Ok(out) => out,
+                    Err(e) => {
+                        return Err(RouterError::GitError(format!(
+                            "Failed to execute git commit-tree: {}",
+                            e
+                        )));
+                    },
+                };
+                if commit_out.success {
+                    self.current_commit_or_tree = commit_out.stdout.trim().to_string();
+                    self.merged_branches.push(branch.to_string());
+                    for path in branch_binary_mods {
+                        self.binary_mods.insert(path, agent_id.to_string());
+                    }
+                } else {
+                    // rollback!
+                    self.conflicts.push(ConflictInfo {
+                        agent_id: agent_id.to_string(),
+                        path: format!("commit-tree-failed: {}", commit_out.stderr),
+                    });
+                }
+            }
+        } else {
+            // rollback! Parse conflicts from BOTH stdout and stderr
+            let err_msg = format!("{}\n{}", merge_out.stdout, merge_out.stderr);
+            let mut files = Vec::new();
+            for line in err_msg.lines() {
+                if line.starts_with("Conflict") || line.contains("conflict") {
+                    if let Some(idx) = line.find("in ") {
+                        let p = &line[idx + 3..];
+                        files.push(p.trim().to_string());
+                    } else {
+                        let words: Vec<&str> = line.split_whitespace().collect();
+                        if !words.is_empty() {
+                            files.push(words[words.len() - 1].trim().to_string());
+                        }
+                    }
+                }
+            }
+            if files.is_empty() {
+                files.push(format!("conflict-in-branch-{}", branch));
+            }
+            files.sort();
+            files.dedup();
+            for f in files {
+                self.conflicts.push(ConflictInfo {
+                    agent_id: agent_id.to_string(),
+                    path: f,
+                });
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Complete integration and return the final merge commit SHA (if not dry-run).
+    pub fn finish(self, integration_branch: Option<&str>) -> Result<String, RouterError> {
+        if self.dry_run {
+            // In dry-run mode, we return an empty string
+            Ok(String::new())
+        } else {
+            let final_sha = self.current_commit_or_tree.clone();
+
+            // Update the local target integration branch to point to final_sha
+            let integration_branch_name = integration_branch.unwrap_or("main");
+            let ref_args = [
+                "update-ref",
+                &format!("refs/heads/{}", integration_branch_name),
+                &final_sha,
+            ];
+            let _ = run_git_command(&self.repo_dir, &ref_args);
+
+            Ok(final_sha)
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    fn setup_test_git_repo(dir: &std::path::Path) -> String {
+        let _ = run_git_command(dir, &["init", "-b", "main"]).unwrap();
+        let _ = run_git_command(dir, &["config", "user.name", "Test"]).unwrap();
+        let _ = run_git_command(dir, &["config", "user.email", "test@example.com"]).unwrap();
+
+        fs::write(dir.join("file1.txt"), "Initial file 1\n").unwrap();
+        fs::write(dir.join("file2.txt"), "Initial file 2\n").unwrap();
+        let _ = run_git_command(dir, &["add", "."]).unwrap();
+        let _ = run_git_command(dir, &["commit", "-m", "initial commit"]).unwrap();
+
+        run_git_command(dir, &["rev-parse", "HEAD"]).unwrap().stdout
+    }
+
+    #[test]
+    fn test_serial_merge_queue_success() {
+        let temp =
+            std::env::temp_dir().join(format!("gestalt_test_success_{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&temp).unwrap();
+
+        let base_sha = setup_test_git_repo(&temp);
+
+        // create branch 1
+        run_git_command(&temp, &["checkout", "-b", "agent-1-branch"]).unwrap();
+        fs::write(temp.join("file1.txt"), "Agent 1 content\n").unwrap();
+        run_git_command(&temp, &["commit", "-am", "agent 1 change"]).unwrap();
+
+        // create branch 2
+        run_git_command(&temp, &["checkout", "main"]).unwrap();
+        run_git_command(&temp, &["checkout", "-b", "agent-2-branch"]).unwrap();
+        fs::write(temp.join("file2.txt"), "Agent 2 content\n").unwrap();
+        run_git_command(&temp, &["commit", "-am", "agent 2 change"]).unwrap();
+
+        let mut queue = SerialMergeQueue::new(temp.clone(), base_sha, false);
+        queue
+            .enqueue_and_merge("agent-1", "agent-1-branch")
+            .unwrap();
+        queue
+            .enqueue_and_merge("agent-2", "agent-2-branch")
+            .unwrap();
+
+        assert_eq!(queue.merged_branches.len(), 2);
+        assert!(queue.conflicts.is_empty());
+
+        let final_sha = queue.finish(None).unwrap();
+        assert!(!final_sha.is_empty());
+
+        let _ = fs::remove_dir_all(&temp);
+    }
+
+    #[test]
+    fn test_serial_merge_queue_rollback_on_conflict() {
+        let temp =
+            std::env::temp_dir().join(format!("gestalt_test_rollback_{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&temp).unwrap();
+
+        let base_sha = setup_test_git_repo(&temp);
+
+        // create branch 1
+        run_git_command(&temp, &["checkout", "-b", "agent-1-branch"]).unwrap();
+        fs::write(temp.join("file1.txt"), "Agent 1 conflicting change\n").unwrap();
+        run_git_command(&temp, &["commit", "-am", "agent 1 change"]).unwrap();
+
+        // create branch 2
+        run_git_command(&temp, &["checkout", "main"]).unwrap();
+        run_git_command(&temp, &["checkout", "-b", "agent-2-branch"]).unwrap();
+        fs::write(temp.join("file1.txt"), "Agent 2 conflicting change\n").unwrap();
+        run_git_command(&temp, &["commit", "-am", "agent 2 change"]).unwrap();
+
+        let mut queue = SerialMergeQueue::new(temp.clone(), base_sha, false);
+        queue
+            .enqueue_and_merge("agent-1", "agent-1-branch")
+            .unwrap();
+
+        let commit_after_agent_1 = queue.current_commit_or_tree.clone();
+
+        queue
+            .enqueue_and_merge("agent-2", "agent-2-branch")
+            .unwrap();
+
+        assert_eq!(queue.merged_branches.len(), 1);
+        assert_eq!(queue.merged_branches[0], "agent-1-branch");
+        assert!(!queue.conflicts.is_empty());
+        assert_eq!(queue.conflicts[0].agent_id, "agent-2");
+
+        assert_eq!(queue.current_commit_or_tree, commit_after_agent_1);
+
+        let _ = fs::remove_dir_all(&temp);
+    }
+
+    #[test]
+    fn test_serial_merge_queue_dry_run() {
+        let temp =
+            std::env::temp_dir().join(format!("gestalt_test_dry_run_{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&temp).unwrap();
+
+        let base_sha = setup_test_git_repo(&temp);
+
+        // create branch 1
+        run_git_command(&temp, &["checkout", "-b", "agent-1-branch"]).unwrap();
+        fs::write(temp.join("file1.txt"), "Agent 1 content\n").unwrap();
+        run_git_command(&temp, &["commit", "-am", "agent 1 change"]).unwrap();
+
+        // create branch 2
+        run_git_command(&temp, &["checkout", "main"]).unwrap();
+        run_git_command(&temp, &["checkout", "-b", "agent-2-branch"]).unwrap();
+        fs::write(temp.join("file2.txt"), "Agent 2 content\n").unwrap();
+        run_git_command(&temp, &["commit", "-am", "agent 2 change"]).unwrap();
+
+        let mut queue = SerialMergeQueue::new(temp.clone(), base_sha, true);
+        queue
+            .enqueue_and_merge("agent-1", "agent-1-branch")
+            .unwrap();
+        queue
+            .enqueue_and_merge("agent-2", "agent-2-branch")
+            .unwrap();
+
+        assert_eq!(queue.merged_branches.len(), 2);
+        assert!(queue.conflicts.is_empty());
+
+        let final_sha = queue.finish(None).unwrap();
+        assert!(final_sha.is_empty());
+
+        let _ = fs::remove_dir_all(&temp);
     }
 }

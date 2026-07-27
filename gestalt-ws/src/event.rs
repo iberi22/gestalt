@@ -29,10 +29,7 @@ pub enum WsEvent {
         agents: Vec<String>,
     },
     /// A run has finished.
-    RunFinished {
-        run_id: String,
-        summary: String,
-    },
+    RunFinished { run_id: String, summary: String },
     /// A real-time lock conflict was detected between two agents.
     ConflictDetected {
         run_id: String,

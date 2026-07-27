@@ -55,11 +55,11 @@ pub async fn load_cached_credentials() -> Option<GeminiCliToken> {
             Ok(token) => {
                 info!("Loaded Gemini CLI credentials from {:?}", path);
                 Some(token)
-            }
+            },
             Err(e) => {
                 tracing::warn!("Failed to parse gemini-cli credentials: {}", e);
                 None
-            }
+            },
         }
     } else {
         None

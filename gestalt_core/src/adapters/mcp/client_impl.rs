@@ -95,10 +95,10 @@ impl McpClientPort for McpClientAdapter {
             match content {
                 mcp_protocol_sdk::protocol::types::ResourceContents::Text { text, .. } => {
                     Ok(text.clone())
-                }
+                },
                 mcp_protocol_sdk::protocol::types::ResourceContents::Blob { blob, .. } => {
                     Ok(format!("Binary content (base64): {}", blob))
-                }
+                },
             }
         } else {
             anyhow::bail!("No content found in resource")

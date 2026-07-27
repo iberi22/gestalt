@@ -144,10 +144,10 @@ impl Doctor {
                         }
                     }
                 }
-            }
+            },
             Err(e) => {
                 log(&format!("Failed to run git worktree list: {:?}", e));
-            }
+            },
         }
 
         // 2. Discover run IDs from ~/.gestalt/runs/ subdirectories
@@ -238,10 +238,10 @@ impl Doctor {
                         }
                     }
                 }
-            }
+            },
             Err(e) => {
                 log(&format!("Failed to run git for-each-ref: {:?}", e));
-            }
+            },
         }
 
         // Deduplicate and gather all unique run IDs
@@ -418,13 +418,13 @@ impl Doctor {
                 match res {
                     Ok(status) if status.success() => {
                         log(&format!("Deleted local branch {}", branch));
-                    }
+                    },
                     _ => {
                         log(&format!(
                             "Failed to delete local branch {} (might not exist)",
                             branch
                         ));
-                    }
+                    },
                 }
 
                 if self.push {
@@ -437,10 +437,10 @@ impl Doctor {
                     match res {
                         Ok(status) if status.success() => {
                             log(&format!("Deleted remote branch {} on origin", branch));
-                        }
+                        },
                         _ => {
                             log(&format!("Remote branch {} does not exist on origin or push failed (skipped)", branch));
-                        }
+                        },
                     }
                 }
             }
@@ -520,10 +520,10 @@ impl Doctor {
                 match self.prune_run(&run.run_id, log, repo_path) {
                     Ok(_) => {
                         pruned_run_ids.push(run.run_id.clone());
-                    }
+                    },
                     Err(e) => {
                         log(&format!("Error pruning run {}: {:?}", run.run_id, e));
-                    }
+                    },
                 }
             } else {
                 log(&format!(

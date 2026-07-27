@@ -36,6 +36,224 @@ impl SubprocessRunner {
     }
 }
 
+// Helpers for process tree and cgroup tracking
+#[cfg(unix)]
+fn get_all_pids() -> Vec<u32> {
+    let mut pids = Vec::new();
+    if let Ok(entries) = std::fs::read_dir("/proc") {
+        for entry in entries.flatten() {
+            if let Ok(file_type) = entry.file_type() {
+                if file_type.is_dir() {
+                    if let Some(name) = entry.file_name().to_str() {
+                        if let Ok(pid) = name.parse::<u32>() {
+                            pids.push(pid);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    pids
+}
+
+#[cfg(unix)]
+fn get_ppid(pid: u32) -> Option<u32> {
+    let stat_path = format!("/proc/{}/stat", pid);
+    if let Ok(content) = std::fs::read_to_string(&stat_path) {
+        if let Some(last_paren) = content.rfind(')') {
+            let rest = &content[last_paren + 1..];
+            let parts: Vec<&str> = rest.split_whitespace().collect();
+            if parts.len() >= 2 {
+                if let Ok(ppid) = parts[1].parse::<u32>() {
+                    return Some(ppid);
+                }
+            }
+        }
+    }
+    None
+}
+
+#[cfg(unix)]
+fn get_descendants(parent: u32) -> Vec<u32> {
+    let pids = get_all_pids();
+    let mut parent_to_children: std::collections::HashMap<u32, Vec<u32>> =
+        std::collections::HashMap::new();
+    for pid in pids {
+        if let Some(ppid) = get_ppid(pid) {
+            parent_to_children.entry(ppid).or_default().push(pid);
+        }
+    }
+
+    let mut descendants = Vec::new();
+    let mut queue = vec![parent];
+    while let Some(current) = queue.pop() {
+        if let Some(children) = parent_to_children.get(&current) {
+            for &child in children {
+                descendants.push(child);
+                queue.push(child);
+            }
+        }
+    }
+    descendants
+}
+
+#[cfg(unix)]
+fn find_writable_cgroup_base() -> Option<PathBuf> {
+    let uid = unsafe { libc::getuid() };
+    let mut candidates = vec![
+        PathBuf::from(format!(
+            "/sys/fs/cgroup/user.slice/user-{}.slice/user@{}.service/app.slice",
+            uid, uid
+        )),
+        PathBuf::from(format!(
+            "/sys/fs/cgroup/user.slice/user-{}.slice/user@{}.service",
+            uid, uid
+        )),
+    ];
+
+    // Parse from self cgroup
+    if let Ok(content) = std::fs::read_to_string("/proc/self/cgroup") {
+        for line in content.lines() {
+            let parts: Vec<&str> = line.split(':').collect();
+            if parts.len() >= 3 {
+                let path = parts[2].trim_start_matches('/');
+                if !path.is_empty() {
+                    candidates.push(PathBuf::from("/sys/fs/cgroup").join(path));
+                }
+            }
+        }
+    }
+
+    candidates.push(PathBuf::from("/sys/fs/cgroup"));
+
+    for path in candidates {
+        if path.exists() {
+            let temp_dir = path.join(format!("gestalt-probe-{}", uuid::Uuid::new_v4()));
+            if std::fs::create_dir(&temp_dir).is_ok() {
+                let _ = std::fs::remove_dir(&temp_dir);
+                return Some(path);
+            }
+        }
+    }
+    None
+}
+
+#[derive(Debug)]
+pub struct ProcessReaper {
+    pub pid: Option<u32>,
+    pub cgroup_path: Option<PathBuf>,
+}
+
+impl ProcessReaper {
+    pub fn new(pid: Option<u32>, cgroup_path: Option<PathBuf>) -> Self {
+        Self { pid, cgroup_path }
+    }
+
+    pub fn kill_gracefully(&self) {
+        #[cfg(unix)]
+        {
+            let mut descendants = Vec::new();
+            if let Some(p) = self.pid {
+                descendants = get_descendants(p);
+                descendants.push(p);
+            }
+
+            // Kill process group
+            if let Some(p) = self.pid {
+                if p > 1 {
+                    unsafe {
+                        libc::kill(-(p as libc::pid_t), libc::SIGTERM);
+                    }
+                }
+            }
+
+            // Kill descendants individually
+            for &pid in &descendants {
+                if pid > 1 {
+                    unsafe {
+                        libc::kill(pid as libc::pid_t, libc::SIGTERM);
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn kill_forcefully(&self) {
+        #[cfg(unix)]
+        {
+            let _ = self.kill_cgroup();
+
+            let mut descendants = Vec::new();
+            if let Some(p) = self.pid {
+                descendants = get_descendants(p);
+                descendants.push(p);
+            }
+
+            // Kill process group
+            if let Some(p) = self.pid {
+                if p > 1 {
+                    unsafe {
+                        libc::kill(-(p as libc::pid_t), libc::SIGKILL);
+                    }
+                }
+            }
+
+            // Kill descendants individually
+            for &pid in &descendants {
+                if pid > 1 {
+                    unsafe {
+                        libc::kill(pid as libc::pid_t, libc::SIGKILL);
+                    }
+                }
+            }
+        }
+    }
+
+    fn kill_cgroup(&self) -> bool {
+        if let Some(ref cg) = self.cgroup_path {
+            // Try cgroup.kill
+            let kill_file = cg.join("cgroup.kill");
+            if std::fs::write(&kill_file, "1").is_ok() {
+                return true;
+            }
+            // Fallback: read cgroup.procs and kill each process
+            let procs_file = cg.join("cgroup.procs");
+            if let Ok(content) = std::fs::read_to_string(&procs_file) {
+                for line in content.lines() {
+                    if let Ok(pid) = line.trim().parse::<i32>() {
+                        if pid > 1 {
+                            unsafe {
+                                libc::kill(pid, libc::SIGKILL);
+                            }
+                        }
+                    }
+                }
+                return true;
+            }
+        }
+        false
+    }
+
+    pub fn cleanup(&self) {
+        self.kill_forcefully();
+
+        if let Some(ref cg) = self.cgroup_path {
+            for _ in 0..10 {
+                if std::fs::remove_dir(cg).is_ok() {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(10));
+            }
+        }
+    }
+}
+
+impl Drop for ProcessReaper {
+    fn drop(&mut self) {
+        self.cleanup();
+    }
+}
+
 #[async_trait]
 impl AgentRunner for SubprocessRunner {
     async fn run(
@@ -97,6 +315,32 @@ impl AgentRunner for SubprocessRunner {
             cmd.process_group(0);
         }
 
+        // Attempt to find a writable cgroup base and create a sub-cgroup
+        let mut cgroup_path = None;
+        #[cfg(unix)]
+        {
+            if let Some(base) = find_writable_cgroup_base() {
+                let cg_dir = base.join(format!("gestalt-agent-{}", uuid::Uuid::new_v4()));
+                if std::fs::create_dir(&cg_dir).is_ok() {
+                    cgroup_path = Some(cg_dir);
+                }
+            }
+        }
+
+        // Write "0" to cgroup.procs in pre_exec to make sure the process enters the cgroup
+        #[cfg(unix)]
+        {
+            if let Some(ref cg) = cgroup_path {
+                let procs_file = cg.join("cgroup.procs");
+                unsafe {
+                    cmd.pre_exec(move || {
+                        let _ = std::fs::write(&procs_file, "0");
+                        Ok(())
+                    });
+                }
+            }
+        }
+
         cmd.stdout(std::process::Stdio::piped());
         cmd.stderr(std::process::Stdio::piped());
 
@@ -107,6 +351,14 @@ impl AgentRunner for SubprocessRunner {
 
         // Extract pid immediately to avoid borrow issues later
         let pid = child.id();
+
+        // Write PID to cgroup.procs from parent as secondary assurance
+        #[cfg(unix)]
+        if let (Some(p), Some(ref cg)) = (pid, &cgroup_path) {
+            let _ = std::fs::write(cg.join("cgroup.procs"), p.to_string());
+        }
+
+        let reaper = ProcessReaper::new(pid, cgroup_path);
 
         // Extract stdout/stderr pipes
         let mut child_stdout = child
@@ -128,85 +380,63 @@ impl AgentRunner for SubprocessRunner {
         let wait_fut = child.wait();
         tokio::pin!(wait_fut);
 
+        #[allow(unused_assignments)]
         let mut exit_code = None;
         let mut is_timeout = false;
 
         match tokio::time::timeout(timeout, &mut wait_fut).await {
             Ok(Ok(status)) => {
                 exit_code = status.code();
-            }
+            },
             Ok(Err(e)) => {
                 return Err(RouterError::AgentError(format!(
                     "Process wait error: {}",
                     e
                 )));
-            }
+            },
             Err(_) => {
                 // Timeout occurred!
                 is_timeout = true;
 
-                // Send SIGTERM to the process group (using negative pgid)
-                #[cfg(unix)]
-                {
-                    if let Some(p) = pid {
-                        if p > 1 {
-                            unsafe {
-                                libc::kill(-(p as libc::pid_t), libc::SIGTERM);
-                            }
-                        }
-                    }
-                }
+                // Send SIGTERM to the process group and all descendants gracefully
+                reaper.kill_gracefully();
 
                 // Wait up to 5 seconds for the process to exit gracefully
                 let grace_duration = Duration::from_secs(5);
                 match tokio::time::timeout(grace_duration, &mut wait_fut).await {
-                    Ok(Ok(_status)) => {}
+                    Ok(Ok(status)) => {
+                        exit_code = status.code();
+                    },
                     Ok(Err(e)) => {
                         return Err(RouterError::AgentError(format!(
                             "Process wait error after SIGTERM: {}",
                             e
                         )));
-                    }
+                    },
                     Err(_) => {
-                        // Grace period expired! Send SIGKILL to the process group
-                        #[cfg(unix)]
-                        {
-                            if let Some(p) = pid {
-                                if p > 1 {
-                                    unsafe {
-                                        libc::kill(-(p as libc::pid_t), libc::SIGKILL);
-                                    }
-                                }
-                            }
-                        }
+                        // Grace period expired! Send SIGKILL to the process group and descendants forcefully
+                        reaper.kill_forcefully();
 
                         // Final wait to reap the process
-                        if let Err(e) = wait_fut.await {
-                            return Err(RouterError::AgentError(format!(
-                                "Process reap error after SIGKILL: {}",
-                                e
-                            )));
+                        match wait_fut.await {
+                            Ok(status) => {
+                                exit_code = status.code();
+                            },
+                            Err(e) => {
+                                return Err(RouterError::AgentError(format!(
+                                    "Process reap error after SIGKILL: {}",
+                                    e
+                                )));
+                            },
                         }
-                    }
+                    },
                 }
-            }
+            },
         }
 
         // Wait for stdout and stderr copying tasks to finish
         let _ = stdout_handle.await;
         let _ = stderr_handle.await;
-
-        // Cleanup process group to kill orphan grandchildren
-        #[cfg(unix)]
-        {
-            if let Some(p) = pid {
-                if p > 1 {
-                    unsafe {
-                        libc::kill(-(p as libc::pid_t), libc::SIGKILL);
-                    }
-                }
-            }
-        }
 
         let duration = start_time.elapsed();
 
@@ -293,5 +523,89 @@ impl AgentRunner for SubprocessRunner {
             run_id: None,
             worktree_path: Some(worktree.to_string_lossy().to_string()),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::run_state::AgentState;
+
+    struct TestTempDir {
+        path: PathBuf,
+    }
+
+    impl TestTempDir {
+        fn new() -> Self {
+            let path =
+                std::env::temp_dir().join(format!("gestalt_reaper_test_{}", uuid::Uuid::new_v4()));
+            std::fs::create_dir_all(&path).unwrap();
+            Self { path }
+        }
+        fn path(&self) -> &Path {
+            &self.path
+        }
+    }
+
+    impl Drop for TestTempDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.path);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_process_reaper_timeout_kills_tree() {
+        #[cfg(unix)]
+        {
+            let temp_dir = TestTempDir::new();
+            let pid_file = temp_dir.path().join("child.pid");
+
+            let runner = SubprocessRunner::new(Duration::from_millis(500));
+            // Spawn a script that starts a background sleep process, writes its pid to pid_file, and waits.
+            // If the script is killed, the background process should also be killed by the ProcessReaper.
+            let spec = AgentSpec {
+                id: "tree-killer-agent".to_string(),
+                command: "sh".to_string(),
+                args: vec![
+                    "-c".to_string(),
+                    format!("sleep 100 & echo $! > {}; wait", pid_file.to_string_lossy()),
+                ],
+                allowed_paths: None,
+                env: None,
+            };
+
+            let result = runner
+                .run(
+                    &spec,
+                    temp_dir.path(),
+                    "test cgroup / process tree kill",
+                    Duration::from_millis(500),
+                )
+                .await
+                .unwrap();
+
+            assert_eq!(result.state, AgentState::Timeout);
+
+            // Read the pid of the background process
+            assert!(
+                pid_file.exists(),
+                "PID file was not written by background process"
+            );
+            let pid_str = std::fs::read_to_string(&pid_file).unwrap();
+            let bg_pid: i32 = pid_str.trim().parse().unwrap();
+
+            // Check if the background sleep process is still running.
+            // Under Unix, kill(pid, 0) returns -1 with ESRCH if the process does not exist.
+            let is_alive = unsafe {
+                let res = libc::kill(bg_pid, 0);
+                res == 0
+            };
+
+            assert!(
+                !is_alive,
+                "The background descendant process (PID {}) is still alive!",
+                bg_pid
+            );
+        }
     }
 }

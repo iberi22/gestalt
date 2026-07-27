@@ -240,10 +240,10 @@ fn test_checkpoint_permission_errors() {
     match result {
         Ok(res) => {
             // If it succeeds, it might not have committed the unreadable file
-        }
+        },
         Err(e) => {
             // If it fails with a GitError, that's also a valid and graceful handling of permission errors
             assert_eq!(e.kind, gestalt_router::run::RouterErrorKind::GitError);
-        }
+        },
     }
 }

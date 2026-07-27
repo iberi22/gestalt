@@ -187,7 +187,10 @@ fn test_state_db_event_log_read_events() {
     let log = StateDbEventLog::new(db, run_id);
     let events = log.read_events(run_id);
     assert!(events.is_ok(), "Should be able to read events");
-    assert!(events.unwrap().is_empty(), "Expected empty events for untouched run");
+    assert!(
+        events.unwrap().is_empty(),
+        "Expected empty events for untouched run"
+    );
 }
 
 #[test]

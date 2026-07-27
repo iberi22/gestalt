@@ -45,14 +45,14 @@ impl WsRouterBridge {
                 match rx.recv().await {
                     Ok(timeline_event) => {
                         Self::forward_timeline_event(&ws_server, &timeline_event).await;
-                    }
+                    },
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
                         tracing::warn!("WsRouterBridge lagged by {n} MemState events");
-                    }
+                    },
                     Err(tokio::sync::broadcast::error::RecvError::Closed) => {
                         tracing::debug!("WsRouterBridge: MemState broadcast closed");
                         break;
-                    }
+                    },
                 }
             }
         });
@@ -67,10 +67,7 @@ impl WsRouterBridge {
                 // Extract state from payload
                 let state = serde_json::from_str::<serde_json::Value>(&event.payload)
                     .ok()
-                    .and_then(|v| {
-                        v.get("state")
-                            .and_then(|s| s.as_str().map(String::from))
-                    })
+                    .and_then(|v| v.get("state").and_then(|s| s.as_str().map(String::from)))
                     .unwrap_or_else(|| "unknown".to_string());
 
                 WsEvent::StateChanged {
@@ -78,14 +75,11 @@ impl WsRouterBridge {
                     agent_id: agent_id.to_string(),
                     state,
                 }
-            }
+            },
             "lock_acquired" => {
                 let path = serde_json::from_str::<serde_json::Value>(&event.payload)
                     .ok()
-                    .and_then(|v| {
-                        v.get("path")
-                            .and_then(|s| s.as_str().map(String::from))
-                    })
+                    .and_then(|v| v.get("path").and_then(|s| s.as_str().map(String::from)))
                     .unwrap_or_else(|| "unknown".to_string());
 
                 WsEvent::LockAcquired {
@@ -93,14 +87,11 @@ impl WsRouterBridge {
                     agent_id: agent_id.to_string(),
                     path,
                 }
-            }
+            },
             "lock_released" => {
                 let path = serde_json::from_str::<serde_json::Value>(&event.payload)
                     .ok()
-                    .and_then(|v| {
-                        v.get("path")
-                            .and_then(|s| s.as_str().map(String::from))
-                    })
+                    .and_then(|v| v.get("path").and_then(|s| s.as_str().map(String::from)))
                     .unwrap_or_else(|| "unknown".to_string());
 
                 WsEvent::LockReleased {
@@ -108,10 +99,9 @@ impl WsRouterBridge {
                     agent_id: agent_id.to_string(),
                     path,
                 }
-            }
+            },
             "conflict_detected" => {
-                let payload = serde_json::from_str::<serde_json::Value>(&event.payload)
-                    .ok();
+                let payload = serde_json::from_str::<serde_json::Value>(&event.payload).ok();
 
                 let path = payload
                     .as_ref()
@@ -150,11 +140,11 @@ impl WsRouterBridge {
                     path,
                     message,
                 }
-            }
+            },
             _ => {
                 // For unrecognised event types, skip silently
                 return;
-            }
+            },
         };
 
         ws_server.broadcast(&ws_event).await;

@@ -28,7 +28,9 @@ fn free_addr() -> SocketAddr {
 }
 
 /// Helper: connect a WebSocket client and return the stream.
-async fn connect_ws(addr: SocketAddr) -> impl StreamExt<Item = Result<Message, tokio_tungstenite::tungstenite::Error>> + Unpin {
+async fn connect_ws(
+    addr: SocketAddr,
+) -> impl StreamExt<Item = Result<Message, tokio_tungstenite::tungstenite::Error>> + Unpin {
     let (ws, _) = connect_async(format!("ws://{addr}")).await.unwrap();
     ws
 }
@@ -36,7 +38,9 @@ async fn connect_ws(addr: SocketAddr) -> impl StreamExt<Item = Result<Message, t
 /// Helper: read the next text message from a WebSocket stream with a
 /// 5-second timeout.  Panics on unexpected message types, errors, or
 /// timeouts.
-async fn recv_text(ws: &mut (impl StreamExt<Item = Result<Message, tokio_tungstenite::tungstenite::Error>> + Unpin)) -> String {
+async fn recv_text(
+    ws: &mut (impl StreamExt<Item = Result<Message, tokio_tungstenite::tungstenite::Error>> + Unpin),
+) -> String {
     match tokio::time::timeout(Duration::from_secs(5), ws.next()).await {
         Ok(Some(Ok(Message::Text(text)))) => text,
         Ok(Some(Ok(other))) => panic!("Expected Text frame, got: {other:?}"),
@@ -93,7 +97,10 @@ async fn test_ws_broadcast_multiple_clients() {
     for client in clients.iter_mut() {
         let text = recv_text(client).await;
         let received: WsEvent = serde_json::from_str(&text).unwrap();
-        assert_eq!(received, event, "All clients should receive identical event");
+        assert_eq!(
+            received, event,
+            "All clients should receive identical event"
+        );
     }
 }
 
@@ -118,11 +125,15 @@ async fn test_ws_state_changed_payload() {
 
     // Verify specific fields
     match received {
-        WsEvent::StateChanged { run_id, agent_id, state } => {
+        WsEvent::StateChanged {
+            run_id,
+            agent_id,
+            state,
+        } => {
             assert_eq!(run_id, "integration-test");
             assert_eq!(agent_id, "test-agent-42");
             assert_eq!(state, "failed");
-        }
+        },
         other => panic!("Expected StateChanged, got: {other:?}"),
     }
 }
@@ -195,11 +206,15 @@ async fn test_ws_stress_100_events() {
         let text = recv_text(&mut client).await;
         let received: WsEvent = serde_json::from_str(&text).unwrap();
         match received {
-            WsEvent::StateChanged { run_id, agent_id, state } => {
+            WsEvent::StateChanged {
+                run_id,
+                agent_id,
+                state,
+            } => {
                 assert_eq!(run_id, "stress-test");
                 assert_eq!(agent_id, format!("agent-{i}"));
                 assert_eq!(state, format!("state-{i}"));
-            }
+            },
             other => panic!("Expected StateChanged, got: {other:?}"),
         }
     }
@@ -225,11 +240,15 @@ async fn test_ws_full_pipeline_via_memstate() {
     let text = recv_text(&mut client).await;
     let received: WsEvent = serde_json::from_str(&text).unwrap();
     match received {
-        WsEvent::StateChanged { run_id, agent_id, state } => {
+        WsEvent::StateChanged {
+            run_id,
+            agent_id,
+            state,
+        } => {
             assert_eq!(run_id, "full-pipeline-run");
             assert_eq!(agent_id, "agent-omega");
             assert_eq!(state, "running");
-        }
+        },
         other => panic!("Expected StateChanged, got: {other:?}"),
     }
 }

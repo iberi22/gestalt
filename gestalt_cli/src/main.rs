@@ -247,11 +247,17 @@ enum XavierAction {
         #[arg(short, long, default_value = "execution")]
         kind: String,
     },
-    /// Full PRE → EXEC → POST cycle with git context
+    /// Full PRE → EXEC → POST cycle with VFS isolation
     Cycle {
         task: String,
         #[arg(short, long)]
         agent: Option<String>,
+        /// Base directory for VFS overlay (real files)
+        #[arg(long)]
+        vfs_dir: Option<String>,
+        /// Overlay directory for isolated changes
+        #[arg(long)]
+        overlay_dir: Option<String>,
     },
     /// Show Xavier stats / health
     Stats,
@@ -1160,10 +1166,47 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .unwrap_or(0);
                     println!("Xavier: {} memories found", count);
                 }
-                XavierAction::Cycle { task, agent } => {
+                XavierAction::Cycle {
+                    task,
+                    agent,
+                    vfs_dir,
+                    overlay_dir,
+                } => {
                     // ── VFS Isolation ──
+                    let use_vfs_overlay = vfs_dir.is_some() && overlay_dir.is_some();
                     let _vfs = std::sync::Arc::new(agent_wrapper::InMemoryVfs::new());
                     info!("VFS isolation created for Cycle task: {}", task);
+
+                    // ── VFS Overlay Preparation ──
+                    if use_vfs_overlay {
+                        let src = vfs_dir.as_ref().unwrap();
+                        let dst = overlay_dir.as_ref().unwrap();
+                        let src_path = Path::new(src);
+                        let dst_path = Path::new(dst);
+
+                        if !src_path.exists() {
+                            eprintln!("❌ VFS directory does not exist: {}", src);
+                            std::process::exit(1);
+                        }
+
+                        if dst_path.exists() {
+                            std::fs::remove_dir_all(dst_path)
+                                .map_err(|e| format!("Failed to remove existing overlay: {}", e))?;
+                        }
+
+                        info!("Copying VFS base '{}' to overlay '{}'", src, dst);
+                        println!("📁 Copying '{}' → '{}'", src, dst);
+                        let cp_status = std::process::Command::new("cp")
+                            .args(["-a", src, dst])
+                            .status()
+                            .map_err(|e| format!("Failed to copy: {}", e))?;
+
+                        if !cp_status.success() {
+                            eprintln!("❌ Failed to copy VFS directory to overlay");
+                            std::process::exit(1);
+                        }
+                        println!("✅ VFS overlay ready: {} → {}", src, dst);
+                    }
 
                     // ── State: Pending ──
                     let mut state = AgentState::Pending;
@@ -1238,10 +1281,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                         // Run with 300s timeout
                         let timeout_dur = Duration::from_secs(300);
+                        let agent_overlay = overlay_dir.clone();
                         let agent_future = tokio::task::spawn_blocking(move || {
-                            std::process::Command::new(&program)
-                                .args(&args)
-                                .output()
+                            let mut cmd = std::process::Command::new(&program);
+                            cmd.args(&args);
+                            if let Some(ref od) = agent_overlay {
+                                cmd.current_dir(od);
+                            }
+                            cmd.output()
                         });
 
                         match tokio::time::timeout(timeout_dur, agent_future).await {
@@ -1288,6 +1335,45 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                     }
 
+                    // ── VFS Diff: Compare overlay vs base ──
+                    let mut vfs_diff = String::new();
+                    if use_vfs_overlay {
+                        let src = vfs_dir.as_ref().unwrap();
+                        let dst = overlay_dir.as_ref().unwrap();
+
+                        match std::process::Command::new("diff")
+                            .args(["-ruN", src, dst])
+                            .output()
+                        {
+                            Ok(output) => {
+                                if output.status.success() {
+                                    vfs_diff =
+                                        "No changes detected between VFS base and overlay".to_string();
+                                } else {
+                                    let diff_text =
+                                        String::from_utf8_lossy(&output.stdout).to_string();
+                                    let truncated = if diff_text.len() > 10000 {
+                                        format!(
+                                            "{}...\n[diff truncated at 10000 chars]",
+                                            &diff_text[..10000]
+                                        )
+                                    } else {
+                                        diff_text
+                                    };
+                                    vfs_diff = truncated;
+                                    println!(
+                                        "📊 VFS Diff:\n{}",
+                                        &vfs_diff[..vfs_diff.len().min(2000)]
+                                    );
+                                }
+                            }
+                            Err(e) => {
+                                vfs_diff = format!("(diff command unavailable: {})", e);
+                                eprintln!("⚠️ Could not compute VFS diff: {}", e);
+                            }
+                        }
+                    }
+
                     state = agent_state;
 
                     // ── POST: Archive full content ──
@@ -1309,6 +1395,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                          Exit: {}\n\
                          stdout:\n{}\n\
                          stderr:\n{}\n\
+                         === VFS Diff ===\n\
+                         {}\n\
                          === State ===\n\
                          {:?}\n",
                         task,
@@ -1318,6 +1406,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         agent_exit_status,
                         agent_stdout,
                         agent_stderr,
+                        vfs_diff,
                         state,
                     );
 

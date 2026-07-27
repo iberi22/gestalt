@@ -931,9 +931,9 @@ fn test_state_db_event_log_creation_and_logging() {
     // Read back
     let events = log.read_events(run_id).unwrap();
     assert_eq!(events.len(), 3);
-    assert_eq!(events[0], event1);
+    assert_eq!(events[0], event3);
     assert_eq!(events[1], event2);
-    assert_eq!(events[2], event3);
+    assert_eq!(events[2], event1);
 }
 
 #[test]

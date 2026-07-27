@@ -58,6 +58,64 @@ fn test_detect_overlap_disjoint() {
 }
 
 #[test]
+fn test_test_mergeability_both_modified_conflict() {
+    let repo_path = create_temp_git_repo();
+    let base_sha = run_git(&repo_path, &["rev-parse", "HEAD"]);
+
+    let branch_a = "branch-a";
+    let branch_b = "branch-b";
+
+    // Branch A modifies file1.txt
+    create_branch(&repo_path, branch_a, &[("file1.txt", "base content\nline 2\nmodified on branch a\n")]);
+    run_git(&repo_path, &["checkout", "main"]);
+
+    // Branch B modifies file1.txt differently
+    create_branch(&repo_path, branch_b, &[("file1.txt", "base content\nline 2\nmodified differently on branch b\n")]);
+
+    run_git(&repo_path, &["checkout", "main"]);
+
+    let result = test_mergeability(&repo_path, &base_sha, branch_a, branch_b).unwrap();
+    match result {
+        MergeTestResult::Clean => panic!("Expected conflict, got Clean"),
+        MergeTestResult::Conflicts(conflicts) => {
+            assert!(!conflicts.is_empty(), "Conflicts list should not be empty");
+            let conflict = &conflicts[0];
+            assert_eq!(conflict.path, PathBuf::from("file1.txt"));
+            assert_eq!(conflict.kind, gestalt_router::overlap::ConflictKind::BothModified);
+        }
+    }
+}
+
+#[test]
+fn test_test_mergeability_both_added_content_conflict() {
+    let repo_path = create_temp_git_repo();
+    let base_sha = run_git(&repo_path, &["rev-parse", "HEAD"]);
+
+    let branch_a = "branch-a";
+    let branch_b = "branch-b";
+
+    // Branch A adds new_file.txt
+    create_branch(&repo_path, branch_a, &[("new_file.txt", "added on branch a")]);
+    run_git(&repo_path, &["checkout", "main"]);
+
+    // Branch B adds new_file.txt differently
+    create_branch(&repo_path, branch_b, &[("new_file.txt", "added differently on branch b")]);
+
+    run_git(&repo_path, &["checkout", "main"]);
+
+    let result = test_mergeability(&repo_path, &base_sha, branch_a, branch_b).unwrap();
+    match result {
+        MergeTestResult::Clean => panic!("Expected conflict, got Clean"),
+        MergeTestResult::Conflicts(conflicts) => {
+            assert!(!conflicts.is_empty(), "Conflicts list should not be empty");
+            let conflict = &conflicts[0];
+            assert_eq!(conflict.path, PathBuf::from("new_file.txt"));
+            assert_eq!(conflict.kind, gestalt_router::overlap::ConflictKind::Content);
+        }
+    }
+}
+
+#[test]
 fn test_find_overlaps_empty_branches() {
     let repo_path = create_temp_git_repo();
     let base_sha = run_git(&repo_path, &["rev-parse", "HEAD"]);

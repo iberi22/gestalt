@@ -578,11 +578,7 @@ pub fn test_mergeability(
             let has_our = stages.contains(&2);
             let has_their = stages.contains(&3);
 
-            let kind = if content_conflict_paths.contains(&path) {
-                ConflictKind::Content
-            } else {
-                map_stages_to_kind(has_base, has_our, has_their)
-            };
+            let kind = map_stages_to_kind(has_base, has_our, has_their);
 
             seen_paths.insert(path.clone());
             conflicts.push(ConflictInfo { path, kind });

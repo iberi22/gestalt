@@ -190,57 +190,56 @@ impl VirtualFS for StateDbVfs {
         let state_db = self.state_db.clone();
 
         tokio::task::spawn_blocking(move || {
-            let conn = state_db.conn().map_err(|e| {
-                VfsError::Internal(format!("failed to acquire DB connection: {e}"))
-            })?;
+            state_db.execute_transaction(|tx| {
+                // 1. Read latest content (or empty string if file doesn't exist yet)
+                let current_content: String = tx
+                    .query_row(
+                        "SELECT content FROM file_versions
+                         WHERE path = ?1
+                         ORDER BY created_at DESC
+                         LIMIT 1",
+                        rusqlite::params![path],
+                        |row| row.get(0),
+                    )
+                    .unwrap_or_default();
 
-            // 1. Read latest content (or empty string if file doesn't exist yet)
-            let current_content: String = conn
-                .query_row(
-                    "SELECT content FROM file_versions
-                     WHERE path = ?1
-                     ORDER BY created_at DESC
-                     LIMIT 1",
-                    rusqlite::params![path],
-                    |row| row.get(0),
-                )
-                .unwrap_or_default();
-
-            // 2. Apply block edit: replace old_string with new_string
-            let new_content = if block.old_string.is_empty() && block.new_string.is_empty() {
-                // No-op
-                current_content.clone()
-            } else if current_content.contains(&block.old_string) {
-                current_content.replace(&block.old_string, &block.new_string)
-            } else {
-                // old_string not found — try with context for uniqueness
-                // If context is provided, try to find old_string within context
-                if !block.context.is_empty() && current_content.contains(&block.context) {
-                    // Replace old_string within the context area
+                // 2. Apply block edit: replace old_string with new_string
+                let new_content = if block.old_string.is_empty() && block.new_string.is_empty() {
+                    // No-op
+                    current_content.clone()
+                } else if current_content.contains(&block.old_string) {
                     current_content.replace(&block.old_string, &block.new_string)
                 } else {
-                    // old_string not found and no context match — append as new content
-                    if current_content.is_empty() {
-                        block.new_string.clone()
+                    // old_string not found — try with context for uniqueness
+                    // If context is provided, try to find old_string within context
+                    if !block.context.is_empty() && current_content.contains(&block.context) {
+                        // Replace old_string within the context area
+                        current_content.replace(&block.old_string, &block.new_string)
                     } else {
-                        format!("{}{}", current_content, block.new_string)
+                        // old_string not found and no context match — append as new content
+                        if current_content.is_empty() {
+                            block.new_string.clone()
+                        } else {
+                            format!("{}{}", current_content, block.new_string)
+                        }
                     }
-                }
-            };
+                };
 
-            // 3. Compute hash
-            let hash = sha256_hex(&new_content);
-            let now = Utc::now().to_rfc3339();
+                // 3. Compute hash
+                let hash = sha256_hex(&new_content);
+                let now = Utc::now().to_rfc3339();
 
-            // 4. Insert new version
-            conn.execute(
-                "INSERT INTO file_versions (path, version_hash, content, agent_id, created_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5)",
-                rusqlite::params![path, hash, new_content, block.agent_id, now],
-            )
-            .map_err(|e| VfsError::Internal(format!("failed to insert version: {e}")))?;
+                // 4. Insert new version
+                tx.execute(
+                    "INSERT INTO file_versions (path, version_hash, content, agent_id, created_at)
+                     VALUES (?1, ?2, ?3, ?4, ?5)",
+                    rusqlite::params![path, hash, new_content, block.agent_id, now],
+                )
+                .map_err(|e| anyhow::anyhow!("failed to insert version: {e}"))?;
 
-            Ok(hash)
+                Ok(hash)
+            })
+            .map_err(|e| VfsError::Internal(format!("transaction failed: {e}")))
         })
         .await
         .map_err(|e| VfsError::Internal(format!("task join failed: {e}")))?

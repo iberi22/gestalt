@@ -64,7 +64,7 @@ pub trait VirtualFileSystem: Send + Sync {
     /// ```
     /// # use std::path::Path;
     /// # use gestalt_core::ports::outbound::vfs::{VirtualFileSystem, OverlayFs};
-    /// # tokio_test::block_on(async {
+    /// # tokio::runtime::Builder::new_current_thread().build().unwrap().block_on(async {
     /// let vfs = OverlayFs::new();
     /// let data = vfs.read(Path::new("hello.txt")).await;
     /// # });
@@ -78,7 +78,7 @@ pub trait VirtualFileSystem: Send + Sync {
     /// ```
     /// # use std::path::Path;
     /// # use gestalt_core::ports::outbound::vfs::{VirtualFileSystem, OverlayFs};
-    /// # tokio_test::block_on(async {
+    /// # tokio::runtime::Builder::new_current_thread().build().unwrap().block_on(async {
     /// let vfs = OverlayFs::new();
     /// vfs.write(Path::new("hello.txt"), b"world".to_vec(), "agent-1").await.unwrap();
     /// # });
@@ -92,7 +92,7 @@ pub trait VirtualFileSystem: Send + Sync {
     /// ```
     /// # use std::path::Path;
     /// # use gestalt_core::ports::outbound::vfs::{VirtualFileSystem, OverlayFs};
-    /// # tokio_test::block_on(async {
+    /// # tokio::runtime::Builder::new_current_thread().build().unwrap().block_on(async {
     /// let vfs = OverlayFs::new();
     /// let entries = vfs.list(Path::new(".")).await.unwrap();
     /// # });
@@ -129,7 +129,18 @@ pub trait VirtualFileSystem: Send + Sync {
     async fn version(&self) -> u64;
 }
 
+/// A trait defining capabilities for watching filesystem paths and emitting change events.
+///
+/// This provides agents with real-time feedback on edits made inside their workspaces or VFS.
 pub trait FileWatcher: Send + Sync {
+    /// Monitors a specific file or directory for structural changes.
+    ///
+    /// # Parameters
+    /// - `path`: The path of the file or directory to watch.
+    /// - `interval`: Frequency of checking the path status (polling rate).
+    ///
+    /// # Returns
+    /// - `mpsc::Receiver<FileWatchEvent>`: A receiver channel yielding change events (Created, Modified, Deleted).
     fn watch(&self, path: PathBuf, interval: Duration) -> mpsc::Receiver<FileWatchEvent>;
 }
 

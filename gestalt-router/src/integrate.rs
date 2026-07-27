@@ -71,10 +71,7 @@ pub fn integrate_branches(
             conflicts: conflicted_binaries
                 .iter()
                 .map(|f| ConflictInfo {
-                    agent_id: binary_mods
-                        .get(f)
-                        .and_then(|v| v.first().cloned())
-                        .unwrap_or_default(),
+                    agent_id: binary_mods.get(f).and_then(|v| v.first().cloned()).unwrap_or_default(),
                     path: f.clone(),
                 })
                 .collect(),
@@ -86,26 +83,40 @@ pub fn integrate_branches(
     let mut conflicted_files = Vec::new();
 
     for (_agent_id, branch_or_sha) in branches {
-        let merge_base_arg = format!("--merge-base={}", base_sha);
-        let args = [
-            "merge-tree",
-            "--write-tree",
-            &merge_base_arg,
-            &current_tree,
-            branch_or_sha,
-        ];
+        let args = ["merge-tree", "--write-tree", "--merge-base", base_sha, &current_tree, branch_or_sha];
         let result = checkpoint::run_git_cmd(repo_dir, &args);
 
         match result {
             Ok(stdout) => {
-                current_tree = stdout.trim().to_string();
+                let merged_tree = stdout.trim().to_string();
+                // Create an intermediate commit so that we have a commit object for the next merge-tree
+                let intermediate_args = [
+                    "-c",
+                    "core.hooksPath=/dev/null",
+                    "commit-tree",
+                    &merged_tree,
+                    "-p",
+                    &current_tree,
+                    "-p",
+                    branch_or_sha,
+                    "-m",
+                    "gestalt: intermediate merge",
+                ];
+                match checkpoint::run_git_cmd(repo_dir, &intermediate_args) {
+                    Ok(sha) => {
+                        current_tree = sha.trim().to_string();
+                    }
+                    Err(e) => {
+                        conflicted_files.push(format!("commit-tree-failed: {}", e));
+                    }
+                }
             }
             Err(e) => {
-                // There is a merge conflict. Parse conflict info from stderr.
+                // There is a merge conflict. stdout contains the conflict info.
                 let err_msg = e.to_string();
                 let mut files = Vec::new();
                 for line in err_msg.lines() {
-                    if line.starts_with("CONFLICT") || line.contains("conflict") {
+                    if line.starts_with("Conflict") || line.contains("conflict") {
                         if let Some(idx) = line.find("in ") {
                             let p = &line[idx + 3..];
                             files.push(p.trim().to_string());
@@ -115,10 +126,6 @@ pub fn integrate_branches(
                                 files.push(words[words.len() - 1].trim().to_string());
                             }
                         }
-                    } else if let Some(tab_idx) = line.find('\t') {
-                        // Also check for the stage lines "mode OID stage path" which have a tab
-                        let path_str = &line[tab_idx + 1..];
-                        files.push(path_str.trim().to_string());
                     }
                 }
                 if files.is_empty() {
@@ -146,6 +153,7 @@ pub fn integrate_branches(
         });
     }
 
+    // 3. Resolve the merged tree SHA from the final intermediate commit
     // 3. Resolve the merged tree SHA from the final intermediate commit
     //    (commit-tree expects a tree SHA, not a commit SHA)
     let merged_tree_sha = if !branches.is_empty() {

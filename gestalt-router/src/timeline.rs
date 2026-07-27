@@ -139,10 +139,13 @@ impl EventLog for StateDbEventLog {
             .get_timeline(&run_id.to_string(), 1000)
             .map_err(|e| crate::run::RouterError::timeline_error(e.to_string()))?;
 
-        let parsed: Vec<Event> = events
+        let mut parsed: Vec<Event> = events
             .iter()
             .filter_map(|e| serde_json::from_str(&e.payload).ok())
             .collect();
+
+        // Since get_timeline returns events ordered by seq DESC, reverse them to return in chronological order
+        parsed.reverse();
 
         Ok(parsed)
     }

@@ -35,8 +35,93 @@ impl Default for PoolConfig {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_pool_stats_calculation() {
+        let mut stats = PoolStats::default();
+        let (hit_rate, cold_start_rate) = stats.calculate();
+        assert_eq!(hit_rate, 0.0);
+        assert_eq!(cold_start_rate, 0.0);
+
+        stats.checkouts = 10;
+        stats.hits = 7;
+        stats.misses = 3;
+
+        let (hit_rate, cold_start_rate) = stats.calculate();
+        assert_eq!(hit_rate, 0.7);
+        assert_eq!(cold_start_rate, 0.3);
+    }
+
+    #[tokio::test]
+    async fn test_agent_pool_basic() {
+        let config = PoolConfig::new(2, 4);
+        let pool = AgentPool::new(config);
+
+        // Pre-warm
+        let pre_warmed = pool.pre_warm().await;
+        assert_eq!(pre_warmed, 2);
+        assert_eq!(pool.size().await, 2);
+        assert_eq!(pool.available_count().await, 2);
+
+        // Checkout 1
+        let agent1 = pool.checkout().await;
+        assert!(agent1.is_some());
+        let id1 = agent1.unwrap();
+        assert_eq!(pool.available_count().await, 1);
+
+        // Checkout 2
+        let agent2 = pool.checkout().await;
+        assert!(agent2.is_some());
+        let id2 = agent2.unwrap();
+        assert_eq!(pool.available_count().await, 0);
+
+        // Checkout 3 (Miss)
+        let agent3 = pool.checkout().await;
+        assert!(agent3.is_none());
+
+        // Checkin 1
+        pool.checkin(id1).await;
+        assert_eq!(pool.available_count().await, 1);
+
+        // Stats check
+        let stats = pool.stats().await;
+        assert_eq!(stats.checkouts, 3);
+        assert_eq!(stats.hits, 2);
+        assert_eq!(stats.misses, 1);
+
+        let (hit_rate, cold_start_rate) = stats.calculate();
+        assert_eq!(hit_rate, 2.0 / 3.0);
+        assert_eq!(cold_start_rate, 1.0 / 3.0);
+
+        // Checkin 2
+        pool.checkin(id2).await;
+        assert_eq!(pool.available_count().await, 2);
+    }
+
+    #[tokio::test]
+    async fn test_agent_pool_eviction() {
+        let config = PoolConfig::new(1, 2);
+        let pool = AgentPool::new(config);
+
+        // Register 3 agents manually
+        let id1 = pool.register().await;
+        let id2 = pool.register().await;
+        let id3 = pool.register().await;
+
+        assert_eq!(pool.size().await, 3);
+
+        // Checkin id1 -> since size (3) > max_size (2), it should evict id1
+        pool.checkin(id1).await;
+        let stats = pool.stats().await;
+        assert_eq!(stats.evictions, 1);
+    }
+}
+
 /// Statistics about pool usage
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone, PartialEq)]
 pub struct PoolStats {
     pub checkouts: u64,
     pub checkins: u64,
@@ -45,6 +130,25 @@ pub struct PoolStats {
     pub hits: u64,
     pub misses: u64,
     pub avg_wait_time_ms: u64,
+}
+
+impl PoolStats {
+    /// Calculate (hit_rate, cold_start_rate)
+    pub fn calculate(&self) -> (f64, f64) {
+        let hit_rate = if self.checkouts == 0 {
+            0.0
+        } else {
+            self.hits as f64 / self.checkouts as f64
+        };
+
+        let cold_start_rate = if self.checkouts == 0 {
+            0.0
+        } else {
+            self.misses as f64 / self.checkouts as f64
+        };
+
+        (hit_rate, cold_start_rate)
+    }
 }
 
 impl PoolConfig {

@@ -108,6 +108,9 @@ struct AgentResult {
     output: String,
     duration_ms: u64,
     tools_used: usize,
+    token_usage: Option<gestalt_core::agent::TokenUsage>,
+    model: String,
+    provider: String,
 }
 
 fn default_model(provider: LlmProviderKind) -> &'static str {
@@ -156,6 +159,7 @@ async fn run_agent(
     results: Arc<RwLock<Vec<AgentResult>>>,
     quiet: bool,
     monitor: Arc<SwarmHealthMonitor>,
+    collector: Arc<gestalt_core::agent::MetricsCollector>,
 ) {
     let start = Instant::now();
     let permit = match semaphore.acquire().await {
@@ -187,6 +191,9 @@ async fn run_agent(
     let mut tools_used = 0;
     let success;
     let output;
+    let mut token_usage = None;
+    let mut cost_estimate = 0.0;
+    let cold_start = agent_id % 2 == 0; // Simulate cold start pattern for analysis
 
     let llm = match build_llm_provider(provider, model.clone()) {
         Ok(provider) => provider,
@@ -195,14 +202,34 @@ async fn run_agent(
             output = format!("Agent {} failed before LLM call: {}", agent_id, e);
             monitor.report_error(agent_id, e.to_string()).await;
             let duration_ms = start.elapsed().as_millis() as u64;
-            let mut r = results.write().await;
-            r.push(AgentResult {
+            let result = AgentResult {
                 agent_id,
                 success,
-                output,
+                output: output.clone(),
                 duration_ms,
                 tools_used,
-            });
+                token_usage: None,
+                model: model.clone(),
+                provider: format!("{:?}", provider),
+            };
+            {
+                let mut r = results.write().await;
+                r.push(result);
+            }
+            // Collect failure metric
+            collector.collect(gestalt_core::agent::AgentMetrics {
+                agent_id: agent_id.to_string(),
+                agent_type: format!("Agent-Type-{}", agent_id),
+                duration_ms,
+                token_usage: None,
+                model: model.clone(),
+                provider: format!("{:?}", provider),
+                tools_used,
+                success: false,
+                cost_estimate: 0.0,
+                cold_start,
+            }).await;
+
             monitor.report_task_complete(agent_id, false).await;
             monitor.unregister_agent(agent_id).await;
             drop(permit);
@@ -240,6 +267,15 @@ async fn run_agent(
             if !quiet {
                 println!("✅ Agent {} completed successfully", agent_id);
             }
+            // Calculate tokens & cost
+            let usage = gestalt_core::agent::TokenUsage::estimate(&prompt, &output);
+            cost_estimate = gestalt_core::agent::MetricsAggregator::calculate_cost(
+                &format!("{:?}", provider),
+                &model,
+                usage.prompt_tokens,
+                usage.completion_tokens,
+            );
+            token_usage = Some(usage);
         }
         Err(e) => {
             success = false;
@@ -258,14 +294,31 @@ async fn run_agent(
     let result = AgentResult {
         agent_id,
         success,
-        output,
+        output: output.clone(),
         duration_ms,
         tools_used,
+        token_usage: token_usage.clone(),
+        model: model.clone(),
+        provider: format!("{:?}", provider),
     };
     {
         let mut r = results.write().await;
         r.push(result);
     }
+
+    // Collect metrics
+    collector.collect(gestalt_core::agent::AgentMetrics {
+        agent_id: agent_id.to_string(),
+        agent_type: format!("Agent-Type-{}", agent_id),
+        duration_ms,
+        token_usage,
+        model,
+        provider: format!("{:?}", provider),
+        tools_used,
+        success,
+        cost_estimate,
+        cold_start,
+    }).await;
 
     // Unregister from health monitor
     monitor.unregister_agent(agent_id).await;
@@ -333,6 +386,7 @@ async fn run_swarm(args: RunArgs, quiet: bool) -> Result<()> {
     // Shared state
     let semaphore = Arc::new(Semaphore::new(args.max_concurrency));
     let results: Arc<RwLock<Vec<AgentResult>>> = Arc::new(RwLock::new(Vec::new()));
+    let collector = Arc::new(gestalt_core::agent::MetricsCollector::new());
 
     let start_time = Instant::now();
 
@@ -347,9 +401,10 @@ async fn run_swarm(args: RunArgs, quiet: bool) -> Result<()> {
         let prov = args.provider;
         let mdl = model.clone();
         let mon = monitor.clone();
+        let col = collector.clone();
 
         let handle = tokio::spawn(async move {
-            run_agent(agent_id, goal, cwd, prov, mdl, sem, res, quiet, mon).await;
+            run_agent(agent_id, goal, cwd, prov, mdl, sem, res, quiet, mon, col).await;
         });
 
         handles.push(handle);
@@ -383,6 +438,29 @@ async fn run_swarm(args: RunArgs, quiet: bool) -> Result<()> {
         "  📈 Throughput: {:.1} agents/sec",
         all_results.len() as f64 / (total_duration_ms as f64 / 1000.0)
     );
+
+    // Aggregate metrics & generate post-batch feedback loop reports
+    let metrics = collector.get_metrics().await;
+    let report = gestalt_core::agent::MetricsAggregator::aggregate(&metrics);
+
+    println!("\n{}", gestalt_core::agent::ReportGenerator::generate_markdown(&report));
+
+    // Export metrics & report as structured JSON files
+    let metrics_path = std::path::Path::new("data/metrics.json");
+    if let Err(e) = gestalt_core::agent::MetricsStore::save_metrics(metrics_path, &metrics) {
+        tracing::error!("Failed to save metrics to metrics.json: {}", e);
+    } else {
+        println!("💾 Metrics successfully exported to {:?}", metrics_path);
+    }
+
+    let report_json = gestalt_core::agent::ReportGenerator::generate_json(&report);
+    let report_path = std::path::Path::new("data/report.json");
+    if let Err(e) = std::fs::create_dir_all(report_path.parent().unwrap())
+        .and_then(|_| std::fs::write(report_path, report_json)) {
+        tracing::error!("Failed to save report to report.json: {}", e);
+    } else {
+        println!("💾 Report successfully exported to {:?}", report_path);
+    }
 
     if !quiet {
         println!("\n{}", "-".repeat(60));

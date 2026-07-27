@@ -47,6 +47,9 @@ pub struct AgentResult {
     pub duration_ms: u64,
     pub run_id: Option<uuid::Uuid>,
     pub worktree_path: Option<String>,
+    pub token_usage: Option<gestalt_core::agent::TokenUsage>,
+    pub model: String,
+    pub provider: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -87,6 +90,9 @@ impl RunReport {
                     "error": r.error,
                     "changed_files": r.changed_files,
                     "duration_ms": r.duration_ms,
+                    "token_usage": r.token_usage,
+                    "model": r.model,
+                    "provider": r.provider,
                 })
             }).collect::<Vec<_>>(),
             "merged_branches": self.merged_branches,

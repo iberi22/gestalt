@@ -3,3 +3,4 @@ data/
 metrics.db
 *.db-shm
 *.db-wal
+target/

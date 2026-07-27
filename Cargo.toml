@@ -8,6 +8,9 @@ members = [
     "gestalt-state",
     "gestalt-ws",
 ]
+exclude = [
+    "gestalt_swarm",
+]
 resolver = "2"
 
 [profile.dev-fast]

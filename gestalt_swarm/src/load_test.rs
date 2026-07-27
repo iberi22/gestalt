@@ -242,7 +242,7 @@ pub async fn run_load_test(config: LoadTestConfig) -> LoadTestResult {
     }
 
     let total_duration_ms = start_time.elapsed().as_millis() as u64;
-    let latencies = tracker.get_latencies().await;
+    let mut latencies = tracker.get_latencies().await;
 
     // Calculate statistics
     let (avg, min, max) = if latencies.is_empty() {

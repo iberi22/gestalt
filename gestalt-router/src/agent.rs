@@ -292,6 +292,9 @@ impl AgentRunner for SubprocessRunner {
             duration_ms: duration.as_millis() as u64,
             run_id: None,
             worktree_path: Some(worktree.to_string_lossy().to_string()),
+            token_usage: None,
+            model: String::new(),
+            provider: String::new(),
         })
     }
 }

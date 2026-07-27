@@ -219,6 +219,71 @@ impl XavierClient {
         let resp = self.add(content, &path, "run_result", metadata).await?;
         Ok(resp.id)
     }
+
+    /// Index a plan document in Xavier as kind=plan
+    pub async fn save_plan(&self, content: &str, path: &str) -> Result<String, String> {
+        self.add_memory(content, path, "plan").await
+    }
+
+    /// Index an execution result as kind=execution
+    pub async fn save_execution(&self, content: &str, path: &str) -> Result<String, String> {
+        self.add_memory(content, path, "execution").await
+    }
+
+    /// Index a config document as kind=config
+    pub async fn save_config(&self, content: &str, path: &str) -> Result<String, String> {
+        self.add_memory(content, path, "config").await
+    }
+
+    /// Generic memory add with kind
+    pub async fn add_memory(&self, content: &str, path: &str, kind: &str) -> Result<String, String> {
+        let url = format!("{}/v1/memories", self.endpoint);
+        let body = serde_json::json!({
+            "content": content,
+            "path": path,
+            "kind": kind,
+        });
+        let resp = self
+            .client
+            .post(&url)
+            .header("X-Xavier-Token", &self.token)
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| format!("Xavier request failed: {}", e))?;
+        let data: serde_json::Value = resp.json().await
+            .map_err(|e| format!("Xavier response parse failed: {}", e))?;
+        Ok(data["id"].as_str().unwrap_or("ok").to_string())
+    }
+
+    /// Health check: returns status string
+    pub async fn health_check(&self) -> Result<String, String> {
+        let url = format!("{}/health", self.endpoint);
+        let resp = self
+            .client
+            .get(&url)
+            .send()
+            .await
+            .map_err(|e| format!("Health check failed: {}", e))?;
+        let data: serde_json::Value = resp.json().await
+            .map_err(|e| format!("Health response parse failed: {}", e))?;
+        Ok(data["status"].as_str().unwrap_or("unknown").to_string())
+    }
+
+    /// Check if embeddings are functional
+    pub async fn embedding_status(&self) -> Result<String, String> {
+        let url = format!("{}/health", self.endpoint);
+        let resp = self
+            .client
+            .get(&url)
+            .send()
+            .await
+            .map_err(|e| format!("Health check failed: {}", e))?;
+        let data: serde_json::Value = resp.json().await
+            .map_err(|e| format!("Health response parse failed: {}", e))?;
+        let mode = data["mode"].as_str().unwrap_or("unknown");
+        Ok(mode.to_string())
+    }
 }
 
 #[cfg(test)]

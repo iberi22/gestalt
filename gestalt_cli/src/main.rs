@@ -1080,12 +1080,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         println!("📦 AgentWrapper block-level editing:");
                         for agent_spec in &agent_specs_clone {
                             let _wrapper = agent_wrapper::AgentWrapper::new(
-                                agent_spec.command.clone(),
-                                agent_spec.args.clone(),
                                 wrapper_vfs.clone(),
                                 agent_spec.id.clone(),
                                 report.run_id.to_string(),
-                                vec![format!("/tmp/worktree-{}", agent_spec.id)],
+                                agent_spec.command.clone(),
                             );
                             // In production, call wrapper.execute().await to run the
                             // agent through AgentWrapper and capture block-level diffs.
@@ -1163,71 +1161,189 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     println!("Xavier: {} memories found", count);
                 }
                 XavierAction::Cycle { task, agent } => {
-                    // PRE: Search Xavier
+                    // ── VFS Isolation ──
+                    let _vfs = std::sync::Arc::new(agent_wrapper::InMemoryVfs::new());
+                    info!("VFS isolation created for Cycle task: {}", task);
+
+                    // ── State: Pending ──
+                    let mut state = AgentState::Pending;
+                    println!("Cycle state: {:?}", state);
+
+                    // ── PRE: Search Xavier ──
+                    state = AgentState::Running;
+                    println!("Cycle state: {:?} — PRE phase", state);
+
                     let client = reqwest::Client::new();
                     let resp = client
                         .post(format!("{}/v1/memories/search", xavier_url))
                         .json(&serde_json::json!({"query": &task, "limit": 3}))
                         .send()
                         .await?;
-                    let body: serde_json::Value = resp.json().await?;
-                    let results = body["results"]
+                    let search_body: serde_json::Value = resp.json().await?;
+                    let empty_vec = vec![];
+                    let search_results = search_body["results"]
                         .as_array()
-                        .map(|a| a.len())
-                        .unwrap_or(0);
-                    println!("PRE: {} results from Xavier", results);
+                        .unwrap_or(&empty_vec);
+                    let result_count = search_results.len();
 
-                    // GIT: Get context
-                    let branch = std::process::Command::new("git")
+                    // Build readable search context for archive
+                    let mut search_context = String::new();
+                    for (i, r) in search_results.iter().enumerate() {
+                        let mem = r["memory"].as_str().unwrap_or("");
+                        let kind = r["metadata"]["kind"].as_str().unwrap_or("?");
+                        let preview = mem.lines().next().unwrap_or("");
+                        search_context.push_str(&format!("  {}. [{}] {}\n", i + 1, kind, preview));
+                    }
+                    println!("PRE: {} results from Xavier", result_count);
+                    if !search_context.is_empty() {
+                        print!("Context:\n{}", search_context);
+                    }
+
+                    // ── GIT: Get context ──
+                    let branch_output = std::process::Command::new("git")
                         .args(["rev-parse", "--abbrev-ref", "HEAD"])
                         .output();
-                    let log = std::process::Command::new("git")
+                    let log_output = std::process::Command::new("git")
                         .args(["log", "--oneline", "-5"])
                         .output();
-                    if let Ok(out) = &branch {
-                        println!("Branch: {}", String::from_utf8_lossy(&out.stdout).trim());
+
+                    let mut git_context = String::new();
+                    if let Ok(out) = &branch_output {
+                        let branch = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                        println!("Branch: {}", branch);
+                        git_context.push_str(&format!("Branch: {}\n", branch));
                     }
-                    if let Ok(out) = &log {
-                        println!("Recent commits:\n{}", String::from_utf8_lossy(&out.stdout));
+                    if let Ok(out) = &log_output {
+                        let log = String::from_utf8_lossy(&out.stdout);
+                        println!("Recent commits:\n{}", log);
+                        git_context.push_str(&format!("Recent commits:\n{}", log));
                     }
 
-                    // EXEC: Run agent
+                    // ── EXEC: Run agent with VFS + timeout ──
+                    let mut agent_stdout = String::new();
+                    let mut agent_stderr = String::new();
+                    let mut agent_exit_status = String::new();
+                    let mut agent_state = AgentState::Success;
+
                     if let Some(agent_cmd) = agent {
-                        let output = std::process::Command::new("sh")
-                            .args(["-c", &agent_cmd])
-                            .output();
-                        match output {
-                            Ok(out) => {
-                                let stdout = String::from_utf8_lossy(&out.stdout);
-                                let stderr = String::from_utf8_lossy(&out.stderr);
-                                println!("Agent exit: {}", out.status);
-                                if !stdout.is_empty() {
-                                    println!("stdout: {}", stdout);
+                        println!("Cycle state: {:?} — EXEC phase", state);
+
+                        // Parse command into program + args (no sh -c)
+                        let parts: Vec<&str> = agent_cmd.split_whitespace().collect();
+                        let (program, args) = if parts.is_empty() {
+                            (String::new(), vec![])
+                        } else {
+                            (parts[0].to_string(), parts[1..].iter().map(|s| s.to_string()).collect::<Vec<_>>())
+                        };
+
+                        // Run with 300s timeout
+                        let timeout_dur = Duration::from_secs(300);
+                        let agent_future = tokio::task::spawn_blocking(move || {
+                            std::process::Command::new(&program)
+                                .args(&args)
+                                .output()
+                        });
+
+                        match tokio::time::timeout(timeout_dur, agent_future).await {
+                            Ok(Ok(Ok(output))) => {
+                                let out_stdout = String::from_utf8_lossy(&output.stdout);
+                                let out_stderr = String::from_utf8_lossy(&output.stderr);
+
+                                agent_stdout = out_stdout.to_string();
+                                agent_stderr = out_stderr.to_string();
+                                agent_exit_status = format!("{}", output.status);
+
+                                println!("Agent exit: {}", output.status);
+                                if output.status.success() {
+                                    agent_state = AgentState::Success;
+                                } else {
+                                    agent_state = AgentState::Crashed;
                                 }
-                                if !stderr.is_empty() {
-                                    println!("stderr: {}", stderr);
+
+                                if !out_stdout.is_empty() {
+                                    println!("stdout: {}", out_stdout);
+                                }
+                                if !out_stderr.is_empty() {
+                                    println!("stderr: {}", out_stderr);
                                 }
                             }
-                            Err(e) => eprintln!("Agent failed: {}", e),
+                            Ok(Ok(Err(e))) => {
+                                agent_state = AgentState::Crashed;
+                                agent_stderr = format!("Agent subprocess error: {}", e);
+                                agent_exit_status = "error".to_string();
+                                eprintln!("Agent failed: {}", e);
+                            }
+                            Ok(Err(join_err)) => {
+                                agent_state = AgentState::Crashed;
+                                agent_stderr = format!("Agent task panicked: {}", join_err);
+                                agent_exit_status = "panic".to_string();
+                                eprintln!("Agent task panicked: {}", join_err);
+                            }
+                            Err(_elapsed) => {
+                                agent_state = AgentState::Timeout;
+                                agent_stderr = "Agent timed out after 300s".to_string();
+                                agent_exit_status = "timeout".to_string();
+                                eprintln!("Agent timed out after 300s");
+                            }
                         }
                     }
 
-                    // POST: Archive
+                    state = agent_state;
+
+                    // ── POST: Archive full content ──
+                    println!("Cycle state: {:?} — POST phase", state);
+
                     let timestamp = std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
                         .unwrap()
                         .as_secs();
+
+                    let archive_content = format!(
+                        "Cycle: {}\n\n\
+                         === PRE: Xavier Search ===\n\
+                         Results found: {}\n\
+                         {}\n\
+                         === GIT Context ===\n\
+                         {}\n\
+                         === EXEC: Agent Output ===\n\
+                         Exit: {}\n\
+                         stdout:\n{}\n\
+                         stderr:\n{}\n\
+                         === State ===\n\
+                         {:?}\n",
+                        task,
+                        result_count,
+                        search_context,
+                        git_context,
+                        agent_exit_status,
+                        agent_stdout,
+                        agent_stderr,
+                        state,
+                    );
+
                     let archive_body = serde_json::json!({
-                        "content": format!("Cycle: {}\nResults: {}", task, results),
+                        "content": archive_content,
                         "path": format!("gestalt/cycle/{}", timestamp),
                         "kind": "execution"
                     });
-                    let _ = client
+
+                    let archive_result = client
                         .post(format!("{}/v1/memories", xavier_url))
                         .json(&archive_body)
                         .send()
                         .await;
-                    println!("POST: archived");
+
+                    match archive_result {
+                        Ok(resp) => {
+                            let body: serde_json::Value = resp.json().await.unwrap_or_default();
+                            println!("POST: archived (id={})", body["id"].as_str().unwrap_or("ok"));
+                        }
+                        Err(e) => {
+                            eprintln!("POST archive failed: {}", e);
+                        }
+                    }
+
+                    println!("Cycle complete — final state: {:?}", state);
                 }
             }
         }

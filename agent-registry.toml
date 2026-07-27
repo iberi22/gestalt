@@ -36,7 +36,7 @@ priority = 3
 [[agents]]
 name = "agy"
 provider = "openrouter"
-model = "gemini-2.5-flash"
+model = "gemini-3.6-flash"
 type = "Cli"
 capabilities = [
     "edit", "edit-single-line", "insert-line", "delete-line",
@@ -120,7 +120,7 @@ capabilities = [
     "git-operations", "xavier-sync", "skill-manage",
     "agent-registry", "rate-limit-tracking",
 ]
-rate_limit = { rpm = 60, tpm = 500_000 }
+rate_limit = { rpm = 200, tpm = 500_000 }
 cost_per_mtok = 0.15
 max_context = 200_000
 tags = ["orchestrator", "conversational", "memory"]

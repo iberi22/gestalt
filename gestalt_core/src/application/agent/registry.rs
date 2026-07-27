@@ -4,16 +4,18 @@
 //! sus capacidades, límites de tasa, y el enrutamiento tarea → agente.
 //!
 //! # Uso
-//! ```rust
-//! let registry = AgentRegistry::load("agent-registry.toml")?;
-//! let best = registry.select_agent("edit file", None)?;
-//! println!("Best agent: {} (provider: {})", best.name, best.provider);
+//! ```rust,no_run,ignore
+//! let mut registry = AgentRegistry::load("agent-registry.toml")?;
+//! if let Some(best) = registry.select_agent("edit file", None) {
+//!     println!("Best agent: {} (provider: {})", best.name, best.provider);
+//! }
 //! ```
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
+use std::time::Instant;
 
 /// Registry completo de agentes
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -22,6 +24,9 @@ pub struct AgentRegistry {
     pub agents: Vec<AgentEntry>,
     /// Mapa de proveedores y sus límites globales
     pub providers: HashMap<String, ProviderConfig>,
+    /// Estado de uso de los proveedores
+    #[serde(default)]
+    pub provider_states: HashMap<String, ProviderState>,
     /// Preferencias de enrutamiento
     #[serde(default)]
     pub routing: RoutingConfig,
@@ -56,6 +61,9 @@ pub struct AgentEntry {
     /// Etiquetas para enrutamiento
     #[serde(default)]
     pub tags: Vec<String>,
+    /// Cuándo se marcó como ocupado (para timeout automático)
+    #[serde(skip)]
+    pub ocupado_desde: Option<Instant>,
 }
 
 fn default_max_context() -> u64 { 4096 }
@@ -83,10 +91,10 @@ pub struct RateLimit {
     #[serde(default = "default_tpm")]
     pub tpm: u64,
     /// Requests en el minuto actual (reset cada 60s)
-    #[serde(skip)]
+    #[serde(default)]
     pub current_rpm: u32,
     /// Tokens en el minuto actual
-    #[serde(skip)]
+    #[serde(default)]
     pub current_tpm: u64,
 }
 
@@ -121,7 +129,20 @@ pub struct ProviderConfig {
     pub priority: u8,
 }
 
-fn default_priority() -> u8 { 10 }
+/// Estado de uso de un proveedor
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ProviderState {
+    /// Requests en el minuto actual
+    #[serde(default)]
+    pub current_rpm: u32,
+    /// Tokens en el minuto actual
+    #[serde(default)]
+    pub current_tpm: u64,
+}
+
+fn default_priority() -> u8 {
+    10
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RoutingConfig {
@@ -180,7 +201,22 @@ impl AgentRegistry {
     }
 
     /// Selecciona el mejor agente para una tarea
-    pub fn select_agent(&self, task: &str, required_capability: Option<&str>) -> Option<&AgentEntry> {
+    pub fn select_agent(&mut self, task: &str, required_capability: Option<&str>) -> Option<&AgentEntry> {
+        // Recuperar agentes que excedieron el timeout de Ocupado
+        for agent in &mut self.agents {
+            if agent.status == AgentStatus::Ocupado {
+                if let Some(since) = agent.ocupado_desde {
+                    if since.elapsed() > std::time::Duration::from_secs(60) {
+                        agent.status = AgentStatus::Disponible;
+                        agent.ocupado_desde = None;
+                    }
+                }
+            }
+        }
+
+        let provider_states = &self.provider_states;
+        let providers = &self.providers;
+
         let mut candidates: Vec<&AgentEntry> = self.agents.iter()
             .filter(|a| a.status == AgentStatus::Disponible)
             .filter(|a| {
@@ -193,10 +229,44 @@ impl AgentRegistry {
             .filter(|a| {
                 a.rate_limit.current_rpm < a.rate_limit.rpm
             })
+            .filter(|a| {
+                a.rate_limit.current_tpm < a.rate_limit.tpm
+            })
+            .filter(|a| {
+                // Check provider-level rate limits
+                if let Some(state) = provider_states.get(&a.provider) {
+                    if let Some(config) = providers.get(&a.provider) {
+                        state.current_rpm < config.rate_limit.rpm
+                            && state.current_tpm < config.rate_limit.tpm
+                    } else {
+                        true // No provider config, allow
+                    }
+                } else {
+                    true // No provider state tracked, allow
+                }
+            })
             .collect();
 
         if candidates.is_empty() {
             return None;
+        }
+
+        // Preferir tiny agents para tareas pequeñas con coincidencia por keyword
+        if self.routing.tiny_agents_for_precise_edits && task.len() < 200 {
+            let task_lower = task.to_lowercase();
+            if let Some(tiny) = candidates.iter().find(|a| {
+                a.agent_type == AgentType::Tiny
+                    && ((task_lower.contains("insert")
+                        && a.capabilities.iter().any(|c| c == "insert-line"))
+                        || (task_lower.contains("delete")
+                            && a.capabilities.iter().any(|c| c == "delete-line"))
+                        || (task_lower.contains("replace")
+                            && a.capabilities.iter().any(|c| c == "replace-line"))
+                        || (task_lower.contains("search")
+                            && a.capabilities.iter().any(|c| c == "semantic-search")))
+            }) {
+                return Some(tiny);
+            }
         }
 
         // Aplicar estrategia de enrutamiento
@@ -221,13 +291,6 @@ impl AgentRegistry {
             }
         }
 
-        // Preferir tiny agents para tareas simples si está configurado
-        if self.routing.tiny_agents_for_precise_edits && task.len() < 200 {
-            if let Some(tiny) = candidates.iter().find(|a| a.agent_type == AgentType::Tiny) {
-                return Some(tiny);
-            }
-        }
-
         candidates.first().copied()
     }
 
@@ -235,6 +298,7 @@ impl AgentRegistry {
     pub fn mark_busy(&mut self, name: &str) {
         if let Some(agent) = self.agents.iter_mut().find(|a| a.name == name) {
             agent.status = AgentStatus::Ocupado;
+            agent.ocupado_desde = Some(Instant::now());
         }
     }
 
@@ -247,9 +311,19 @@ impl AgentRegistry {
 
     /// Registra uso de rate limit
     pub fn record_usage(&mut self, name: &str, tokens: u64) {
-        if let Some(agent) = self.agents.iter_mut().find(|a| a.name == name) {
-            agent.rate_limit.current_rpm += 1;
-            agent.rate_limit.current_tpm += tokens;
+        let provider = self.agents.iter_mut()
+            .find(|a| a.name == name)
+            .map(|agent| {
+                agent.rate_limit.current_rpm += 1;
+                agent.rate_limit.current_tpm += tokens;
+                agent.provider.clone()
+            });
+
+        // También actualizar el provider state
+        if let Some(provider_name) = provider {
+            let state = self.provider_states.entry(provider_name).or_default();
+            state.current_rpm += 1;
+            state.current_tpm += tokens;
         }
     }
 
@@ -258,6 +332,11 @@ impl AgentRegistry {
         for agent in &mut self.agents {
             agent.rate_limit.current_rpm = 0;
             agent.rate_limit.current_tpm = 0;
+        }
+        // También resetear provider states
+        for state in self.provider_states.values_mut() {
+            state.current_rpm = 0;
+            state.current_tpm = 0;
         }
     }
 
@@ -372,15 +451,15 @@ capabilities = ["edit", "search", "reason"]
 base_url = "http://localhost:11434"
 rate_limit = { rpm = 60, tpm = 100000 }
 "#;
-        let registry = AgentRegistry::from_toml(toml).unwrap();
+        let mut registry = AgentRegistry::from_toml(toml).unwrap();
 
         // Buscar agente con capacidad "edit"
         let agent = registry.select_agent("edit this file", Some("edit"));
         assert!(agent.is_some());
         assert!(agent.unwrap().capabilities.contains(&"edit".to_string()));
 
-        // Tarea pequeña → tiny agent
-        let agent = registry.select_agent("fix typo", None);
+        // Tarea pequeña con keyword "insert" → tiny agent con "insert-line"
+        let agent = registry.select_agent("insert line", None);
         assert!(agent.is_some());
         assert_eq!(agent.unwrap().agent_type, AgentType::Tiny);
 

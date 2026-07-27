@@ -922,4 +922,29 @@ mod tests {
         let (content, _) = vfs.read_file("test.txt").await.unwrap();
         assert_eq!(content, "hello world");
     }
+
+    // ── Task-specified tests ───────────────────────────────────────────
+
+    #[test]
+    fn test_parse_unified_diffs_insert() {
+        let diff = "--- a/src/main.rs\n+++ b/src/main.rs\n@@ -1,3 +1,4 @@\n line1\n+inserted\n line2\n line3\n";
+        let edits = parse_unified_diffs(diff, "");
+        assert_eq!(edits.len(), 1);
+        assert!(matches!(&edits[0], BlockEdit::Insert { line: 2, .. }));
+    }
+
+    #[test]
+    fn test_parse_unified_diffs_replace() {
+        let diff = "--- a/src/main.rs\n+++ b/src/main.rs\n@@ -1,2 +1,2 @@\n-old line\n+new line\n";
+        let edits = parse_unified_diffs(diff, "");
+        assert_eq!(edits.len(), 1);
+        assert!(matches!(&edits[0], BlockEdit::Replace { .. }));
+    }
+
+    #[test]
+    fn test_split_command() {
+        let (prog, args) = split_command("agy --file main.rs fix");
+        assert_eq!(prog, "agy");
+        assert_eq!(args, vec!["--file", "main.rs", "fix"]);
+    }
 }

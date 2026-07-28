@@ -36,6 +36,30 @@ impl SubprocessRunner {
     }
 }
 
+/// Helper function to check if a process with a given PID is alive.
+/// Under Unix, `kill(pid, 0)` is used to query the process's existence.
+///
+/// # Safety
+/// // SAFETY: This helper function encapsulates the unsafe `libc::kill` call. It ensures the PID is validated
+/// // before executing.
+pub fn is_process_alive(pid: u32) -> bool {
+    #[cfg(unix)]
+    {
+        if pid <= 1 {
+            return false;
+        }
+        // SAFETY: We validate that `pid > 1` (since system processes/groups are not targeted),
+        // and calling `kill` with signal 0 is standard, safe, and does not alter process state.
+        unsafe {
+            libc::kill(pid as libc::pid_t, 0) == 0
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        false
+    }
+}
+
 // Helpers for process tree and cgroup tracking
 #[cfg(unix)]
 fn get_all_pids() -> Vec<u32> {
@@ -99,6 +123,7 @@ fn get_descendants(parent: u32) -> Vec<u32> {
 
 #[cfg(unix)]
 fn find_writable_cgroup_base() -> Option<PathBuf> {
+    // SAFETY: libc::getuid() is a standard system call that does not dereference raw pointers or modify any process/system state.
     let uid = unsafe { libc::getuid() };
     let mut candidates = vec![
         PathBuf::from(format!(
@@ -161,6 +186,7 @@ impl ProcessReaper {
             // Kill process group
             if let Some(p) = self.pid {
                 if p > 1 {
+                    // SAFETY: We validate that `p > 1` so that we do not kill system processes (PID <= 1) or target unexpected process groups.
                     unsafe {
                         libc::kill(-(p as libc::pid_t), libc::SIGTERM);
                     }
@@ -170,6 +196,7 @@ impl ProcessReaper {
             // Kill descendants individually
             for &pid in &descendants {
                 if pid > 1 {
+                    // SAFETY: We validate that `pid > 1` so that we do not kill system processes (PID <= 1).
                     unsafe {
                         libc::kill(pid as libc::pid_t, libc::SIGTERM);
                     }
@@ -192,6 +219,7 @@ impl ProcessReaper {
             // Kill process group
             if let Some(p) = self.pid {
                 if p > 1 {
+                    // SAFETY: We validate that `p > 1` so that we do not kill system processes (PID <= 1) or target unexpected process groups.
                     unsafe {
                         libc::kill(-(p as libc::pid_t), libc::SIGKILL);
                     }
@@ -201,6 +229,7 @@ impl ProcessReaper {
             // Kill descendants individually
             for &pid in &descendants {
                 if pid > 1 {
+                    // SAFETY: We validate that `pid > 1` so that we do not kill system processes (PID <= 1).
                     unsafe {
                         libc::kill(pid as libc::pid_t, libc::SIGKILL);
                     }
@@ -222,6 +251,7 @@ impl ProcessReaper {
                 for line in content.lines() {
                     if let Ok(pid) = line.trim().parse::<i32>() {
                         if pid > 1 {
+                            // SAFETY: We validate that `pid > 1` to ensure we do not target system processes.
                             unsafe {
                                 libc::kill(pid, libc::SIGKILL);
                             }
@@ -238,12 +268,15 @@ impl ProcessReaper {
         self.kill_forcefully();
 
         if let Some(ref cg) = self.cgroup_path {
-            for _ in 0..10 {
-                if std::fs::remove_dir(cg).is_ok() {
-                    break;
+            let cg = cg.clone();
+            tokio::spawn(async move {
+                for _ in 0..10 {
+                    if std::fs::remove_dir(&cg).is_ok() {
+                        break;
+                    }
+                    tokio::time::sleep(Duration::from_millis(10)).await;
                 }
-                std::thread::sleep(Duration::from_millis(10));
-            }
+            });
         }
     }
 }
@@ -327,20 +360,6 @@ impl AgentRunner for SubprocessRunner {
             }
         }
 
-        // Write "0" to cgroup.procs in pre_exec to make sure the process enters the cgroup
-        #[cfg(unix)]
-        {
-            if let Some(ref cg) = cgroup_path {
-                let procs_file = cg.join("cgroup.procs");
-                unsafe {
-                    cmd.pre_exec(move || {
-                        let _ = std::fs::write(&procs_file, "0");
-                        Ok(())
-                    });
-                }
-            }
-        }
-
         cmd.stdout(std::process::Stdio::piped());
         cmd.stderr(std::process::Stdio::piped());
 
@@ -352,7 +371,7 @@ impl AgentRunner for SubprocessRunner {
         // Extract pid immediately to avoid borrow issues later
         let pid = child.id();
 
-        // Write PID to cgroup.procs from parent as secondary assurance
+        // Write PID to cgroup.procs from parent safely (no pre_exec race condition or cgroup write issues)
         #[cfg(unix)]
         if let (Some(p), Some(ref cg)) = (pid, &cgroup_path) {
             let _ = std::fs::write(cg.join("cgroup.procs"), p.to_string());
@@ -596,10 +615,8 @@ mod tests {
 
             // Check if the background sleep process is still running.
             // Under Unix, kill(pid, 0) returns -1 with ESRCH if the process does not exist.
-            let is_alive = unsafe {
-                let res = libc::kill(bg_pid, 0);
-                res == 0
-            };
+            // // SAFETY: Checks if process is alive safely.
+            let is_alive = is_process_alive(bg_pid as u32);
 
             assert!(
                 !is_alive,

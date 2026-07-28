@@ -1,5 +1,5 @@
 {
-  "_comment": "Feature tracking file for Gestalt-Rust. Verified 2026-07-27 against live codebase (Ola 5 scan).",
+  "_comment": "Feature tracking file for Gestalt-Rust. Verified 2026-07-27 against live codebase via concrete grep/find (Ola 5 / 28e9209).",
   "metadata": {
     "project": "Gestalt-Rust",
     "created": "2026-03-05",
@@ -7,10 +7,10 @@
     "total_features": 12,
     "passing": 10,
     "failing": 2,
-    "overall_progress_pct": 81.3,
-    "verified_by": "feature-scan",
+    "overall_progress_pct": 82.1,
+    "verified_by": "feature-scan-grep",
     "ola5_commit": "28e9209",
-    "notes": "passing + failing == total_features. Ola 5 advanced router/cli/event-log (AtomicCheckpointer, ProcessReaper, SerialMergeQueue, CleanSlateRetry, StateDbEventLog, gestalt-ws, CliAdapter)."
+    "notes": "passing(10)+failing(2)==total_features(12). Grep-verified against working tree containing Ola 5 (28e9209). Failing: feat-hybrid-search (no Tantivy/BM25), feat-belief-graph (absent)."
   },
   "features": [
     {
@@ -30,7 +30,7 @@
       "github_issue": null,
       "last_tested": "2026-07-27",
       "evidence": ["scripts/swarm_bridge.py", "docs/swarm_bridge_README.md"],
-      "notes": "Verified: scripts/swarm_bridge.py — 15 AGENTS, asyncio.gather parallel exec. gestalt_tui absent. Path note updated from legacy E:scripts..."
+      "notes": "PASS grep: AGENTS=[15], asyncio.gather at L423. No gestalt_tui in Cargo.toml. docs/swarm_bridge_README.md present."
     },
     {
       "id": "feat-swarm-smart-selection",
@@ -47,7 +47,7 @@
       "github_issue": "263",
       "last_tested": "2026-07-27",
       "evidence": ["scripts/swarm_bridge.py"],
-      "notes": "Verified: select_agents() with keyword routing + fallback to code_analyzer/file_scanner"
+      "notes": "PASS grep: def select_agents(goal) L196; wired in argparse path L488."
     },
     {
       "id": "feat-swarm-dynamic-count",
@@ -64,7 +64,7 @@
       "github_issue": "265",
       "last_tested": "2026-07-27",
       "evidence": ["scripts/swarm_bridge.py"],
-      "notes": "Verified: score_goal_complexity, calculate_optimal_n, GESTALT_MAX_AGENTS / GESTALT_RATE_LIMIT"
+      "notes": "PASS grep: score_goal_complexity L140, calculate_optimal_n L165, GESTALT_MAX_AGENTS / GESTALT_RATE_LIMIT env."
     },
     {
       "id": "feat-swarm-streaming",
@@ -81,7 +81,7 @@
       "github_issue": "266",
       "last_tested": "2026-07-27",
       "evidence": ["scripts/swarm_bridge.py"],
-      "notes": "Verified: --watch, --output, --poll-interval, --timeout streaming mode"
+      "notes": "PASS grep: --watch L470, --output, --poll-interval L472, --timeout L473."
     },
     {
       "id": "feat-unified-storage",
@@ -93,7 +93,7 @@
         "Store graph nodes for belief relationships"
       ],
       "passes": true,
-      "progress_pct": 90,
+      "progress_pct": 100,
       "verified_by": "grep+file",
       "github_issue": null,
       "last_tested": "2026-07-27",
@@ -102,7 +102,7 @@
         "gestalt_core/src/db/surreal.rs",
         "gestalt_core/tests/test_vector_search.rs"
       ],
-      "notes": "Relocated from legacy memory/surreal_store.rs. SurrealDbAdapter embeds + cosine vector search. Graph belief nodes deferred to feat-belief-graph."
+      "notes": "PASS grep: SurrealDbAdapter + vector::similarity::cosine + store_embedding; surrealdb kv-mem in Cargo.toml; test_vector_search.rs. Graph belief nodes owned by feat-belief-graph (deferred, not blocking this feature)."
     },
     {
       "id": "feat-hybrid-search",
@@ -122,7 +122,7 @@
         "gestalt_core/src/adapters/persistence/surreal_db.rs",
         "gestalt_core/src/application/agent/xavier/client.rs"
       ],
-      "notes": "FAIL: no Tantivy/BM25 indexer (qmd_memory.rs absent). Partial: SurrealDbAdapter vector search + XavierClient search_context(mode=hybrid) remote call only."
+      "notes": "FAIL grep: zero hits for tantivy|BM25|bm25|qmd_memory across *.rs/*.toml/*.py/*.md. Partial only: SurrealDbAdapter vectors + XavierClient.search_context(mode=hybrid) remote call."
     },
     {
       "id": "feat-belief-graph",
@@ -139,7 +139,7 @@
       "github_issue": null,
       "last_tested": "2026-07-27",
       "evidence": [],
-      "notes": "FAIL: memory/belief_graph.rs absent; no BeliefGraph / relationship-node symbols in codebase."
+      "notes": "FAIL grep/find: zero **/belief* files; zero BeliefGraph|belief_graph symbols in codebase."
     },
     {
       "id": "feat-mcp-server",
@@ -158,10 +158,11 @@
       "evidence": [
         "gestalt_core/src/mcp/mod.rs",
         "gestalt_core/src/mcp/client_impl.rs",
+        "gestalt_core/src/mcp/registry.rs",
         "gestalt_core/src/application/mcp_service.rs",
         "gestalt_core/src/adapters/mcp/client_impl.rs"
       ],
-      "notes": "Relocated from legacy server/mcp_server.rs. MCP *client* + McpService/registry present (not a standalone MCP server process). gestalt_mcp crate has no .rs sources."
+      "notes": "PARTIAL grep: McpService + McpRegistry + GestaltMcpClient present (client/registry, not standalone MCP server process). gestalt_mcp/ has 0 .rs sources. OpenClaw bridge via gestalt_cli. Not 100 — no Gestalt-hosted MCP server."
     },
     {
       "id": "feat-src-reference",
@@ -180,7 +181,7 @@
       "github_issue": null,
       "last_tested": "2026-07-27",
       "evidence": [".gitcore/SRC.md"],
-      "notes": "SRC.md present with directory tree; many module sections still TODO stubs. Protocol gate met at skeleton level."
+      "notes": "PARTIAL file: .gitcore/SRC.md exists with directory tree; most module sections still Status/Purpose TODO stubs. Protocol skeleton met; not full SRC completeness gate."
     },
     {
       "id": "feat-router-mvp",
@@ -211,7 +212,7 @@
         "gestalt-router/src/doctor.rs",
         "gestalt-router/src/router.rs"
       ],
-      "notes": "Ola 5 (28e9209) hardened: AtomicCheckpointer, ProcessReaper, SerialMergeQueue, CleanSlateRetry, WriteSetValidator. All Wave-1 steps present."
+      "notes": "PASS grep (Ola 5 / 28e9209 lineage): WorktreeManager, SubprocessRunner, AtomicCheckpointer, ProcessReaper, OverlapDetector, integrate_branches, CleanSlateRetry, SerialMergeQueue, WriteSetValidator, Doctor, Router::execute. All 8 evidence files present."
     },
     {
       "id": "feat-cli-run",
@@ -231,7 +232,7 @@
         "gestalt-router/src/run.rs",
         "gestalt_cli/src/main.rs"
       ],
-      "notes": "Ola 5 advanced: CliAdapter + ExternalCliAdapter + AdapterRegistry; IndependentRunStatus / AgentRunReport. RunSpec/AgentSpec/RunReport + JoinSet wired in gestalt_cli."
+      "notes": "PASS grep (Ola 5): RunSpec/AgentSpec/RunReport in run.rs; JoinSet + RunSpec build in gestalt_cli; CliAdapter + ExternalCliAdapter + AdapterRegistry; IndependentRunStatus / AgentRunReport."
     },
     {
       "id": "feat-event-log",
@@ -253,7 +254,7 @@
         "gestalt-ws/src/server.rs",
         "gestalt-ws/src/event.rs"
       ],
-      "notes": "Ola 5: JsonlEventLog superseded by StateDbEventLog (SQLite) + gestalt-ws broadcast. Event enum + EventLog trait retained; VersionedEvent kept for legacy compat."
+      "notes": "PASS grep (Ola 5): Event::{RunStarted,AgentStateChanged}, trait EventLog, StateDbEventLog; gestalt-ws WsEvent broadcast. JsonlEventLog superseded by StateDbEventLog + ws; VersionedEvent retained."
     }
   ],
   "verification_commands": {

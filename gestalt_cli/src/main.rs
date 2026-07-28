@@ -15,7 +15,6 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
-use std::process::Command;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::task::JoinSet;
@@ -677,11 +676,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("📍 URL: http://{}:{}", host, port);
             println!();
 
-            // Run cargo
-            let status = Command::new("cargo")
-                .args(["run", "-p", "gestalt_mcp", "--", "--http"])
-                .status()?;
+            // Build gestalt_mcp first, then run the binary directly (avoids blocking runtime panic)
+            info!("Building gestalt_mcp...");
+            println!("🔨 Building gestalt_mcp...");
 
+            let build_status = tokio::process::Command::new("cargo")
+                .args(["build", "-p", "gestalt_mcp"])
+                .status()
+                .await?;
+
+            if !build_status.success() {
+                error!("Failed to build gestalt_mcp");
+                std::process::exit(1);
+            }
+
+            info!("Starting MCP Server...");
+
+            let mut child = tokio::process::Command::new("./target/debug/gestalt_mcp")
+                .arg("--http")
+                .spawn()?;
+
+            let status = child.wait().await?;
             std::process::exit(status.code().unwrap_or(0));
         },
 

@@ -33,6 +33,7 @@
 
 ## Recent Changes
 
+- Full feature-scan (grep) @ `28e9209`: 10 pass / 2 fail (hybrid-search, belief-graph); overall features 82.1%; unified-storage → 100.
 - Shared domain models in `gestalt_core::models` (f64/u64); `gestalt_swarm` ingest reuses them.
 - Confirmed `gestalt_swarm` not in root `Cargo.toml` members.
 - Cleaned scripts / Hermes skills that invoked `cargo -p gestalt_swarm`.

@@ -1,16 +1,16 @@
 {
   "project": "gestalt",
   "path": "/home/belal/proyectosSWAL/gestalt",
-  "generated_at": "2026-07-27T01:39:28.231517",
+  "generated_at": "2026-07-27T22:53:00.000000",
   "protocol_version": "3.8.0",
-  "overall_pct": 93.0,
+  "overall_pct": 93.1,
   "breakdown": {
     "protocol_pct": 85,
     "src_pct": 100.0,
     "srs_pct": 100,
-    "features_pct": 81.3,
+    "features_pct": 82.1,
     "features_count": 12,
-    "features_source": "verified 2026-07-27 ola5-scan (10 pass / 2 fail)",
+    "features_source": "verified 2026-07-27 grep-scan (10 pass / 2 fail)",
     "swal_compliance": 100
   },
   "weights": {
@@ -36,5 +36,5 @@
     "commits": 409,
     "issues_closed": 38
   },
-  "last_verified_by": "feature-scan-ola5"
+  "last_verified_by": "feature-scan-grep-28e9209"
 }

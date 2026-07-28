@@ -118,6 +118,7 @@ New concurrency, resilience, and integration patterns introduced in v2.1:
 | **WriteSetValidator** | `gestalt-router` (`worktree.rs`) | Write-scope enforcement for agent workspaces: validates every `write_block` against the agent's declared `allowed_paths`, rejecting out-of-scope writes with a structured error before they touch the worktree |
 | **TransactionalStateDb** | `gestalt-state` (`statedb.rs`) | Auto-retry wrapper around SQLite `execute_transaction`: uses `Exclusive` transaction behaviour with exponential backoff (50ms × attempt) on `DatabaseBusy`/`DatabaseLocked`, up to a configurable max retries |
 | **StateDbVfs** | `gestalt-state` (`virtual_fs.rs`) | SQLite-backed versioned virtual file system implementing the `VirtualFS` trait: stores file versions with SHA-256 content hashing, supports `read_file`, `write_block` (find-replace), `list_versions`, `get_diff`, and delegated file locking |
+|| **SwarmHealthMonitor** | `gestalt_swarm` (`health.rs`, legacy-only — crate excluded from workspace) | Heartbeat-based health tracking for swarm agents: per-agent `AgentHealth` (heartbeat, uptime, liveness), `watch`-channel `HealthEvent` broadcast to subscribers, restart decisions (`should_restart`), graceful `shutdown`, and a `RecoveryManager` for automated recovery actions |
 
 ## Dependencies
 

@@ -7,7 +7,6 @@ members = [
     "gestalt-merge",
     "gestalt-state",
     "gestalt-ws",
-    "gestalt_swarm",
 ]
 resolver = "2"
 

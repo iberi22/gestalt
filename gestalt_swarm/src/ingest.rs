@@ -9,6 +9,10 @@ use anyhow::Result;
 use std::path::PathBuf;
 use tracing::warn;
 
+use gestalt_core::models::{
+    categorize_error, AgentStats, ExecutionMetrics, NextStep, PriorityUpdate,
+};
+
 
 // ============================================================================
 // Swarm Bridge Parsing & Handling
@@ -80,68 +84,14 @@ fn convert_result(run_id: &str, result: &SwarmBridgeResult) -> ExecutionMetrics 
         error_message: error_msg.map(|e| e.chars().take(200).collect()),
         timestamp: chrono::Utc::now().to_rfc3339(),
         project_id: None,
-        output_lines: result.lines.as_ref().map(|l| l.len() as u32),
+        output_lines: result.lines.as_ref().map(|l| l.len() as u64),
         metadata: Default::default(),
-    }
-}
-
-pub fn categorize_error(stderr: &str) -> Option<String> {
-    let lower = stderr.to_lowercase();
-    if lower.contains("timeout") || lower.contains("timed out") {
-        Some("timeout".to_string())
-    } else if lower.contains("rate limit") || lower.contains("429") {
-        Some("rate_limit".to_string())
-    } else if lower.contains("auth") || lower.contains("key") {
-        Some("authentication".to_string())
-    } else {
-        Some("unknown".to_string())
     }
 }
 
 // ============================================================================
 // Core Models and Feedback Loop Data Structures
 // ============================================================================
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct ExecutionMetrics {
-    pub id: Option<String>,
-    pub run_id: String,
-    pub agent_id: String,
-    pub agent_type: String,
-    pub success: bool,
-    pub duration_ms: u64,
-    pub tools_used: u32,
-    pub return_code: Option<i32>,
-    pub error_category: Option<String>,
-    pub error_message: Option<String>,
-    pub timestamp: String,
-    pub project_id: Option<String>,
-    pub output_lines: Option<u32>,
-    pub metadata: serde_json::Value,
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct NextStep {
-    pub agent_type: String,
-    pub confidence: f64,
-    pub action: String,
-    pub reason: String,
-    pub error_category: Option<String>,
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct PriorityUpdate {
-    pub agent_type: String,
-    pub old_priority: u32,
-    pub new_priority: u32,
-    pub reason: String,
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct AgentStats {
-    pub agent_type: String,
-    pub failure_rate: f64,
-}
 
 /// ExecutionHistory: tracks per-agent success/fail/timeout rates
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -152,14 +102,14 @@ pub struct ExecutionHistory {
     pub timeout_count: usize,
     pub total_duration_ms: u64,
     pub success_rate: f64,
-    pub current_priority: u32,
+    pub current_priority: u64,
 }
 
 /// MetricDrivenPriorities: represents priority adjustments driven by historical execution metrics
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct MetricDrivenPriorities {
     pub agent_type: String,
-    pub priority: u32,
+    pub priority: u64,
     pub reason: String,
 }
 
@@ -227,7 +177,7 @@ pub struct FeedbackReport {
 impl FeedbackReport {
     pub fn generate(
         history: &[ExecutionMetrics],
-        priorities: &std::collections::HashMap<String, u32>,
+        priorities: &std::collections::HashMap<String, u64>,
     ) -> Self {
         let mut agent_types = std::collections::HashSet::new();
         for m in history {
@@ -269,7 +219,7 @@ impl FeedbackReport {
                 } else {
                     0.0
                 },
-                current_priority: *priorities.get(&at).unwrap_or(&100),
+                current_priority: *priorities.get(&at).unwrap_or(&100u64),
             });
         }
 
@@ -327,7 +277,7 @@ impl FeedbackReport {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
 pub struct SwarmMetricsDb {
     pub metrics: Vec<ExecutionMetrics>,
-    pub priorities: std::collections::HashMap<String, u32>,
+    pub priorities: std::collections::HashMap<String, u64>,
 }
 
 // ============================================================================
@@ -402,14 +352,14 @@ impl FeedbackLoopService {
         Ok(())
     }
 
-    pub async fn get_priority(&self, agent_type: &str) -> u32 {
+    pub async fn get_priority(&self, agent_type: &str) -> u64 {
         let db = self.read_db();
-        *db.priorities.get(agent_type).unwrap_or(&100)
+        *db.priorities.get(agent_type).unwrap_or(&100u64)
     }
 
-    pub async fn get_all_priorities(&self) -> Vec<(String, u32)> {
+    pub async fn get_all_priorities(&self) -> Vec<(String, u64)> {
         let db = self.read_db();
-        let mut priorities: Vec<(String, u32)> = db.priorities.clone().into_iter().collect();
+        let mut priorities: Vec<(String, u64)> = db.priorities.clone().into_iter().collect();
         priorities.sort_by(|a, b| b.1.cmp(&a.1));
         priorities
     }
@@ -459,7 +409,7 @@ impl FeedbackLoopService {
                     let successful = agent_metrics.iter().filter(|m| m.success).count();
                     let success_rate = successful as f64 / total as f64;
 
-                    let old_priority = *db.priorities.get(&at).unwrap_or(&100);
+                    let old_priority = *db.priorities.get(&at).unwrap_or(&100u64);
 
                     // Adjust priority dynamically based on success rate
                     let new_priority = if success_rate >= 0.90 {

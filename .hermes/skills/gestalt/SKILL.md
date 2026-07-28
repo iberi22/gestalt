@@ -6,30 +6,31 @@ Gestalt es la plataforma de orquestación de agentes AI de SouthWest AI Labs. Wo
 ## Ubicación
 `E:\scripts-python\gestalt-rust`
 
-## Crates
+## Crates (workspace)
 
 | Crate | Binary | Descripción |
 |-------|--------|-------------|
 | gestalt_core | lib | VFS, auth, LLM, tools, MCP client |
-| gestalt_timeline | `gestalt` | Orchestrator + timeline |
-| gestalt_cli | `gestalt_cli` | REPL |
-| gestalt_swarm | `gestalt_swarm` | Swarm coordinator |
+| gestalt_cli | `gestalt_cli` | REPL + swarm CLI |
+| gestalt-router | lib | Orchestration / run states |
+| gestalt-merge | lib | Isolated branch merge |
+| gestalt-state | lib | SQLite + MemState |
+| gestalt-ws | lib | WebSocket timeline broadcast |
 | synapse-agentic | lib | Tool registry + Hive |
+
+`gestalt_swarm` está **excluido** del workspace (legacy). No usar `cargo -p gestalt_swarm`.
 
 ## Uso
 
 ### CLI
 ```bash
-cd E:\scripts-python\gestalt-rust
-cargo run -p gestalt_timeline --bin gestalt
 cargo run -p gestalt_cli
 ```
 
 ### Build
 ```bash
-cargo build --release -p gestalt_timeline
 cargo build --release -p gestalt_cli
-cargo build --release -p gestalt_swarm
+cargo check --workspace
 ```
 
 ## Configuración
@@ -54,7 +55,9 @@ Ver `gestalt_core/src/application/CONFIG.md` para todas las variables.
 ## Swarm
 
 ```bash
-cargo run -p gestalt_swarm -- --agents 4
+# Prefer Python bridge or gestalt_cli (gestalt_swarm crate excluded from workspace)
+python scripts/swarm_bridge.py --goal "analyze codebase"
+cargo run -p gestalt_cli -- swarm --help
 ```
 
 ## MCP Client

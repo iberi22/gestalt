@@ -2,21 +2,27 @@
 
 ## Project Overview
 
-**Location:** `E:/scripts-python/gestalt-rust`
-**Last Updated:** 2026-04-16
+**Location:** `/home/belal/proyectosSWAL/gestalt`
+**Last Updated:** 2026-07-27
 **Status:** Active
 
 ## Source Modules
 
-- `gestalt_core/` — 42 .rs files — VFS, auth, LLM, tools, MCP client
-- `gestalt_timeline/` — 37 .rs files — orchestrator binary
-- `gestalt_cli/` — 4 .rs files — REPL binary
-- `gestalt_swarm/` — 1 .rs file — swarm coordinator
-- `synapse-agentic/` — tool registry + Hive actor model
+### Workspace members
+- `gestalt_core/` — VFS, auth, LLM, tools, domain models
+- `gestalt_cli/` — REPL + CLI binary
+- `gestalt-router/` — orchestration / run states
+- `gestalt-merge/` — isolated branch merge
+- `gestalt-state/` — SQLite + MemState
+- `gestalt-ws/` — WebSocket timeline broadcast
+- `synapse-agentic/` — tool registry + Hive
+
+### Excluded
+- `gestalt_swarm/` — legacy swarm coordinator (**not** in `Cargo.toml` members)
 
 ## Workspace
 
-5 crates only. UI, MCP server, infra, app removed (2026-04-16).
+7 active crates. `gestalt_swarm` remains on disk but is excluded to avoid workspace-wide compile/link errors.
 
 ## GitCore Files
 

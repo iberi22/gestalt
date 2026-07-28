@@ -21,20 +21,22 @@ Welcome! This document outlines the absolute design non-negotiables (reglas inqu
 - **Fail Gracefully:** Never panic or crash due to rate-limiting or service-down events; always capture structured error logs and return a clean failure/timeout agent state.
 
 ### 5. Workspace Crate Exclusion
-- **`gestalt_swarm`** is excluded from the Cargo workspace members in `Cargo.toml` (resolving compilation/link errors regarding `GroqProvider` or `synapse-agentic`).
-- All other crates (`gestalt_core`, `gestalt_cli`, `gestalt-router`, `gestalt-merge`, `gestalt-state`, `gestalt-ws`, `synapse-agentic`) are active workspace members and compile together.
+- **`gestalt_swarm` is already excluded** from the Cargo workspace (`Cargo.toml` `members`) — done in PR #457. Do not re-add it; the crate remains on disk as legacy-only and is not built by workspace/`cargo check --workspace`.
+- Active workspace members: `gestalt_core`, `gestalt_cli`, `gestalt-router`, `gestalt-merge`, `gestalt-state`, `gestalt-ws`, `synapse-agentic`.
 
 ---
 
 ## 🚀 Key Framework Packages
 
-| Package | Purpose | Path |
-|---------|---------|------|
-| `gestalt_core` | Core domain, VFS, LLM adapters, registry | `gestalt_core/` |
-| `gestalt_cli` | CLI REPL and agent commands | `gestalt_cli/` |
-| `gestalt-router` | Orchestration specs, routing, run states | `gestalt-router/` |
-| `gestalt-merge` | Isolated branch merging and conflict resolution | `gestalt-merge/` |
-| `synapse-agentic` | Primitive agent tools and provider clients | `synapse-agentic/` |
+|| Package | Purpose | Path |
+||---------|---------|------|
+|| `gestalt_core` | Core domain, VFS, LLM adapters, registry | `gestalt_core/` |
+|| `gestalt_cli` | CLI REPL and agent commands | `gestalt_cli/` |
+|| `gestalt-router` | Orchestration specs, routing, run states | `gestalt-router/` |
+|| `gestalt-merge` | Isolated branch merging and conflict resolution | `gestalt-merge/` |
+|| `gestalt-state` | SQLite StateDB + DashMap MemState | `gestalt-state/` |
+|| `gestalt-ws` | WebSocket event broadcasting | `gestalt-ws/` |
+|| `synapse-agentic` | Primitive agent tools and provider clients | `synapse-agentic/` |
 
 ## 🛠️ Essential Development Tasks
 

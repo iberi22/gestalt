@@ -3,14 +3,14 @@
   "path": "/home/belal/proyectosSWAL/gestalt",
   "generated_at": "2026-07-27T01:39:28.231517",
   "protocol_version": "3.8.0",
-  "overall_pct": 95.8,
+  "overall_pct": 93.0,
   "breakdown": {
     "protocol_pct": 85,
     "src_pct": 100.0,
     "srs_pct": 100,
-    "features_pct": 100,
+    "features_pct": 81.3,
     "features_count": 12,
-    "features_source": "verified 2026-07-27",
+    "features_source": "verified 2026-07-27 ola5-scan (10 pass / 2 fail)",
     "swal_compliance": 100
   },
   "weights": {
@@ -20,18 +20,21 @@
     "features": 0.15,
     "swal": 0.1
   },
-  "gaps": [],
+  "gaps": [
+    "feat-hybrid-search: no Tantivy/BM25 (progress 35%)",
+    "feat-belief-graph: missing (progress 0%)"
+  ],
   "grade": "A",
-  "score": 96,
+  "score": 93,
   "last_updated": "2026-07-27",
   "metrics": {
     "tests": 184,
     "loc": 22237,
     "modules": 93,
-    "features_passing": 12,
+    "features_passing": 10,
     "features_total": 12,
     "commits": 409,
     "issues_closed": 38
   },
-  "last_verified_by": "grok-4.5-high"
+  "last_verified_by": "feature-scan-ola5"
 }

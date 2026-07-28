@@ -1,6 +1,6 @@
 # Gestalt — Architecture Overview
 
-> **Versión:** 2.0.0 (Router redesign) · Jul 2026
+> **Versión:** 2.1.0 (Ola 5) · Jul 2026
 > **Ver también:** [REDESIGN.md](../REDESIGN.md)
 
 ## System Architecture

@@ -47,6 +47,51 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 - 9 fix commits on develop, 13 PRs integrated total
 - Branch cleanup pending (stale Jules feature branches remain on remote)
 
+## [2026-07-27] Ola 5 — Harden + Warm + Polish
+
+### Added
+- **HARDEN P0** — 6 security issues resolved across Router and Core
+- **WARM-AGENTS** — agent pool with health checks and feedback loop
+- **INTEGRATION** — StateDB + WebSocket wiring for real-time run state
+- **Kimi K3 Cycle Auditor** — 3-subagent audit pipeline for implementation review
+- **SerialMergeQueue** in `router.rs` — serial FIFO integration with `dry_run` mode (PR #438)
+- **AtomicCheckpointer** — pre-checkpoint HEAD save + atomic rollback on manifest write failure (PR #430)
+- **`docs/gestalt-run-guide.md`** — functional walkthrough, CLI reference, architecture Mermaid diagram (PR #433)
+- **cgroups v2** — dynamic discovery via systemd delegated slices + `/proc` process tree traversal (PR #435)
+- **`ClassifiedMergeError` + `RetryPolicy` + `CleanSlate`** — conflict retry from clean base_sha (PR #434)
+- **`IndependentRunStatus`, `AgentRunReport`, `IndependentMergeResult`** — per-agent independent merge (PR #426)
+- **`CliAdapter` trait + `ExternalCliAdapter` + thread-safe `AdapterRegistry`** — external CLI tool interface (PR #427)
+- **`CoreError` enum** with `thiserror` — precise classification of VFS, Repo, MCP, DB, Embedding, Config, Validation errors (PR #431)
+- **Exclusive transactions with retry loops** in `StateDb` / `StateDbVfs` — database concurrency safety (PR #437)
+- **`fd-lock` file-level locking** on `swarm_metrics.json` — exclusive for writes, shared for reads (PR #455)
+- **Self-contained `ingest.rs`** with `MetricDrivenPriorities`, `ExecutionHistory`, `SelfTuning`, `FeedbackReport` (PR #432)
+
+### Changed
+- **`Router::execute`** — now uses `SerialMergeQueue` for serial FIFO integration of completed agent branches
+- **Event ordering** in `router_tests.rs` — re-adjusted with documented architectural reasoning
+- **`StateDbEventLog::read_events`** — reversed output ordering for chronological timeline
+- **GestaltAgent registry** — updated agent entries with correct model assignments, rate limiter, tiny agent inventory
+- **gestalt_swarm** — removed from Cargo workspace members, lockfile regenerated (PR #457)
+- **AGENTS.md Section 5** — updated to reflect gestalt_swarm exclusion (PR #457)
+- **`agent.rs` unsafe refactor** — complete rewrite with `// SAFETY:` docs, PID validation, and cgroup isolation
+- **9 `unsafe` blocks** — documented with `// SAFETY:` explanations, `pid > 1` validation, `unsafe pre_exec` removed (PR #456)
+- **`ingest.rs` persistence** — thread-safe writes with file-level locking
+- **VFS doc-tests** — fixed to compile out-of-the-box (PR #431)
+
+### Fixed
+- **`thread::sleep` false positive** in audit rules
+- **Mutable borrow in `load_test.rs`** + missing `GroqProvider` in `main.rs` (PR #432)
+- **Shell command validation** — typo allowing `$` variable expansion (PR #431)
+- **Race condition** on `swarm_metrics.json` — write clobbering via `fd-lock` (PR #455)
+- **Core domain trait contracts** — documented and enforced with 80%+ test coverage (PR #431)
+- **Binary merge conflicts** — auto-rollback preserving history (PR #438)
+
+### Infrastructure
+- 13+ Ola 5 merges integrated (PRs #426–#438, #455–#457)
+- gitcore score: 95.8%
+- features.json retired during cleanup
+- `.gitignore` hardened with `*.patch`, `audit_notes.md`, `/existing`
+
 ## [1.0.0] — 2026-03-03
 
 ### Added

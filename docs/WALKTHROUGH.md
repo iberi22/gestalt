@@ -37,13 +37,7 @@ This starts the timeline service + main orchestrator loop.
 
 ---
 
-## Step 3 — Run Swarm (parallel agents)
-
-```bash
-cargo run --release -p gestalt_swarm -- --agents 4
-```
-
-Swarm spawns N agents, each with a VFS + tool registry.
+<!-- gestalt_swarm removed — excluded from workspace -->
 
 ---
 
@@ -96,8 +90,6 @@ surreal sql --conn "memory"
 User → gestalt_cli (REPL) → gestalt_core (VFS + tools)
                          ↓
                   gestalt_timeline (orchestrator)
-                         ↓
-                  gestalt_swarm (parallel agents)
                          ↓
                   synapse-agentic (tool registry)
 ```

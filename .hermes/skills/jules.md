@@ -254,22 +254,21 @@ PR + Merge
 
 ### Gestalt Swarm Quick Commands
 
+> `gestalt_swarm` is **excluded** from the Cargo workspace. Do not use `cargo -p gestalt_swarm`.
+
 ```bash
-# Run gestalt_swarm with N agents and a goal
-cargo run --release -p gestalt_swarm -- --agents 4 --goal "<task>"
+# Python parallel bridge
+python scripts/swarm_bridge.py --goal "<task>"
 
-# With custom model
-cargo run --release -p gestalt_swarm -- --agents 8 --goal "analyze codebase" --model MiniMax-Text-01
-
-# Quiet mode
-cargo run --release -p gestalt_swarm -- --agents 4 --goal "scan files" --quiet
+# Or CLI swarm (workspace member)
+cargo run --release -p gestalt_cli -- swarm --help
 ```
 
 ### Workflow Integration
 
 ```bash
-# 1. Run Gestalt Swarm for fast analysis
-cargo run --release -p gestalt_swarm -- --agents 4 --goal "security audit"
+# 1. Run Gestalt Swarm bridge for fast analysis
+python scripts/swarm_bridge.py --goal "security audit"
 
 # 2. Based on results, assign to Jules
 jules new --repo iberi22/gestalt-rust "fix issues found: [details]"
@@ -349,7 +348,7 @@ Gestalt Swarm ships with 12+ built-in tools via `gestalt_core`:
 | `clone_repo` / `list_repos` | Repository management |
 | `ask_ai` | Query LLM |
 
-Register new agents via `Agent` trait in `gestalt_swarm/src/`.
+Register new agents via workspace crates (`gestalt_core` / `gestalt-router`); `gestalt_swarm/` is legacy and excluded from the workspace.
 
 ---
 

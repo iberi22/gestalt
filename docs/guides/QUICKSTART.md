@@ -33,12 +33,7 @@ export GESTALT_LOG_LEVEL="info"
 
 See [gestalt_core/src/application/CONFIG.md](../gestalt_core/src/application/CONFIG.md) for full config reference.
 
-## Swarm Mode
-
-```bash
-# Run gestalt_swarm directly with N agents
-cargo run --release -p gestalt_swarm -- --agents 4 --goal "<your task>"
-```
+<!-- gestalt_swarm removed — excluded from workspace -->
 
 ## Tools Available
 

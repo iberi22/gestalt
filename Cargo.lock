@@ -1842,6 +1842,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "gestalt-wasm"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "git2",
+ "js-sys",
+ "tempfile",
+ "tokio",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+]
+
+[[package]]
 name = "gestalt-ws"
 version = "0.1.0"
 dependencies = [

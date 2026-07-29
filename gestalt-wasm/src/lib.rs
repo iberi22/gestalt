@@ -20,3 +20,5 @@ pub fn is_wasm() -> bool {
 pub fn is_wasm() -> bool {
     false
 }
+
+pub mod state;

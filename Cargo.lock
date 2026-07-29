@@ -1842,6 +1842,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "gestalt-wasm"
+version = "0.1.0"
+
+[[package]]
 name = "gestalt-ws"
 version = "0.1.0"
 dependencies = [

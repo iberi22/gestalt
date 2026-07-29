@@ -30,8 +30,11 @@ Gestalt has no built-in persistent memory. Relies on external vector DB (Surreal
 ### No Streaming for LLM Adapters
 OpenAI + Anthropic adapters don't support streaming responses yet.
 
-### MCP Client Only (No Standalone Server)
-Removed `gestalt_mcp` standalone server (2026-04-16). The MCP **client** in `gestalt_core/adapters/mcp/` can still connect to external MCP servers.
+### ✅ MCP Server Restored as Standalone Binary
+`gestalt_mcp` has been restored as a standalone MCP server with 18+ tools, proper
+HTTP/SSE + stdio transports, integration tests (7 passing), and a shared
+`GestaltAppContext` for stateful tool execution.  The server can be run with
+`cargo run -p gestalt_mcp`.  Removed from known issues.
 
 ### Config Hot-Reload Not Implemented
 Config is read at startup only. No runtime config updates.

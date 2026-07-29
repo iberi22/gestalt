@@ -1,0 +1,4 @@
+# compiled WebAssembly bindings
+pkg/
+pkg-node/
+test_wasm.js

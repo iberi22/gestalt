@@ -6,7 +6,7 @@ members = [
     "gestalt-router",
     "gestalt-merge",
     "gestalt-state",
-    "gestalt-ws",
+    "gestalt-ws", "gestalt-proto", "gestalt-wasm",
 ]
 resolver = "2"
 

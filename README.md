@@ -70,6 +70,7 @@ cargo run -p gestalt_cli -- serve --host 0.0.0.0 --port 3000
 | `gestalt_cli` | bin | CLI with `run`, `repl`, `serve`, `exec`, `git` commands |
 | `gestalt_swarm` | bin | Parallel agent coordinator (legacy, not in default workspace) |
 | `synapse-agentic` | lib | Actor model (Hive), LLM providers, tool primitives |
+| `gestalt-wasm` | lib | WebAssembly interface with `native` and `wasm` feature gates |
 
 ### gestalt-router modules
 
@@ -161,6 +162,20 @@ cargo clippy --workspace
 # Format
 cargo fmt --all
 ```
+
+### WebAssembly (WASM) Target
+
+To check and build the WebAssembly module, ensure the target is installed and run the check step:
+
+```bash
+# Add WASM target
+rustup target add wasm32-unknown-unknown
+
+# Check WASM target compilation
+cargo check --target wasm32-unknown-unknown -p gestalt-wasm
+```
+
+For more details, see the [gestalt-wasm Architecture & Build Instructions](gestalt-wasm/ARCHITECTURE.md).
 
 ### Requirements
 - Rust 2021+ edition

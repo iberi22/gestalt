@@ -25,6 +25,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
+          targets: wasm32-unknown-unknown
 
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
@@ -56,6 +57,9 @@ jobs:
             -p gestalt_infra_github \
             -p gestalt_infra_embeddings \
             --all-targets
+
+      - name: Cargo Check (WASM)
+        run: cargo check --target wasm32-unknown-unknown -p gestalt-wasm
 
   build-binary:
     name: Build Binary

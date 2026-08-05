@@ -218,9 +218,7 @@ impl LocalSearchEngine for HybridSearchEngine {
                 // Remote only
                 Ok(self.search_remote_filtered(query, kind, limit).await)
             },
-            SearchMode::Hybrid => {
-                self.search_hybrid(query, kind, limit).await
-            },
+            SearchMode::Hybrid => self.search_hybrid(query, kind, limit).await,
         }
     }
 
@@ -274,7 +272,8 @@ fn normalize_scores(results: &[SearchResult]) -> Vec<SearchResult> {
 /// Merges two vectors of SearchResults, deduplicating by document ID while keeping
 /// the result with the highest score. The merged vector is sorted descending by score.
 fn merge_and_dedup(local: Vec<SearchResult>, remote: Vec<SearchResult>) -> Vec<SearchResult> {
-    let mut merged: std::collections::HashMap<String, SearchResult> = std::collections::HashMap::new();
+    let mut merged: std::collections::HashMap<String, SearchResult> =
+        std::collections::HashMap::new();
 
     for r in local {
         merged.insert(r.id.clone(), r);
@@ -291,7 +290,11 @@ fn merge_and_dedup(local: Vec<SearchResult>, remote: Vec<SearchResult>) -> Vec<S
     }
 
     let mut final_results: Vec<SearchResult> = merged.into_values().collect();
-    final_results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    final_results.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     final_results
 }
 
@@ -474,13 +477,24 @@ mod tests {
 
     #[async_trait]
     impl LocalSearchEngine for MockLocalSearchEngine {
-        async fn index_document(&self, _id: &str, _path: &str, _content: &str, _kind: &str) -> anyhow::Result<()> {
+        async fn index_document(
+            &self,
+            _id: &str,
+            _path: &str,
+            _content: &str,
+            _kind: &str,
+        ) -> anyhow::Result<()> {
             Ok(())
         }
         async fn search(&self, _query: &str, _limit: usize) -> anyhow::Result<Vec<SearchResult>> {
             Ok(self.results.clone())
         }
-        async fn search_filtered(&self, _query: &str, _kind: Option<&str>, _limit: usize) -> anyhow::Result<Vec<SearchResult>> {
+        async fn search_filtered(
+            &self,
+            _query: &str,
+            _kind: Option<&str>,
+            _limit: usize,
+        ) -> anyhow::Result<Vec<SearchResult>> {
             Ok(self.results.clone())
         }
         async fn delete_document(&self, _id: &str) -> anyhow::Result<()> {

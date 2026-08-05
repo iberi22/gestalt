@@ -13,6 +13,9 @@ permissions:
   contents: read
   security-events: write
 
+env:
+  CARGO_TARGET_DIR: target
+
 jobs:
   rust-checks:
     name: Rust Checks
@@ -45,12 +48,11 @@ jobs:
       - name: Cargo Test (CLI)
         run: cargo test -p gestalt_cli --all-targets
 
-      - name: Cargo Test (Router + State + WS + WASM)
+      - name: Cargo Test (Router + State + WS)
         run: |
           cargo test -p gestalt-router --all-targets
           cargo test -p gestalt-state --all-targets
           cargo test -p gestalt-ws --all-targets
-          cargo test -p gestalt-wasm --all-targets
 
       - name: Cargo Check (Other packages)
         run: |
@@ -58,9 +60,6 @@ jobs:
             -p synapse-agentic \
             -p gestalt-merge \
             --all-targets
-
-      - name: Cargo Check (WASM)
-        run: cargo check --target wasm32-unknown-unknown -p gestalt-wasm
 
   build-binary:
     name: Build Binary

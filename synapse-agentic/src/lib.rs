@@ -1,7 +1,7 @@
 pub mod context;
+pub mod graph;
 pub mod providers;
 pub mod router;
-pub mod graph;
 
 pub mod prelude {
     pub use async_trait::async_trait;

@@ -1,9 +1,9 @@
+use crate::providers::LLMProvider;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
-use crate::providers::LLMProvider;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DecisionContext {
@@ -170,11 +170,8 @@ pub struct PlannedTask {
 
 #[async_trait]
 pub trait ExplicitPlanner: Send + Sync {
-    async fn plan(
-        &self,
-        goal: &str,
-        context: &DecisionContext,
-    ) -> anyhow::Result<Vec<PlannedTask>>;
+    async fn plan(&self, goal: &str, context: &DecisionContext)
+        -> anyhow::Result<Vec<PlannedTask>>;
 }
 
 #[derive(Debug, Clone)]

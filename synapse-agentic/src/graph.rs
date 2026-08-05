@@ -1,7 +1,7 @@
+use crate::context::ContextState;
 use async_trait::async_trait;
 use serde_json::Value;
 use std::collections::HashMap;
-use crate::context::ContextState;
 
 #[derive(Debug, Clone)]
 pub enum NodeResult {
@@ -83,10 +83,7 @@ impl StateGraph {
         self.error_handler = Some(id.to_string());
     }
 
-    pub async fn execute(
-        &mut self,
-        mut state: ContextState,
-    ) -> anyhow::Result<ContextState> {
+    pub async fn execute(&mut self, mut state: ContextState) -> anyhow::Result<ContextState> {
         let mut current = self
             .entry
             .clone()

@@ -18,6 +18,8 @@ pub struct MemState {
     event_tx: broadcast::Sender<TimelineEvent>,
 }
 
+/// Default implementation for `MemState`, which uses a 1024-event broadcast capacity.
+/// For environment variable configuration using `GESTALT_EVENT_CAPACITY`, see [`MemState::from_env`].
 impl Default for MemState {
     fn default() -> Self {
         Self::new()
@@ -43,6 +45,28 @@ impl MemState {
             active_locks: Arc::new(DashMap::new()),
             event_tx: tx,
         }
+    }
+
+    /// Create a new `MemState` by reading the broadcast channel capacity from the `GESTALT_EVENT_CAPACITY`
+    /// environment variable. Falls back to a default of 1024 if the variable is not set or cannot be parsed.
+    pub fn from_env() -> Self {
+        Self::with_env_or_default(1024)
+    }
+
+    /// Create a new `MemState` by reading the broadcast channel capacity from the `GESTALT_EVENT_CAPACITY`
+    /// environment variable. Falls back to the provided `default` capacity if the variable is not set or
+    /// cannot be parsed. If the capacity evaluates to 0, it falls back to the default or 1024.
+    pub fn with_env_or_default(default: usize) -> Self {
+        let capacity = std::env::var("GESTALT_EVENT_CAPACITY")
+            .ok()
+            .and_then(|val| val.parse::<usize>().ok())
+            .unwrap_or(default);
+        let capacity = if capacity == 0 {
+            if default == 0 { 1024 } else { default }
+        } else {
+            capacity
+        };
+        Self::with_capacity(capacity)
     }
 
     // ── Agent State ───────────────────────────────────────────────────
@@ -254,6 +278,10 @@ impl MemState {
 mod tests {
     use super::*;
     use std::time::Duration;
+    use std::sync::Mutex;
+
+    // Mutex to synchronize tests modifying env variables to prevent parallel race conditions.
+    static ENV_MUTEX: Mutex<()> = Mutex::new(());
 
     #[test]
     fn test_agent_state_lifecycle() {
@@ -352,5 +380,81 @@ mod tests {
         let paths: Vec<String> = locks.into_iter().map(|l| l.path).collect();
         assert!(paths.contains(&"/tmp/a.lock".to_string()));
         assert!(paths.contains(&"/tmp/b.lock".to_string()));
+    }
+
+    #[test]
+    fn test_from_env_default() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+
+        // Ensure env var is not set
+        std::env::remove_var("GESTALT_EVENT_CAPACITY");
+
+        let _mem = MemState::from_env();
+        // Verify that with_env_or_default uses the fallback correctly when unset.
+        let mem_fallback = MemState::with_env_or_default(42);
+
+        // We can check capacity by overflowing it!
+        // A broadcast channel with capacity C will allow sending C messages.
+        // If we send C + 1 messages, the first receiver will lag if it didn't read them.
+        let mut rx = mem_fallback.subscribe();
+        for i in 0..42 {
+            mem_fallback.push_event("run", None, "test", &i.to_string());
+        }
+        // No lag yet
+        assert!(rx.try_recv().is_ok());
+
+        let mem_fallback_2 = MemState::with_env_or_default(10);
+        let mut rx_2 = mem_fallback_2.subscribe();
+        for i in 0..25 {
+            mem_fallback_2.push_event("run", None, "test", &i.to_string());
+        }
+        let res = rx_2.try_recv();
+        assert!(matches!(res, Err(tokio::sync::broadcast::error::TryRecvError::Lagged(_))));
+    }
+
+    #[test]
+    fn test_from_env_custom() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+
+        // Set GESTALT_EVENT_CAPACITY to a custom value
+        std::env::set_var("GESTALT_EVENT_CAPACITY", "5");
+
+        let mem = MemState::from_env();
+        let mut rx = mem.subscribe();
+
+        // Push 5 events — should not lag yet
+        for i in 0..5 {
+            mem.push_event("run", None, "test", &i.to_string());
+        }
+        assert!(rx.try_recv().is_ok());
+
+        // Push more events to overflow the capacity of 5
+        for i in 5..20 {
+            mem.push_event("run", None, "test", &i.to_string());
+        }
+        let res = rx.try_recv();
+        assert!(matches!(res, Err(tokio::sync::broadcast::error::TryRecvError::Lagged(_))));
+
+        // Test fallback on invalid parse
+        std::env::set_var("GESTALT_EVENT_CAPACITY", "invalid-capacity");
+        let mem_fallback = MemState::with_env_or_default(8);
+        let mut rx_fallback = mem_fallback.subscribe();
+        for i in 0..8 {
+            mem_fallback.push_event("run", None, "test", &i.to_string());
+        }
+        assert!(rx_fallback.try_recv().is_ok());
+
+        for i in 8..25 {
+            mem_fallback.push_event("run", None, "test", &i.to_string());
+        }
+        assert!(matches!(rx_fallback.try_recv(), Err(tokio::sync::broadcast::error::TryRecvError::Lagged(_))));
+
+        // Test safe handling of 0 capacity config (should default to fallback/1024 rather than panic)
+        std::env::set_var("GESTALT_EVENT_CAPACITY", "0");
+        let mem_zero = MemState::from_env();
+        let _rx_zero = mem_zero.subscribe();
+
+        // Clean up environment
+        std::env::remove_var("GESTALT_EVENT_CAPACITY");
     }
 }

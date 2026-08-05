@@ -62,7 +62,11 @@ impl MemState {
             .and_then(|val| val.parse::<usize>().ok())
             .unwrap_or(default);
         let capacity = if capacity == 0 {
-            if default == 0 { 1024 } else { default }
+            if default == 0 {
+                1024
+            } else {
+                default
+            }
         } else {
             capacity
         };
@@ -277,8 +281,8 @@ impl MemState {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::Duration;
     use std::sync::Mutex;
+    use std::time::Duration;
 
     // Mutex to synchronize tests modifying env variables to prevent parallel race conditions.
     static ENV_MUTEX: Mutex<()> = Mutex::new(());
@@ -409,7 +413,10 @@ mod tests {
             mem_fallback_2.push_event("run", None, "test", &i.to_string());
         }
         let res = rx_2.try_recv();
-        assert!(matches!(res, Err(tokio::sync::broadcast::error::TryRecvError::Lagged(_))));
+        assert!(matches!(
+            res,
+            Err(tokio::sync::broadcast::error::TryRecvError::Lagged(_))
+        ));
     }
 
     #[test]
@@ -433,7 +440,10 @@ mod tests {
             mem.push_event("run", None, "test", &i.to_string());
         }
         let res = rx.try_recv();
-        assert!(matches!(res, Err(tokio::sync::broadcast::error::TryRecvError::Lagged(_))));
+        assert!(matches!(
+            res,
+            Err(tokio::sync::broadcast::error::TryRecvError::Lagged(_))
+        ));
 
         // Test fallback on invalid parse
         std::env::set_var("GESTALT_EVENT_CAPACITY", "invalid-capacity");
@@ -447,7 +457,10 @@ mod tests {
         for i in 8..25 {
             mem_fallback.push_event("run", None, "test", &i.to_string());
         }
-        assert!(matches!(rx_fallback.try_recv(), Err(tokio::sync::broadcast::error::TryRecvError::Lagged(_))));
+        assert!(matches!(
+            rx_fallback.try_recv(),
+            Err(tokio::sync::broadcast::error::TryRecvError::Lagged(_))
+        ));
 
         // Test safe handling of 0 capacity config (should default to fallback/1024 rather than panic)
         std::env::set_var("GESTALT_EVENT_CAPACITY", "0");

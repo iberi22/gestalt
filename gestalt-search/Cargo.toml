@@ -1,0 +1,30 @@
+[package]
+name = "gestalt-search"
+version = "0.1.0"
+edition = "2021"
+description = "Gestalt Local Search — Tantivy BM25 full-text index for offline operation"
+
+[dependencies]
+tokio = { version = "1.49", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tracing = "0.1"
+thiserror = "1.0"
+anyhow = "1.0"
+async-trait = "0.1"
+tantivy = { version = "0.22", default-features = false, features = [
+    "mmap",
+    "lz4-compression",
+] }
+gestalt_core = { path = "../gestalt_core" }
+
+[dev-dependencies]
+tempfile = "3.24"
+
+[lints.rust]
+unsafe_code = "deny"
+dead_code = "allow"
+
+[lints.clippy]
+too_many_arguments = { level = "warn", priority = -1 }
+let_and_return = { level = "warn", priority = -1 }

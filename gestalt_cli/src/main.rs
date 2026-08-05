@@ -3,6 +3,7 @@
 //! CLI tool for interacting with Gestalt MCP Server and managing tasks.
 
 mod agent_wrapper;
+mod bus;
 mod config;
 mod repl;
 
@@ -398,6 +399,60 @@ enum Commands {
     Xavier {
         #[command(subcommand)]
         action: XavierAction,
+    },
+
+    /// Universal event bus: ingest + serve bus events (traceability layer)
+    Bus {
+        #[command(subcommand)]
+        action: BusAction,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+enum BusAction {
+    /// Serve the event bus HTTP server (POST /api/event, GET /api/events)
+    Serve {
+        /// Host to bind to
+        #[arg(long, default_value = "127.0.0.1")]
+        host: String,
+
+        /// Port to bind to
+        #[arg(long, default_value_t = 8081)]
+        port: u16,
+
+        /// StateDb path (default ~/.gestalt/state.db)
+        #[arg(long)]
+        db: Option<String>,
+    },
+
+    /// Push a single event to the bus (agent CLI integration)
+    Push {
+        /// Originating agent (hermes, jules, agent-cli, gestalt, ...)
+        #[arg(long)]
+        agent: String,
+
+        /// Event type (run_started, run_finished, agent_state, decision, ...)
+        #[arg(long)]
+        event_type: String,
+
+        /// One-line summary
+        summary: String,
+
+        /// Run id (optional)
+        #[arg(long)]
+        run_id: Option<String>,
+
+        /// Project name (optional)
+        #[arg(long)]
+        project: Option<String>,
+
+        /// Agent state (Pending|Running|Success|Timeout|Crashed)
+        #[arg(long)]
+        state: Option<String>,
+
+        /// Extra traceability metadata as JSON ({"llm": "...", "provider": "...", "requested_by": "..."})
+        #[arg(long)]
+        metadata: Option<String>,
     },
 }
 
@@ -1698,6 +1753,58 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     println!("Cycle complete — final state: {:?}", state);
                 },
             }
+        },
+
+        Commands::Bus { action } => match action {
+            BusAction::Serve { host, port, db } => {
+                bus::serve(&host, port, db.as_deref()).await?;
+            },
+            BusAction::Push {
+                agent,
+                event_type,
+                summary,
+                run_id,
+                project,
+                state,
+                metadata,
+            } => {
+                let mut ev = gestalt_router::event_bus::BusEvent::new(agent, event_type, summary);
+                if let Some(run_id) = run_id {
+                    ev = ev.with_run_id(run_id);
+                }
+                if let Some(project) = project {
+                    ev = ev.with_project(project);
+                }
+                if let Some(state) = state {
+                    ev = ev.with_state(state);
+                }
+                if let Some(metadata) = metadata {
+                    let parsed: serde_json::Value = serde_json::from_str(&metadata)
+                        .map_err(|e| format!("Invalid --metadata JSON: {}", e))?;
+                    ev = ev.with_metadata(parsed);
+                }
+
+                let db_path = home::home_dir()
+                    .unwrap_or_else(|| PathBuf::from("."))
+                    .join(".gestalt")
+                    .join("state.db");
+                let db = Arc::new(
+                    StateDb::open(&db_path)
+                        .map_err(|e| format!("Failed to open StateDb: {}", e))?,
+                );
+                let sink = std::env::var("XAVIER_TOKEN")
+                    .ok()
+                    .filter(|t| !t.is_empty())
+                    .map(|_| gestalt_router::xavier_sink::XavierEventSink::from_env());
+
+                let seq = gestalt_router::event_bus::handle_event(&db, &ev, sink.as_ref())
+                    .await
+                    .map_err(|e| format!("Failed to push event: {}", e))?;
+                println!(
+                    "✅ Event pushed (seq={}) agent={} type={}",
+                    seq, ev.agent, ev.event_type
+                );
+            },
         },
     }
 

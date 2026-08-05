@@ -492,6 +492,40 @@ impl StateDb {
 
         Ok(events)
     }
+
+    /// Fetch the most recent timeline events across ALL runs, ordered by
+    /// sequence DESC (newest first). Used by the event bus tail endpoint.
+    pub fn recent_timeline(&self, limit: i64) -> Result<Vec<TimelineEvent>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn
+            .prepare(
+                "SELECT seq, run_id, agent_id, event_type, payload, created_at
+                 FROM timeline
+                 ORDER BY seq DESC LIMIT ?1",
+            )
+            .context("Failed to prepare recent_timeline query")?;
+
+        let events = stmt
+            .query_map(rusqlite::params![limit], |row| {
+                let seq: i64 = row.get(0)?;
+                let created_at_str: String = row.get(5)?;
+                Ok(TimelineEvent {
+                    seq: Some(seq),
+                    run_id: row.get(1)?,
+                    agent_id: row.get(2)?,
+                    event_type: row.get(3)?,
+                    payload: row.get(4)?,
+                    created_at: created_at_str
+                        .parse::<DateTime<Utc>>()
+                        .unwrap_or_else(|_| Utc::now()),
+                })
+            })
+            .context("Failed to query recent timeline")?
+            .collect::<Result<Vec<_>, _>>()
+            .context("Failed to read recent timeline events")?;
+
+        Ok(events)
+    }
 }
 
 // ── Tests ──────────────────────────────────────────────────────────────

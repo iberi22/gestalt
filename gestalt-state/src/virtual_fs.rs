@@ -30,33 +30,36 @@ impl StateDbVfs {
     /// Create a new `StateDbVfs` backed by `state_db`.
     ///
     /// Runs the `file_versions` table migration on construction.
-    pub fn new(state_db: StateDb) -> Self {
+    pub fn new(state_db: StateDb) -> anyhow::Result<Self> {
         let vfs = Self { state_db };
-        vfs.migrate();
-        vfs
+        vfs.migrate()?;
+        Ok(vfs)
     }
 
     /// Create the `file_versions` table if it doesn't exist.
-    fn migrate(&self) {
-        if let Ok(conn) = self.state_db.conn() {
-            let _ = conn.execute_batch(
-                "CREATE TABLE IF NOT EXISTS file_versions (
-                    path TEXT NOT NULL,
-                    version_hash TEXT NOT NULL,
-                    content TEXT NOT NULL,
-                    agent_id TEXT NOT NULL,
-                    created_at TEXT NOT NULL,
-                    PRIMARY KEY (path, version_hash)
-                );
-
-                CREATE INDEX IF NOT EXISTS idx_file_versions_path
-                    ON file_versions(path);
-
-                CREATE INDEX IF NOT EXISTS idx_file_versions_created
-                    ON file_versions(path, created_at DESC);
-                ",
+    fn migrate(&self) -> anyhow::Result<()> {
+        let conn = self.state_db.conn()?;
+        if let Err(e) = conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS file_versions (
+                path TEXT NOT NULL,
+                version_hash TEXT NOT NULL,
+                content TEXT NOT NULL,
+                agent_id TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                PRIMARY KEY (path, version_hash)
             );
+
+            CREATE INDEX IF NOT EXISTS idx_file_versions_path
+                ON file_versions(path);
+
+            CREATE INDEX IF NOT EXISTS idx_file_versions_created
+                ON file_versions(path, created_at DESC);
+            ",
+        ) {
+            tracing::warn!("StateDbVfs schema migration failed: {e}");
+            return Err(e.into());
         }
+        Ok(())
     }
 }
 
@@ -363,7 +366,7 @@ mod tests {
 
     fn setup_vfs() -> StateDbVfs {
         let db = StateDb::open(":memory:").expect("Failed to open in-memory DB");
-        StateDbVfs::new(db)
+        StateDbVfs::new(db).expect("Failed to initialize VFS")
     }
 
     #[tokio::test]

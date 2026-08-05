@@ -29,7 +29,10 @@
       "verified_by": "grep+file",
       "github_issue": null,
       "last_tested": "2026-07-27",
-      "evidence": ["scripts/swarm_bridge.py", "docs/swarm_bridge_README.md"],
+      "evidence": [
+        "scripts/swarm_bridge.py",
+        "docs/swarm_bridge_README.md"
+      ],
       "notes": "PASS grep: AGENTS=[15], asyncio.gather at L423. No gestalt_tui in Cargo.toml. docs/swarm_bridge_README.md present."
     },
     {
@@ -46,7 +49,9 @@
       "verified_by": "grep+file",
       "github_issue": "263",
       "last_tested": "2026-07-27",
-      "evidence": ["scripts/swarm_bridge.py"],
+      "evidence": [
+        "scripts/swarm_bridge.py"
+      ],
       "notes": "PASS grep: def select_agents(goal) L196; wired in argparse path L488."
     },
     {
@@ -63,7 +68,9 @@
       "verified_by": "grep+file",
       "github_issue": "265",
       "last_tested": "2026-07-27",
-      "evidence": ["scripts/swarm_bridge.py"],
+      "evidence": [
+        "scripts/swarm_bridge.py"
+      ],
       "notes": "PASS grep: score_goal_complexity L140, calculate_optimal_n L165, GESTALT_MAX_AGENTS / GESTALT_RATE_LIMIT env."
     },
     {
@@ -80,7 +87,9 @@
       "verified_by": "grep+file",
       "github_issue": "266",
       "last_tested": "2026-07-27",
-      "evidence": ["scripts/swarm_bridge.py"],
+      "evidence": [
+        "scripts/swarm_bridge.py"
+      ],
       "notes": "PASS grep: --watch L470, --output, --poll-interval L472, --timeout L473."
     },
     {
@@ -180,7 +189,9 @@
       "verified_by": "file",
       "github_issue": null,
       "last_tested": "2026-07-27",
-      "evidence": [".gitcore/SRC.md"],
+      "evidence": [
+        ".gitcore/SRC.md"
+      ],
       "notes": "PARTIAL file: .gitcore/SRC.md exists with directory tree; most module sections still Status/Purpose TODO stubs. Protocol skeleton met; not full SRC completeness gate."
     },
     {
@@ -255,6 +266,54 @@
         "gestalt-ws/src/event.rs"
       ],
       "notes": "PASS grep (Ola 5): Event::{RunStarted,AgentStateChanged}, trait EventLog, StateDbEventLog; gestalt-ws WsEvent broadcast. JsonlEventLog superseded by StateDbEventLog + ws; VersionedEvent retained."
+    },
+    {
+      "id": "feat-event-bus",
+      "category": "orchestration",
+      "description": "Universal event bus: router emite run_started/run_finished en tiempo real + POST /api/event para agentes externos; dedup por hash (ventana 300s server-clock); persistencia StateDb + streaming Xavier kind=execution",
+      "steps": [
+        "event_bus.rs: BusEvent + dedup_hash + is_duplicate + handle_event",
+        "router.rs: emit_bus_event en RunStarted/RunFinished (trazabilidad real)",
+        "xavier_sink.rs: streaming bus→Xavier kind=execution, path único",
+        "gestalt_cli: bus serve/push/replay",
+        "E2E: run real → bus → Xavier verificado"
+      ],
+      "passes": true,
+      "progress_pct": 100,
+      "verified_by": "cargo test -p gestalt-router + E2E curl + Xavier DB check",
+      "github_issue": null,
+      "last_tested": "2026-08-05"
+    },
+    {
+      "id": "feat-xavier-thinking",
+      "category": "orchestration",
+      "description": "Xavier Thinking Loop deterministico (sin LLM externo, decision 2026-08-05): gestalt thinking sintetiza PATTERNS/BLOCKERS/DECISIONS/NEXT por agregacion de estados/agentes y lo indexa como kind=insight; idempotente por dia",
+      "steps": [
+        "thinking.rs: ThinkingLoop (recent_executions → synthesize → index_insight)",
+        "StructuralSynthesizer determinista (cero dependencias, sin Ollama)",
+        "gestalt thinking CLI (--force, --window)",
+        "Tests: min gate, window, synthesizer"
+      ],
+      "passes": true,
+      "progress_pct": 100,
+      "verified_by": "cargo test -p gestalt-router (21 passing)",
+      "github_issue": null,
+      "last_tested": "2026-08-05"
+    },
+    {
+      "id": "feat-bus-dashboard",
+      "category": "observability",
+      "description": "Project Admin dashboard: vistas Gestalt event bus (trazabilidad quién/llm/proveedor/decisión) + Xavier thinking insights; event.py helper para que Hermes empuje eventos en 1 línea",
+      "steps": [
+        "event.py en project-admin (fire-and-forget, 3s timeout)",
+        "server.py: /api/gestalt/events + /api/gestalt/thinking proxies",
+        "app.js + index.html: secciones bus + thinking"
+      ],
+      "passes": true,
+      "progress_pct": 100,
+      "verified_by": "py_compile + event.py push verificado contra bus real",
+      "github_issue": null,
+      "last_tested": "2026-08-05"
     }
   ],
   "verification_commands": {

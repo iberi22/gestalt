@@ -1993,11 +1993,13 @@ version = "1.0.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "axum",
  "chrono",
  "clap",
  "config",
  "gestalt-router",
  "gestalt-search",
+ "gestalt-state",
  "gestalt_core",
  "home",
  "reqwest 0.12.28",

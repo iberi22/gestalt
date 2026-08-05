@@ -29,10 +29,33 @@ pub struct SearchResponse {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MemoryResult {
     pub id: String,
+    /// Path in Xavier (may be absent in some response shapes).
+    #[serde(default)]
     pub path: String,
+    /// Full memory content — Xavier v1 API calls it `memory`.
+    #[serde(default, alias = "memory")]
     pub content: String,
+    /// Search snippet (may be absent).
+    #[serde(default)]
     pub snippet: String,
+    /// Relevance score (may be absent).
+    #[serde(default)]
     pub score: f64,
+    /// Extra metadata carried by the result.
+    #[serde(default)]
+    pub metadata: serde_json::Value,
+}
+
+impl MemoryResult {
+    /// Best available text: `content` when present (v0.12 add-side shape),
+    /// otherwise the `snippet` returned by v1 search.
+    pub fn text(&self) -> String {
+        if !self.content.trim().is_empty() {
+            self.content.clone()
+        } else {
+            self.snippet.clone()
+        }
+    }
 }
 
 #[derive(Debug, Serialize)]

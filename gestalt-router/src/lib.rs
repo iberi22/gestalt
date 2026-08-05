@@ -1,11 +1,14 @@
 pub mod agent;
 pub mod checkpoint;
 pub mod doctor;
+pub mod event_bus;
 pub mod integrate;
 pub mod overlap;
 pub mod router;
 pub mod run;
 pub mod run_state;
+pub mod thinking;
 pub mod timeline;
 pub mod worktree;
 pub mod ws;
+pub mod xavier_sink;

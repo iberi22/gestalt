@@ -18,9 +18,9 @@ gestalt_core = { path = "../gestalt_core" }
 gestalt-state = { path = "../gestalt-state" }
 gestalt-ws = { path = "../gestalt-ws" }
 sha2 = "0.10"
+chrono = "0.4"
 
 [dev-dependencies]
 tokio-tungstenite = "0.23"
 futures-util = "0.3"
-chrono = "0.4"
 

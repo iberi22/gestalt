@@ -237,3 +237,27 @@ CLI gestalt run command with agent orchestration
 JSONL event log for tracking run lifecycle events
 
 *Feature: `feat-event-log` · status: pending*
+
+## REQ-022: Universal Event Bus (feature feat-event-bus)
+
+- **Category:** Functional
+- **Priority:** P1
+- **SRS Status:** `active`
+- **Files:** gestalt-router/src/event_bus.rs, gestalt-router/src/xavier_sink.rs, gestalt_cli/src/bus.rs
+
+### Description
+El router de Gestalt emite `run_started`/`run_finished` al bus en cada ejecución orquestada, y cualquier agente externo (Hermes, Jules, CLI) puede empujar eventos vía `POST /api/event` (:8081) con trazabilidad completa (agent, event_type, run_id, project, state, ts, metadata{llm, provider, requested_by, decision}). Dedup por hash estable (SHA-256) con ventana de 300s medida con reloj del servidor: retries/replays no duplican ni en StateDb ni en Xavier. Eventos persistidos durablemente en StateDb y streamed a Xavier como `kind=execution` con path único. Fire-and-forget: la caída de Xavier o del bus nunca bloquea al agente emisor (R4/R5 del diseño).
+
+*Feature: `feat-event-bus` · status: stable*
+
+## REQ-023: Xavier Thinking Loop (feature feat-xavier-thinking)
+
+- **Category:** Functional
+- **Priority:** P1
+- **SRS Status:** `active`
+- **Files:** gestalt-router/src/thinking.rs, gestalt_cli/src/bus.rs (OllamaSynthesizer)
+
+### Description
+Loop periódico (`gestalt thinking`) que consulta ejecuciones recientes (`kind=execution`), sintetiza un insight determinista (PATTERNS por estado y agente / BLOCKERS / DECISIONS / NEXT) por agregación del corpus — SIN dependencia de LLM externo (decisión 2026-08-05: no Ollama, cero servicios) — y lo re-indexa como `kind=insight` para que futuros agentes lo encuentren vía PRE search. Idempotente (skip si ya existe insight de hoy), gated a ≥3 ejecuciones.
+
+*Feature: `feat-xavier-thinking` · status: stable*

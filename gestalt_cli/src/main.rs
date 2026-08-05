@@ -3,6 +3,7 @@
 //! CLI tool for interacting with Gestalt MCP Server and managing tasks.
 
 mod agent_wrapper;
+mod bus;
 mod config;
 mod repl;
 
@@ -398,6 +399,82 @@ enum Commands {
     Xavier {
         #[command(subcommand)]
         action: XavierAction,
+    },
+
+    /// Universal event bus: ingest + serve bus events (traceability layer)
+    Bus {
+        #[command(subcommand)]
+        action: BusAction,
+    },
+
+    /// Xavier Thinking Loop: synthesize insights from recent executions
+    Thinking {
+        /// Force a run even if today's insight already exists
+        #[arg(long)]
+        force: bool,
+
+        /// Look-back window in minutes
+        #[arg(long, default_value_t = 30)]
+        window: u64,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+enum BusAction {
+    /// Serve the event bus HTTP server (POST /api/event, GET /api/events)
+    Serve {
+        /// Host to bind to
+        #[arg(long, default_value = "127.0.0.1")]
+        host: String,
+
+        /// Port to bind to
+        #[arg(long, default_value_t = 8081)]
+        port: u16,
+
+        /// StateDb path (default ~/.gestalt/state.db)
+        #[arg(long)]
+        db: Option<String>,
+    },
+
+    /// Push a single event to the bus (agent CLI integration)
+    Push {
+        /// Originating agent (hermes, jules, agent-cli, gestalt, ...)
+        #[arg(long)]
+        agent: String,
+
+        /// Event type (run_started, run_finished, agent_state, decision, ...)
+        #[arg(long)]
+        event_type: String,
+
+        /// One-line summary
+        summary: String,
+
+        /// Run id (optional)
+        #[arg(long)]
+        run_id: Option<String>,
+
+        /// Project name (optional)
+        #[arg(long)]
+        project: Option<String>,
+
+        /// Agent state (Pending|Running|Success|Timeout|Crashed)
+        #[arg(long)]
+        state: Option<String>,
+
+        /// Extra traceability metadata as JSON ({"llm": "...", "provider": "...", "requested_by": "..."})
+        #[arg(long)]
+        metadata: Option<String>,
+    },
+
+    /// Replay unsynced bus events to Xavier (cursor sweep after outage)
+    Replay {
+        /// Only replay events newer than this sequence number
+        #[arg(long)]
+        after_seq: Option<i64>,
+
+        /// Dry run: report what would be re-sunk without writing
+        #[arg(long)]
+        dry_run: bool,
     },
 }
 
@@ -1697,6 +1774,182 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                     println!("Cycle complete — final state: {:?}", state);
                 },
+            }
+        },
+
+        Commands::Bus { action } => match action {
+            BusAction::Serve { host, port, db } => {
+                bus::serve(&host, port, db.as_deref()).await?;
+            },
+            BusAction::Push {
+                agent,
+                event_type,
+                summary,
+                run_id,
+                project,
+                state,
+                metadata,
+            } => {
+                let mut ev = gestalt_router::event_bus::BusEvent::new(agent, event_type, summary);
+                if let Some(run_id) = run_id {
+                    ev = ev.with_run_id(run_id);
+                }
+                if let Some(project) = project {
+                    ev = ev.with_project(project);
+                }
+                if let Some(state) = state {
+                    ev = ev.with_state(state);
+                }
+                if let Some(metadata) = metadata {
+                    let parsed: serde_json::Value = serde_json::from_str(&metadata)
+                        .map_err(|e| format!("Invalid --metadata JSON: {}", e))?;
+                    ev = ev.with_metadata(parsed);
+                }
+
+                let db_path = home::home_dir()
+                    .unwrap_or_else(|| PathBuf::from("."))
+                    .join(".gestalt")
+                    .join("state.db");
+                let db = Arc::new(
+                    StateDb::open(&db_path)
+                        .map_err(|e| format!("Failed to open StateDb: {}", e))?,
+                );
+                let sink = std::env::var("XAVIER_TOKEN")
+                    .ok()
+                    .filter(|t| !t.is_empty())
+                    .map(|_| gestalt_router::xavier_sink::XavierEventSink::from_env());
+
+                let seq = gestalt_router::event_bus::handle_event(&db, &ev, sink.as_ref())
+                    .await
+                    .map_err(|e| format!("Failed to push event: {}", e))?;
+                match seq {
+                    Some(seq) => println!(
+                        "✅ Event pushed (seq={}) agent={} type={}",
+                        seq, ev.agent, ev.event_type
+                    ),
+                    None => println!(
+                        "⏭️  Event deduplicated (identical event within window) agent={} type={}",
+                        ev.agent, ev.event_type
+                    ),
+                }
+            },
+
+            BusAction::Replay { after_seq, dry_run } => {
+                use gestalt_router::event_bus::BusEvent;
+
+                let db_path = home::home_dir()
+                    .unwrap_or_else(|| PathBuf::from("."))
+                    .join(".gestalt")
+                    .join("state.db");
+                let db = Arc::new(
+                    StateDb::open(&db_path)
+                        .map_err(|e| format!("Failed to open StateDb: {}", e))?,
+                );
+
+                let sink = std::env::var("XAVIER_TOKEN")
+                    .ok()
+                    .filter(|t| !t.is_empty())
+                    .map(|_| gestalt_router::xavier_sink::XavierEventSink::from_env());
+
+                let events = db
+                    .recent_timeline(1000)
+                    .map_err(|e| format!("Failed to read timeline: {}", e))?;
+
+                let mut replayed = 0usize;
+                let mut skipped = 0usize;
+                for ev in events.iter().rev() {
+                    if let Some(after) = after_seq {
+                        if ev.seq.unwrap_or(0) <= after {
+                            skipped += 1;
+                            continue;
+                        }
+                    }
+                    let parsed: BusEvent = match serde_json::from_str(&ev.payload) {
+                        Ok(b) => b,
+                        Err(_) => {
+                            skipped += 1;
+                            continue;
+                        },
+                    };
+                    if dry_run {
+                        println!(
+                            "  [dry-run] seq={} {} {}",
+                            ev.seq.unwrap_or(0),
+                            parsed.agent,
+                            parsed.event_type
+                        );
+                        replayed += 1;
+                        continue;
+                    }
+                    if let Some(ref sink) = sink {
+                        match sink.sink(&parsed).await {
+                            Ok(()) => {
+                                println!(
+                                    "  ✅ seq={} {} {} → Xavier",
+                                    ev.seq.unwrap_or(0),
+                                    parsed.agent,
+                                    parsed.event_type
+                                );
+                                replayed += 1;
+                            },
+                            Err(e) => {
+                                eprintln!("  ❌ seq={} failed: {}", ev.seq.unwrap_or(0), e);
+                            },
+                        }
+                    } else {
+                        eprintln!("  ⚠️  XAVIER_TOKEN not set — cannot replay");
+                        std::process::exit(1);
+                    }
+                }
+                println!(
+                    "Replay done: {} re-sunk, {} skipped (of {} total)",
+                    replayed,
+                    skipped,
+                    events.len()
+                );
+            },
+        },
+
+        Commands::Thinking { force, window } => {
+            use gestalt_router::thinking::ThinkingLoop;
+
+            let xavier = Arc::new(XavierClient::from_env());
+            if !xavier.is_available().await {
+                eprintln!("❌ Xavier not reachable at :8006 — thinking loop needs Xavier");
+                std::process::exit(1);
+            }
+
+            let synthesizer: Arc<dyn gestalt_router::thinking::InsightSynthesizer> =
+                Arc::new(bus::StructuralSynthesizer);
+            let loop_ = ThinkingLoop::new(xavier, synthesizer).with_window(window);
+
+            println!("🧠 Gestalt Thinking Loop (window={}m)", window);
+            println!("   Pulling recent executions from Xavier...");
+
+            let executions = loop_.recent_executions(50).await?;
+            println!("   {} recent executions found", executions.len());
+
+            if executions.len() < gestalt_router::thinking::MIN_EXECUTIONS {
+                println!(
+                    "   ℹ️  Only {} executions (need ≥{}) — not enough signal to think yet. Push more events with `gestalt bus push`.",
+                    executions.len(),
+                    gestalt_router::thinking::MIN_EXECUTIONS
+                );
+                std::process::exit(0);
+            }
+
+            if !force && loop_.has_today_insight().await? {
+                println!("   ℹ️  Today's insight already exists (use --force to re-run)");
+                std::process::exit(0);
+            }
+
+            println!("   Synthesizing deterministic insight (no LLM dependency)...");
+            match loop_.run(force).await? {
+                Some(insight) => {
+                    println!("\n━━━ INSIGHT ━━━\n{}\n━━━━━━━━━━━━━", insight);
+                    println!("✅ Insight indexed in Xavier as kind=insight");
+                },
+                None => println!("   No insight produced this cycle"),
             }
         },
     }

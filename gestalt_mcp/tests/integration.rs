@@ -9,6 +9,7 @@
 //! For end-to-end HTTP/stdio transport tests, use the helper scripts in
 //! `tests/` or run the binary and connect with `mcp-cli`.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use gestalt_mcp::app_context::GestaltAppContext;
@@ -200,5 +201,238 @@ async fn test_gestalt_registry_info() {
             parsed.get("registry_available").is_some(),
             "JSON should contain registry_available"
         );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// NEW INTEGRATION TESTS ADDED BELOW
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn test_gestalt_search_valid() {
+    let server = test_server().await;
+
+    let args = Some([("query".to_string(), json!("rust"))].into_iter().collect());
+
+    let result = server
+        .call_tool("gestalt_search", args)
+        .await
+        .expect("gestalt_search should succeed");
+
+    assert!(!result.is_error.unwrap_or(false));
+    if let ContentBlock::Text { text, .. } = &result.content[0] {
+        let parsed: serde_json::Value =
+            serde_json::from_str(text).expect("should return valid JSON");
+        assert_eq!(parsed.get("query").and_then(|v| v.as_str()), Some("rust"));
+        assert_eq!(
+            parsed.get("supported").and_then(|v| v.as_bool()),
+            Some(false)
+        );
+    } else {
+        panic!("Expected Text content block");
+    }
+}
+
+#[tokio::test]
+async fn test_gestalt_search_missing_query() {
+    let server = test_server().await;
+
+    let args: Option<HashMap<String, serde_json::Value>> = Some(HashMap::new());
+
+    let result = server
+        .call_tool("gestalt_search", args)
+        .await
+        .expect("call_tool should return Ok but with an internal error state");
+
+    assert!(
+        result.is_error.unwrap_or(false),
+        "Expected error when query is missing"
+    );
+    if let ContentBlock::Text { text, .. } = &result.content[0] {
+        assert!(
+            text.contains("Error: query is required"),
+            "Unexpected error response: {}",
+            text
+        );
+    } else {
+        panic!("Expected Text content block");
+    }
+}
+
+#[tokio::test]
+async fn test_server_status_tool() {
+    let server = test_server().await;
+
+    let result = server
+        .call_tool("server_status", None)
+        .await
+        .expect("server_status should succeed");
+
+    assert!(!result.is_error.unwrap_or(false));
+    if let ContentBlock::Text { text, .. } = &result.content[0] {
+        let parsed: serde_json::Value =
+            serde_json::from_str(text).expect("should return valid JSON");
+        assert!(parsed.get("instance_id").is_some());
+        assert!(parsed.get("started_at").is_some());
+        assert!(parsed.get("uptime_secs").is_some());
+        assert!(parsed.get("has_registry").is_some());
+    } else {
+        panic!("Expected Text content block");
+    }
+}
+
+#[tokio::test]
+async fn test_gestalt_belief_query_tool() {
+    let server = test_server().await;
+
+    let args = Some(
+        [
+            ("subject".to_string(), json!("Agent007")),
+            ("predicate".to_string(), json!("owns")),
+        ]
+        .into_iter()
+        .collect(),
+    );
+
+    let result = server
+        .call_tool("gestalt_belief_query", args)
+        .await
+        .expect("gestalt_belief_query should succeed");
+
+    assert!(!result.is_error.unwrap_or(false));
+    if let ContentBlock::Text { text, .. } = &result.content[0] {
+        let parsed: serde_json::Value =
+            serde_json::from_str(text).expect("should return valid JSON");
+        assert_eq!(
+            parsed.get("subject").and_then(|v| v.as_str()),
+            Some("Agent007")
+        );
+        assert_eq!(
+            parsed.get("predicate").and_then(|v| v.as_str()),
+            Some("owns")
+        );
+    } else {
+        panic!("Expected Text content block");
+    }
+}
+
+#[tokio::test]
+async fn test_tool_schema_validation() {
+    let server = test_server().await;
+    let tools = server
+        .list_tools()
+        .await
+        .expect("list_tools should succeed");
+
+    // Find gestalt_search tool and validate schema parameters and properties
+    let search_tool = tools
+        .iter()
+        .find(|t| t.name == "gestalt_search")
+        .expect("gestalt_search tool should be registered");
+
+    assert_eq!(search_tool.input_schema.schema_type, "object");
+
+    let properties = search_tool
+        .input_schema
+        .properties
+        .as_ref()
+        .expect("properties field should be present");
+
+    assert!(
+        properties.contains_key("query"),
+        "Properties must contain query"
+    );
+    assert!(
+        properties.contains_key("limit"),
+        "Properties must contain limit"
+    );
+
+    let required = search_tool
+        .input_schema
+        .required
+        .as_ref()
+        .expect("required field should be present");
+
+    assert!(
+        required.contains(&"query".to_string()),
+        "query should be required"
+    );
+}
+
+#[tokio::test]
+async fn test_app_context_status() {
+    let ctx = GestaltAppContext::new();
+    let status = ctx.status();
+
+    assert!(
+        status.get("instance_id").is_some(),
+        "instance_id should be present"
+    );
+    assert!(
+        status.get("started_at").is_some(),
+        "started_at should be present"
+    );
+    assert!(
+        status.get("uptime_secs").is_some(),
+        "uptime_secs should be present"
+    );
+    assert_eq!(
+        status.get("has_registry").and_then(|v| v.as_bool()),
+        Some(false),
+        "has_registry should be false by default"
+    );
+}
+
+#[tokio::test]
+async fn test_gestalt_agent_run_valid() {
+    let server = test_server().await;
+
+    let args = Some(
+        [
+            ("question".to_string(), json!("How do I use gestalt?")),
+            ("repo".to_string(), json!(".")),
+        ]
+        .into_iter()
+        .collect(),
+    );
+
+    let result = server
+        .call_tool("gestalt_agent_run", args)
+        .await
+        .expect("gestalt_agent_run should succeed");
+
+    assert!(!result.is_error.unwrap_or(false));
+    if let ContentBlock::Text { text, .. } = &result.content[0] {
+        let parsed: serde_json::Value =
+            serde_json::from_str(text).expect("should return valid JSON");
+        assert_eq!(
+            parsed.get("question").and_then(|v| v.as_str()),
+            Some("How do I use gestalt?")
+        );
+        assert_eq!(
+            parsed.get("status").and_then(|v| v.as_str()),
+            Some("not_implemented")
+        );
+    } else {
+        panic!("Expected Text content block");
+    }
+}
+
+#[tokio::test]
+async fn test_gestalt_agent_run_missing_question() {
+    let server = test_server().await;
+
+    let args: Option<HashMap<String, serde_json::Value>> = Some(HashMap::new());
+
+    let result = server
+        .call_tool("gestalt_agent_run", args)
+        .await
+        .expect("gestalt_agent_run should return Ok with error state");
+
+    assert!(result.is_error.unwrap_or(false));
+    if let ContentBlock::Text { text, .. } = &result.content[0] {
+        assert!(text.contains("Error: question is required"));
+    } else {
+        panic!("Expected Text content block");
     }
 }

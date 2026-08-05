@@ -1,5 +1,5 @@
 [build]
-target-dir = "target"
+target-dir = "/build/rust-target/gestalt"  # RAM tmpfs (ver skill rust-build-ramdisk)
 
 [alias]
 check-fast = "check -p gestalt_timeline --no-default-features"

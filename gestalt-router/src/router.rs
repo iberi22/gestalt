@@ -5,6 +5,7 @@ use tokio::task::JoinSet;
 use uuid::Uuid;
 
 use gestalt_core::application::agent::xavier::XavierClient;
+use gestalt_core::ports::outbound::search::LocalSearchEngine;
 use gestalt_state::memstate::MemState;
 use gestalt_state::statedb::StateDb;
 use gestalt_state::AgentState;
@@ -25,6 +26,8 @@ pub struct Router {
     pub mem_state: MemState,
     pub log: Option<Arc<dyn EventLog>>,
     pub xavier: Option<XavierClient>,
+    /// Local BM25 search engine for offline context retrieval.
+    pub search_engine: Option<Arc<dyn LocalSearchEngine>>,
     /// Optional WebSocket server for broadcasting timeline events.
     pub ws_server: Option<WsServer>,
     /// Internal WorktreeManager for git worktree operations (legacy).
@@ -57,6 +60,7 @@ impl Router {
             mem_state,
             log,
             xavier: None,
+            search_engine: None,
             ws_server,
             worktrees: Arc::new(WorktreeManager::new(std::path::PathBuf::from(
                 "/tmp/gestalt",
@@ -77,6 +81,12 @@ impl Router {
     /// Attach an optional Xavier client for memory/context integration.
     pub fn with_xavier(mut self, xavier: XavierClient) -> Self {
         self.xavier = Some(xavier);
+        self
+    }
+
+    /// Attach a local BM25 search engine for offline context retrieval.
+    pub fn with_search_engine(mut self, engine: Arc<dyn LocalSearchEngine>) -> Self {
+        self.search_engine = Some(engine);
         self
     }
 
@@ -117,6 +127,53 @@ impl Router {
         }
 
         Ok(sha)
+    }
+
+    /// Fetch context for a task using local BM25 or Xavier remote.
+    ///
+    /// Priority:
+    /// 1. Local BM25 search engine (fast, offline)
+    /// 2. Xavier remote (if XavierClient is configured)
+    ///
+    /// Returns `None` if both are unavailable or return no results.
+    async fn fetch_context(&self, task: &str, limit: usize) -> Option<Vec<String>> {
+        // Try local BM25 first (offline-capable)
+        if let Some(ref engine) = self.search_engine {
+            match engine.search(task, limit).await {
+                Ok(results) if !results.is_empty() => {
+                    let ctx: Vec<String> = results
+                        .into_iter()
+                        .map(|r| {
+                            if r.snippet.is_empty() {
+                                r.content
+                            } else {
+                                r.snippet
+                            }
+                        })
+                        .collect();
+                    tracing::info!("Local BM25 context fetched for task: {} results", ctx.len());
+                    return Some(ctx);
+                },
+                Ok(_) => {
+                    tracing::info!("Local BM25 returned no results for task");
+                },
+                Err(e) => {
+                    tracing::warn!("Local BM25 search failed (non-fatal): {}", e);
+                },
+            }
+        }
+
+        // Fall back to Xavier remote
+        if let Some(ref xavier) = self.xavier {
+            let ctx = xavier.search_context(task, limit).await;
+            if !ctx.is_empty() {
+                tracing::info!("Xavier context fetched for task: {} results", ctx.len());
+                return Some(ctx);
+            }
+            tracing::info!("No Xavier context found for task");
+        }
+
+        None
     }
 
     /// Log a timeline event if an EventLog is attached.
@@ -162,29 +219,16 @@ impl Router {
                 RouterError::InvalidSpec(format!("Failed to create run in StateDb: {}", e))
             })?;
 
-        // 3. PRE: Fetch relevant context from Xavier memory and inject into agents
-        let xavier_context = if let Some(ref xavier) = self.xavier {
-            let ctx = xavier.search_context(&spec.task, 5).await;
-            if !ctx.is_empty() {
-                tracing::info!(
-                    "Xavier context fetched for task: {} results (run {})",
-                    ctx.len(),
-                    run_id
-                );
-                Some(ctx)
-            } else {
-                tracing::info!("No Xavier context found for task (run {})", run_id);
-                None
-            }
-        } else {
-            None
-        };
+        // 3. PRE: Fetch relevant context from local BM25 (offline) or Xavier (remote)
+        let search_context = self.fetch_context(&spec.task, 5).await;
 
-        // Inject XAVIER_CONTEXT into each agent's environment
-        if let Some(ref ctx) = xavier_context {
+        // Inject SEARCH_CONTEXT into each agent's environment
+        if let Some(ref ctx) = search_context {
             let ctx_json = serde_json::to_string(ctx).unwrap_or_default();
             for agent in &mut spec.agents {
                 let env = agent.env.get_or_insert_with(HashMap::new);
+                env.insert("SEARCH_CONTEXT".into(), ctx_json.clone());
+                // Backward compatibility: also inject XAVIER_CONTEXT
                 env.insert("XAVIER_CONTEXT".into(), ctx_json.clone());
             }
         }
@@ -208,7 +252,11 @@ impl Router {
         let mut wt_paths = HashMap::new();
 
         for agent in &spec.agents {
-            match self.worktrees.create_worktree(run_id, &agent.id, &base_sha) {
+            match self
+                .worktrees
+                .create_worktree(run_id, &agent.id, &base_sha)
+                .await
+            {
                 Ok(path) => {
                     created_wts.push(path.clone());
                     wt_paths.insert(agent.id.clone(), path);
@@ -216,7 +264,7 @@ impl Router {
                 Err(e) => {
                     // Cleanup already created worktrees
                     for wt in &created_wts {
-                        let _ = self.worktrees.cleanup_worktree(wt);
+                        let _ = self.worktrees.cleanup_worktree(wt).await;
                     }
                     return Err(RouterError::GitError(format!(
                         "Failed to create worktree for agent {}: {}",
@@ -386,14 +434,14 @@ impl Router {
                 Ok(Err(e)) => {
                     // Cleanup worktrees
                     for wt in &created_wts {
-                        let _ = self.worktrees.cleanup_worktree(wt);
+                        let _ = self.worktrees.cleanup_worktree(wt).await;
                     }
                     return Err(e);
                 },
                 Err(e) => {
                     // Cleanup worktrees
                     for wt in &created_wts {
-                        let _ = self.worktrees.cleanup_worktree(wt);
+                        let _ = self.worktrees.cleanup_worktree(wt).await;
                     }
                     return Err(RouterError::AgentError(format!(
                         "Agent task panicked or cancelled: {}",
@@ -449,6 +497,7 @@ impl Router {
             match self
                 .worktrees
                 .create_worktree(run_id, "_integrate", &base_sha)
+                .await
             {
                 Ok(integrate_wt_path) => {
                     let mut queue = SerialMergeQueue::new(
@@ -459,10 +508,10 @@ impl Router {
 
                     for (agent_id, branch) in &branches_to_merge {
                         if let Err(e) = queue.enqueue_and_merge(agent_id, branch) {
-                            let _ = self.worktrees.cleanup_worktree(&integrate_wt_path);
+                            let _ = self.worktrees.cleanup_worktree(&integrate_wt_path).await;
                             // Cleanup other worktrees
                             for wt in &created_wts {
-                                let _ = self.worktrees.cleanup_worktree(wt);
+                                let _ = self.worktrees.cleanup_worktree(wt).await;
                             }
                             return Err(e);
                         }
@@ -472,20 +521,20 @@ impl Router {
                     conflicts = queue.conflicts.clone();
 
                     if let Err(e) = queue.finish(spec.integration_branch.as_deref()) {
-                        let _ = self.worktrees.cleanup_worktree(&integrate_wt_path);
+                        let _ = self.worktrees.cleanup_worktree(&integrate_wt_path).await;
                         // Cleanup other worktrees
                         for wt in &created_wts {
-                            let _ = self.worktrees.cleanup_worktree(wt);
+                            let _ = self.worktrees.cleanup_worktree(wt).await;
                         }
                         return Err(e);
                     }
 
-                    let _ = self.worktrees.cleanup_worktree(&integrate_wt_path);
+                    let _ = self.worktrees.cleanup_worktree(&integrate_wt_path).await;
                 },
                 Err(e) => {
                     // Cleanup other worktrees
                     for wt in &created_wts {
-                        let _ = self.worktrees.cleanup_worktree(wt);
+                        let _ = self.worktrees.cleanup_worktree(wt).await;
                     }
                     return Err(e);
                 },
@@ -503,7 +552,7 @@ impl Router {
 
         // 9. Cleanup agent worktrees
         for wt in &created_wts {
-            let _ = self.worktrees.cleanup_worktree(wt);
+            let _ = self.worktrees.cleanup_worktree(wt).await;
         }
 
         // 10. Fire RunFinished Event and complete StateDb run
@@ -538,21 +587,36 @@ impl Router {
             .to_string_lossy()
             .to_string();
         let duration_ms = _timer_start.elapsed().as_millis() as u64;
+
+        // 11. POST: Archive run results — local BM25 (always) + Xavier (if available)
+        let report = RunReport {
+            run_id,
+            task: spec.task.clone(),
+            agents: agent_results.clone(),
+            duration_ms,
+            merged_branches: merged_branches.clone(),
+            conflicts: conflicts.clone(),
+            events_path: events_path.clone(),
+            success: true,
+        };
+        let content =
+            serde_json::to_string_pretty(&report.to_json()).unwrap_or_else(|_| "{}".to_string());
+
+        // 11a. Archive locally in BM25 (always, for offline search)
+        if let Some(ref engine) = self.search_engine {
+            let run_path = format!("gestalt/run/{}", run_id);
+            if let Err(e) = engine
+                .index_document(&run_id_str, &run_path, &content, "run_result")
+                .await
+            {
+                tracing::warn!("Local BM25 archival failed (non-fatal): {}", e);
+            } else {
+                tracing::info!("Run {} archived in local BM25 index", run_id);
+            }
+        }
+
+        // 11b. Archive in Xavier (if available)
         if let Some(ref xavier) = self.xavier {
-            let content = serde_json::to_string_pretty(
-                &RunReport {
-                    run_id,
-                    task: spec.task.clone(),
-                    agents: agent_results.clone(),
-                    duration_ms,
-                    merged_branches: merged_branches.clone(),
-                    conflicts: conflicts.clone(),
-                    events_path: events_path.clone(),
-                    success: true,
-                }
-                .to_json(),
-            )
-            .unwrap_or_else(|_| "{}".to_string());
             let metadata = serde_json::json!({
                 "run_id": run_id.to_string(),
                 "task": spec.task,

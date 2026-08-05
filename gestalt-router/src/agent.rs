@@ -50,9 +50,7 @@ pub fn is_process_alive(pid: u32) -> bool {
         }
         // SAFETY: We validate that `pid > 1` (since system processes/groups are not targeted),
         // and calling `kill` with signal 0 is standard, safe, and does not alter process state.
-        unsafe {
-            libc::kill(pid as libc::pid_t, 0) == 0
-        }
+        unsafe { libc::kill(pid as libc::pid_t, 0) == 0 }
     }
     #[cfg(not(unix))]
     {

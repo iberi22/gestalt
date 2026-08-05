@@ -1241,6 +1241,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             // 6. Create Router with StateDb, MemState, XavierClient and execute
             let xavier_client = XavierClient::from_env();
 
+            // Initialize local BM25 search engine for offline context retrieval
+            let search_index_path = home::home_dir()
+                .unwrap_or_else(|| PathBuf::from("."))
+                .join(".gestalt")
+                .join("search_index");
+            let search_engine =
+                match gestalt_search::TantivySearchEngine::new(&search_index_path, 1) {
+                    Ok(engine) => {
+                        tracing::info!(
+                            "Local BM25 search engine ready at {}",
+                            search_index_path.display()
+                        );
+                        Some(Arc::new(engine)
+                            as Arc<
+                                dyn gestalt_core::ports::outbound::search::LocalSearchEngine,
+                            >)
+                    },
+                    Err(e) => {
+                        tracing::warn!("Failed to initialize local BM25 search: {}", e);
+                        None
+                    },
+                };
+
             // Initialize state backends
             let state_db_path = home::home_dir()
                 .unwrap_or_else(|| PathBuf::from("."))
@@ -1250,7 +1273,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Arc::new(StateDb::open(&state_db_path).expect("Failed to open state database"));
             let mem_state = MemState::new();
 
-            let router = Router::new(
+            let mut router = Router::new(
                 None, // VFS mode — Router creates WorktreeManager internally
                 std::sync::Arc::new(runner),
                 state_db,
@@ -1259,6 +1282,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 None, // WebSocket port — set Some(3001) to enable live events
             )
             .with_xavier(xavier_client);
+            if let Some(engine) = search_engine {
+                router = router.with_search_engine(engine);
+            }
             println!("⚙️  Executing run...");
 
             match router.execute(spec).await {

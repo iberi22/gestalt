@@ -337,23 +337,25 @@ async fn test_worktree_manager_idempotency() {
     // 1. Create worktree first time
     manager
         .create_worktree_at(repo_path, &base_sha, branch, &wt_path)
+        .await
         .unwrap();
 
     // 2. Create worktree second time (idempotency check)
     manager
         .create_worktree_at(repo_path, &base_sha, branch, &wt_path)
+        .await
         .unwrap();
 
-    let list = manager.list_worktrees(repo_path).unwrap();
+    let list = manager.list_worktrees(repo_path).await.unwrap();
     assert!(list.iter().any(|wt| wt.path == wt_path));
 
     // 3. Remove worktree first time
-    manager.remove_worktree(repo_path, &wt_path).unwrap();
+    manager.remove_worktree(repo_path, &wt_path).await.unwrap();
 
     // 4. Remove worktree second time (idempotency check)
-    manager.remove_worktree(repo_path, &wt_path).unwrap();
+    manager.remove_worktree(repo_path, &wt_path).await.unwrap();
 
-    let post_list = manager.list_worktrees(repo_path).unwrap();
+    let post_list = manager.list_worktrees(repo_path).await.unwrap();
     assert!(!post_list.iter().any(|wt| wt.path == wt_path));
 }
 

@@ -237,26 +237,29 @@ impl ProcessReaper {
     }
 
     fn kill_cgroup(&self) -> bool {
-        if let Some(ref cg) = self.cgroup_path {
-            // Try cgroup.kill
-            let kill_file = cg.join("cgroup.kill");
-            if std::fs::write(&kill_file, "1").is_ok() {
-                return true;
-            }
-            // Fallback: read cgroup.procs and kill each process
-            let procs_file = cg.join("cgroup.procs");
-            if let Ok(content) = std::fs::read_to_string(&procs_file) {
-                for line in content.lines() {
-                    if let Ok(pid) = line.trim().parse::<i32>() {
-                        if pid > 1 {
-                            // SAFETY: We validate that `pid > 1` to ensure we do not target system processes.
-                            unsafe {
-                                libc::kill(pid, libc::SIGKILL);
+        #[cfg(unix)]
+        {
+            if let Some(ref cg) = self.cgroup_path {
+                // Try cgroup.kill
+                let kill_file = cg.join("cgroup.kill");
+                if std::fs::write(&kill_file, "1").is_ok() {
+                    return true;
+                }
+                // Fallback: read cgroup.procs and kill each process
+                let procs_file = cg.join("cgroup.procs");
+                if let Ok(content) = std::fs::read_to_string(&procs_file) {
+                    for line in content.lines() {
+                        if let Ok(pid) = line.trim().parse::<i32>() {
+                            if pid > 1 {
+                                // SAFETY: We validate that `pid > 1` to ensure we do not target system processes.
+                                unsafe {
+                                    libc::kill(pid, libc::SIGKILL);
+                                }
                             }
                         }
                     }
+                    return true;
                 }
-                return true;
             }
         }
         false

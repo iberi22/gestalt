@@ -355,7 +355,9 @@ async fn test_integrate_branches_success_and_conflict() {
         ("agent_b".to_string(), sha_b.clone()),
     ];
 
-    let result = integrate_branches(&repo_path, &base_sha, "integration", &branches).await.unwrap();
+    let result = integrate_branches(&repo_path, &base_sha, "integration", &branches)
+        .await
+        .unwrap();
     assert!(
         !result.merge_sha.is_empty(),
         "Should produce a merge SHA, but got: {:?}",

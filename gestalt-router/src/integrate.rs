@@ -571,7 +571,9 @@ mod tests {
             ("agent_b".to_string(), sha_b),
         ];
 
-        let result = integrate_branches(&repo_path, &base_sha, "integration", &branches).await.unwrap();
+        let result = integrate_branches(&repo_path, &base_sha, "integration", &branches)
+            .await
+            .unwrap();
 
         // Verify that it successfully completed on retry (no conflicts, got a valid merge sha)
         assert!(

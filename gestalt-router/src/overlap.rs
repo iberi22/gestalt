@@ -433,7 +433,8 @@ pub async fn merge_independent_agents(
         base_sha,
         integration_branch,
         &branches_to_merge,
-    ).await?;
+    )
+    .await?;
 
     let merge_sha = if integrate_res.merge_sha.is_empty() {
         None
@@ -837,7 +838,9 @@ mod tests {
             },
         ];
 
-        let result = merge_independent_agents(&repo_path, &base_sha, "main", &agents).await.unwrap();
+        let result = merge_independent_agents(&repo_path, &base_sha, "main", &agents)
+            .await
+            .unwrap();
 
         // Check B results are merged
         assert!(result.merge_sha.is_some());

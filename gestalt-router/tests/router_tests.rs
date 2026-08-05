@@ -10,8 +10,8 @@ use gestalt_router::integrate::{
     integrate_branches, AgentIntegrationSpec, IntegrateResult, MergeResult,
 };
 use gestalt_router::overlap::{
-    detect_overlap, find_overlaps, get_modified_files,
-    ConflictKind as OverlapConflictKind, MergeTestResult, OverlapInfo, OverlapResult,
+    detect_overlap, find_overlaps, get_modified_files, ConflictKind as OverlapConflictKind,
+    MergeTestResult, OverlapInfo, OverlapResult,
 };
 use gestalt_router::run::{
     AgentResult, AgentSpec, AgentStatus, ConflictInfo, ConflictKind, RouterError, RouterErrorKind,

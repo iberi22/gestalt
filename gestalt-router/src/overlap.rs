@@ -397,7 +397,7 @@ pub struct IndependentMergeResult {
 
 /// Integrates branches of successful agents independently, while reporting failed agents separately.
 /// One agent failure does not block the integration/merging of other successful agents.
-pub fn merge_independent_agents(
+pub async fn merge_independent_agents(
     repo_path: &Path,
     base_sha: &str,
     integration_branch: &str,
@@ -433,7 +433,7 @@ pub fn merge_independent_agents(
         base_sha,
         integration_branch,
         &branches_to_merge,
-    )?;
+    ).await?;
 
     let merge_sha = if integrate_res.merge_sha.is_empty() {
         None
@@ -816,8 +816,8 @@ mod tests {
         run_git_test(repo_path, &["checkout", "main"]);
     }
 
-    #[test]
-    fn test_agent_a_fails_agent_b_completes_results_merged() {
+    #[tokio::test]
+    async fn test_agent_a_fails_agent_b_completes_results_merged() {
         let repo_path = create_test_git_repo();
         let base_sha = run_git_test(&repo_path, &["rev-parse", "HEAD"]);
 
@@ -837,7 +837,7 @@ mod tests {
             },
         ];
 
-        let result = merge_independent_agents(&repo_path, &base_sha, "main", &agents).unwrap();
+        let result = merge_independent_agents(&repo_path, &base_sha, "main", &agents).await.unwrap();
 
         // Check B results are merged
         assert!(result.merge_sha.is_some());

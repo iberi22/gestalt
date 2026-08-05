@@ -777,8 +777,8 @@ fn test_mergeresult_variants() {
     }
 }
 
-#[test]
-fn test_integrate_branches_no_conflicts() {
+#[tokio::test]
+async fn test_integrate_branches_no_conflicts() {
     let tmp = TempDir::new("gestalt-integrate-clean");
     let dir = &tmp.path;
     let base_sha = setup_git_repo(dir);
@@ -801,7 +801,7 @@ fn test_integrate_branches_no_conflicts() {
         ("agent_b".to_string(), "branch_agent_b".to_string()),
     ];
 
-    let result = integrate_branches(dir, &base_sha, "integration/main", &branches).unwrap();
+    let result = integrate_branches(dir, &base_sha, "integration/main", &branches).await.unwrap();
     assert!(!result.merge_sha.is_empty(), "expected a merge SHA");
     assert_eq!(result.merged_branches.len(), 2);
     assert!(

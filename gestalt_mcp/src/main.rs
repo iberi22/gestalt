@@ -11,8 +11,8 @@ use std::sync::Arc;
 
 use app_context::GestaltAppContext;
 use clap::{Parser, Subcommand};
-use mcp_protocol_sdk::server::McpServer;
 use mcp_protocol_sdk::server::HttpMcpServer;
+use mcp_protocol_sdk::server::McpServer;
 use mcp_protocol_sdk::transport::{HttpServerTransport, StdioServerTransport};
 use tracing::info;
 
@@ -87,13 +87,13 @@ async fn main() -> anyhow::Result<()> {
                     );
                 }
                 return Ok(());
-            }
+            },
             Commands::Health => {
                 let status = ctx.status();
                 println!("✅ Gestalt MCP Server ({} v{})", args.name, args.version);
                 println!("{}", serde_json::to_string_pretty(&status).unwrap());
                 return Ok(());
-            }
+            },
         }
     }
 
@@ -101,10 +101,7 @@ async fn main() -> anyhow::Result<()> {
         "Starting Gestalt MCP Server ({} v{}) — {} transport",
         args.name, args.version, args.transport
     );
-    println!(
-        "🚀 Gestalt MCP Server ({} v{})",
-        args.name, args.version
-    );
+    println!("🚀 Gestalt MCP Server ({} v{})", args.name, args.version);
     println!("   Transport: {}", args.transport);
 
     match args.transport.as_str() {
@@ -133,7 +130,7 @@ async fn main() -> anyhow::Result<()> {
             info!("Shutting down on Ctrl+C");
             println!("\nShutting down...");
             http_server.stop().await?;
-        }
+        },
         "stdio" => {
             println!("   Mode: stdio (read from stdin, write to stdout)");
 
@@ -143,10 +140,10 @@ async fn main() -> anyhow::Result<()> {
 
             let transport = StdioServerTransport::new();
             server.start(transport).await?;
-        }
+        },
         other => {
             anyhow::bail!("Unsupported transport: {}. Use 'http' or 'stdio'.", other);
-        }
+        },
     }
 
     Ok(())
@@ -159,10 +156,7 @@ fn build_server(name: String, version: String) -> McpServer {
 
 /// Register all tools — both the built-in ones (tools.rs) and the
 /// Gestalt-specific ones (gestalt_tools.rs).
-async fn register_all_tools(
-    server: &McpServer,
-    ctx: Arc<GestaltAppContext>,
-) -> anyhow::Result<()> {
+async fn register_all_tools(server: &McpServer, ctx: Arc<GestaltAppContext>) -> anyhow::Result<()> {
     // 1. Built-in tools (file, git, shell, task, echo, etc.)
     tools::register_standard_tools(server).await?;
 

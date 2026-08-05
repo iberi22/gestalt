@@ -55,7 +55,9 @@ impl ServerStatusHandler {
 impl ToolHandler for ServerStatusHandler {
     async fn call(&self, _arguments: HashMap<String, Value>) -> McpResult<ToolResult> {
         let status = self.ctx.status();
-        Ok(ok_result(serde_json::to_string_pretty(&status).unwrap_or_default()))
+        Ok(ok_result(
+            serde_json::to_string_pretty(&status).unwrap_or_default(),
+        ))
     }
 }
 
@@ -76,8 +78,14 @@ impl BeliefQueryHandler {
 #[async_trait]
 impl ToolHandler for BeliefQueryHandler {
     async fn call(&self, arguments: HashMap<String, Value>) -> McpResult<ToolResult> {
-        let _subject = arguments.get("subject").and_then(|v| v.as_str()).unwrap_or("");
-        let _predicate = arguments.get("predicate").and_then(|v| v.as_str()).unwrap_or("");
+        let _subject = arguments
+            .get("subject")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let _predicate = arguments
+            .get("predicate")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
 
         // In a full implementation, this would query the actual BeliefGraph
         // stored in `self.ctx`.  For now, we return a stub response that
@@ -91,7 +99,9 @@ impl ToolHandler for BeliefQueryHandler {
             "believe_registry": self.ctx.mcp_registry.is_some(),
         });
 
-        Ok(ok_result(serde_json::to_string_pretty(&info).unwrap_or_default()))
+        Ok(ok_result(
+            serde_json::to_string_pretty(&info).unwrap_or_default(),
+        ))
     }
 }
 
@@ -113,8 +123,14 @@ impl SearchHandler {
 #[async_trait]
 impl ToolHandler for SearchHandler {
     async fn call(&self, arguments: HashMap<String, Value>) -> McpResult<ToolResult> {
-        let query = arguments.get("query").and_then(|v| v.as_str()).unwrap_or("");
-        let _limit = arguments.get("limit").and_then(|v| v.as_u64()).unwrap_or(10);
+        let query = arguments
+            .get("query")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let _limit = arguments
+            .get("limit")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(10);
 
         if query.is_empty() {
             return Ok(err_result("Error: query is required".to_string()));
@@ -129,7 +145,9 @@ impl ToolHandler for SearchHandler {
             "note": "Search requires Tantivy index path.  Configure with --search-index <path>",
         });
 
-        Ok(ok_result(serde_json::to_string_pretty(&result).unwrap_or_default()))
+        Ok(ok_result(
+            serde_json::to_string_pretty(&result).unwrap_or_default(),
+        ))
     }
 }
 
@@ -142,17 +160,24 @@ pub struct ProjectAnalyzeHandler;
 #[async_trait]
 impl ToolHandler for ProjectAnalyzeHandler {
     async fn call(&self, arguments: HashMap<String, Value>) -> McpResult<ToolResult> {
-        let path = arguments.get("path").and_then(|v| v.as_str()).unwrap_or(".");
+        let path = arguments
+            .get("path")
+            .and_then(|v| v.as_str())
+            .unwrap_or(".");
         let path = std::path::Path::new(path);
 
         if !path.exists() {
-            return Ok(err_result(format!("Error: path does not exist: {}", path.display())));
+            return Ok(err_result(format!(
+                "Error: path does not exist: {}",
+                path.display()
+            )));
         }
 
         // Use gestalt_core's ProjectContext types via the scanner
         let mut total_files = 0u64;
         let mut total_dirs = 0u64;
-        let mut languages: std::collections::BTreeMap<String, u64> = std::collections::BTreeMap::new();
+        let mut languages: std::collections::BTreeMap<String, u64> =
+            std::collections::BTreeMap::new();
 
         if path.is_dir() {
             for entry in ignore::WalkBuilder::new(path)
@@ -184,7 +209,10 @@ impl ToolHandler for ProjectAnalyzeHandler {
                 }
             }
         } else {
-            return Ok(err_result(format!("Error: not a directory: {}", path.display())));
+            return Ok(err_result(format!(
+                "Error: not a directory: {}",
+                path.display()
+            )));
         }
 
         let analysis = json!({
@@ -194,7 +222,9 @@ impl ToolHandler for ProjectAnalyzeHandler {
             "languages": languages,
         });
 
-        Ok(ok_result(serde_json::to_string_pretty(&analysis).unwrap_or_default()))
+        Ok(ok_result(
+            serde_json::to_string_pretty(&analysis).unwrap_or_default(),
+        ))
     }
 }
 
@@ -224,7 +254,9 @@ impl ToolHandler for RegistryInfoHandler {
                 .unwrap_or(0)
                 .saturating_sub(self.ctx.started_at),
         });
-        Ok(ok_result(serde_json::to_string_pretty(&info).unwrap_or_default()))
+        Ok(ok_result(
+            serde_json::to_string_pretty(&info).unwrap_or_default(),
+        ))
     }
 }
 
@@ -237,8 +269,14 @@ pub struct AgentRunHandler;
 #[async_trait]
 impl ToolHandler for AgentRunHandler {
     async fn call(&self, arguments: HashMap<String, Value>) -> McpResult<ToolResult> {
-        let _question = arguments.get("question").and_then(|v| v.as_str()).unwrap_or("");
-        let _repo = arguments.get("repo").and_then(|v| v.as_str()).unwrap_or(".");
+        let _question = arguments
+            .get("question")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let _repo = arguments
+            .get("repo")
+            .and_then(|v| v.as_str())
+            .unwrap_or(".");
 
         if _question.is_empty() {
             return Ok(err_result("Error: question is required".to_string()));
@@ -253,7 +291,9 @@ impl ToolHandler for AgentRunHandler {
             "status": "not_implemented",
         });
 
-        Ok(ok_result(serde_json::to_string_pretty(&result).unwrap_or_default()))
+        Ok(ok_result(
+            serde_json::to_string_pretty(&result).unwrap_or_default(),
+        ))
     }
 }
 

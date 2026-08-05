@@ -1,5 +1,6 @@
 [build]
-target-dir = "/build/rust-target/gestalt"  # RAM tmpfs (ver skill rust-build-ramdisk)
+# NOTE: target-dir removed — machine-local RAM tmpfs optimization (skill rust-build-ramdisk)
+# broke CI runners (/build/rust-target Permission denied on GitHub Actions).
 
 [alias]
 check-fast = "check -p gestalt_timeline --no-default-features"

@@ -690,27 +690,26 @@ impl ToolHandler for Bm25SearchHandler {
         use gestalt_search::TantivySearchEngine;
 
         match TantivySearchEngine::new(index_path, 1) {
-            Ok(engine) => {
-                match engine.search(query, limit).await {
-                    Ok(results) => {
-                        let serializable: Vec<serde_json::Value> = results
-                            .into_iter()
-                            .map(|r| {
-                                serde_json::json!({
-                                    "id": r.id,
-                                    "path": r.path,
-                                    "content": r.content,
-                                    "snippet": r.snippet,
-                                    "score": r.score,
-                                })
+            Ok(engine) => match engine.search(query, limit).await {
+                Ok(results) => {
+                    let serializable: Vec<serde_json::Value> = results
+                        .into_iter()
+                        .map(|r| {
+                            serde_json::json!({
+                                "id": r.id,
+                                "path": r.path,
+                                "content": r.content,
+                                "snippet": r.snippet,
+                                "score": r.score,
                             })
-                            .collect();
-                        let output = serde_json::to_string_pretty(&serializable).unwrap_or_else(|_| "[]".to_string());
-                        Ok(ok_result(output))
-                    }
-                    Err(e) => Ok(err_result(format!("Search error: {}", e))),
-                }
-            }
+                        })
+                        .collect();
+                    let output = serde_json::to_string_pretty(&serializable)
+                        .unwrap_or_else(|_| "[]".to_string());
+                    Ok(ok_result(output))
+                },
+                Err(e) => Ok(err_result(format!("Search error: {}", e))),
+            },
             Err(e) => Ok(err_result(format!("Failed to open search engine: {}", e))),
         }
     }
@@ -738,10 +737,7 @@ impl ToolHandler for SearchIndexHandler {
             .get("content")
             .and_then(|v| v.as_str())
             .unwrap_or("");
-        let kind = arguments
-            .get("kind")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
+        let kind = arguments.get("kind").and_then(|v| v.as_str()).unwrap_or("");
 
         if index_path.is_empty() {
             return Ok(err_result("Error: index_path is required".to_string()));
@@ -763,12 +759,13 @@ impl ToolHandler for SearchIndexHandler {
         use gestalt_search::TantivySearchEngine;
 
         match TantivySearchEngine::new(index_path, 1) {
-            Ok(engine) => {
-                match engine.index_document(doc_id, doc_path, content, kind).await {
-                    Ok(_) => Ok(ok_result(format!("Document '{}' indexed successfully", doc_id))),
-                    Err(e) => Ok(err_result(format!("Indexing error: {}", e))),
-                }
-            }
+            Ok(engine) => match engine.index_document(doc_id, doc_path, content, kind).await {
+                Ok(_) => Ok(ok_result(format!(
+                    "Document '{}' indexed successfully",
+                    doc_id
+                ))),
+                Err(e) => Ok(err_result(format!("Indexing error: {}", e))),
+            },
             Err(e) => Ok(err_result(format!("Failed to open search engine: {}", e))),
         }
     }
@@ -793,18 +790,18 @@ impl ToolHandler for SearchStatsHandler {
         use gestalt_search::TantivySearchEngine;
 
         match TantivySearchEngine::new(index_path, 1) {
-            Ok(engine) => {
-                match engine.doc_count().await {
-                    Ok(count) => {
-                        let stats = serde_json::json!({
-                            "document_count": count,
-                            "index_path": index_path
-                        });
-                        Ok(ok_result(serde_json::to_string_pretty(&stats).unwrap_or_default()))
-                    }
-                    Err(e) => Ok(err_result(format!("Stats error: {}", e))),
-                }
-            }
+            Ok(engine) => match engine.doc_count().await {
+                Ok(count) => {
+                    let stats = serde_json::json!({
+                        "document_count": count,
+                        "index_path": index_path
+                    });
+                    Ok(ok_result(
+                        serde_json::to_string_pretty(&stats).unwrap_or_default(),
+                    ))
+                },
+                Err(e) => Ok(err_result(format!("Stats error: {}", e))),
+            },
             Err(e) => Ok(err_result(format!("Failed to open search engine: {}", e))),
         }
     }

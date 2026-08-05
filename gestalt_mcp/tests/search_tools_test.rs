@@ -1,8 +1,8 @@
-use mcp_protocol_sdk::server::McpServer;
 use gestalt_mcp::tools;
+use mcp_protocol_sdk::protocol::types::ContentBlock;
+use mcp_protocol_sdk::server::McpServer;
 use serde_json::json;
 use tempfile::tempdir;
-use mcp_protocol_sdk::protocol::types::ContentBlock;
 
 async fn test_server() -> McpServer {
     let server = McpServer::new("test-search-server".into(), "1.0.0".into());
@@ -32,7 +32,10 @@ async fn test_search_index_and_stats() {
     assert!(!stats_result.is_error.unwrap_or(false));
     if let ContentBlock::Text { text, .. } = &stats_result.content[0] {
         let stats: serde_json::Value = serde_json::from_str(text).unwrap();
-        assert_eq!(stats.get("document_count").and_then(|v| v.as_u64()), Some(0));
+        assert_eq!(
+            stats.get("document_count").and_then(|v| v.as_u64()),
+            Some(0)
+        );
     } else {
         panic!("Expected text block");
     }
@@ -43,7 +46,10 @@ async fn test_search_index_and_stats() {
             ("index_path".to_string(), json!(index_path)),
             ("doc_id".to_string(), json!("doc_abc")),
             ("doc_path".to_string(), json!("src/main.rs")),
-            ("content".to_string(), json!("The quick brown fox jumps over the lazy dog")),
+            (
+                "content".to_string(),
+                json!("The quick brown fox jumps over the lazy dog"),
+            ),
             ("kind".to_string(), json!("code")),
         ]
         .into_iter()
@@ -71,7 +77,10 @@ async fn test_search_index_and_stats() {
     assert!(!stats_result2.is_error.unwrap_or(false));
     if let ContentBlock::Text { text, .. } = &stats_result2.content[0] {
         let stats: serde_json::Value = serde_json::from_str(text).unwrap();
-        assert_eq!(stats.get("document_count").and_then(|v| v.as_u64()), Some(1));
+        assert_eq!(
+            stats.get("document_count").and_then(|v| v.as_u64()),
+            Some(1)
+        );
     } else {
         panic!("Expected text block");
     }
@@ -89,7 +98,10 @@ async fn test_bm25_search_tool() {
             ("index_path".to_string(), json!(index_path)),
             ("doc_id".to_string(), json!("doc_rust")),
             ("doc_path".to_string(), json!("lib.rs")),
-            ("content".to_string(), json!("Rust is a beautiful multi-paradigm systems programming language.")),
+            (
+                "content".to_string(),
+                json!("Rust is a beautiful multi-paradigm systems programming language."),
+            ),
             ("kind".to_string(), json!("code")),
         ]
         .into_iter()

@@ -270,13 +270,13 @@
     {
       "id": "feat-event-bus",
       "category": "orchestration",
-      "description": "Universal event bus: any agent (Hermes, Jules, CLI, Gestalt) pushes BusEvent to POST /api/event (:8081); durable StateDb persistence + GET /api/events tail + gestalt bus serve/push",
+      "description": "Universal event bus: router emite run_started/run_finished en tiempo real + POST /api/event para agentes externos; dedup por hash (ventana 300s server-clock); persistencia StateDb + streaming Xavier kind=execution",
       "steps": [
-        "event_bus.rs: BusEvent + persist_event + handle_event",
-        "xavier_sink.rs: streaming bus→Xavier kind=execution, path único por evento",
-        "gestalt_cli: bus serve (axum :8081) + bus push",
-        "gestalt-state: recent_timeline() tail global",
-        "E2E: POST → StateDb → Xavier kind=execution verificado"
+        "event_bus.rs: BusEvent + dedup_hash + is_duplicate + handle_event",
+        "router.rs: emit_bus_event en RunStarted/RunFinished (trazabilidad real)",
+        "xavier_sink.rs: streaming bus→Xavier kind=execution, path único",
+        "gestalt_cli: bus serve/push/replay",
+        "E2E: run real → bus → Xavier verificado"
       ],
       "passes": true,
       "progress_pct": 100,
@@ -287,12 +287,12 @@
     {
       "id": "feat-xavier-thinking",
       "category": "orchestration",
-      "description": "Xavier Thinking Loop: gestalt thinking sintetiza insights (PATTERNS/BLOCKERS/DECISIONS/NEXT) desde ejecuciones recientes vía Ollama qwen3-coder (fallback estructural si offline) y los indexa como kind=insight; idempotente por día",
+      "description": "Xavier Thinking Loop deterministico (sin LLM externo, decision 2026-08-05): gestalt thinking sintetiza PATTERNS/BLOCKERS/DECISIONS/NEXT por agregacion de estados/agentes y lo indexa como kind=insight; idempotente por dia",
       "steps": [
         "thinking.rs: ThinkingLoop (recent_executions → synthesize → index_insight)",
-        "InsightSynthesizer trait + OllamaSynthesizer con fallback estructural",
+        "StructuralSynthesizer determinista (cero dependencias, sin Ollama)",
         "gestalt thinking CLI (--force, --window)",
-        "Tests: 3 nuevos (min gate, window, synthesizer)"
+        "Tests: min gate, window, synthesizer"
       ],
       "passes": true,
       "progress_pct": 100,

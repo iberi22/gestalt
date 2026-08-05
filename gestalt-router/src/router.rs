@@ -13,6 +13,7 @@ use gestalt_ws::WsEvent;
 use gestalt_ws::WsServer;
 
 use crate::agent::AgentRunner;
+use crate::event_bus::BusEvent;
 use crate::overlap::{LiveConflictDetector, OverlapDetector};
 use crate::run::{AgentResult, ConflictInfo, RouterError, RunReport, RunSpec};
 use crate::timeline::{Event, EventLog};
@@ -194,6 +195,23 @@ impl Router {
         }
     }
 
+    /// Emit a BusEvent to the universal event bus: persisted durably in the
+    /// shared StateDb timeline (same store the `bus serve` HTTP endpoint
+    /// serves) and streamed to Xavier as `kind=execution` when available.
+    ///
+    /// This is the missing link of the xavier-thinking-bus design: every
+    /// orchestrated run now registers on the bus in real time, giving full
+    /// traceability (agent, state, llm/provider via metadata, requested_by).
+    fn emit_bus_event(&self, ev: BusEvent) {
+        // Persist to the shared timeline (dedup + sink happen here).
+        let db = self.state_db.clone();
+        let xavier = self.xavier.clone();
+        tokio::spawn(async move {
+            let sink = xavier.map(crate::xavier_sink::XavierEventSink::new);
+            let _ = crate::event_bus::handle_event(&db, &ev, sink.as_ref()).await;
+        });
+    }
+
     /// Main Router pipeline execution using StateDb + MemState.
     pub async fn execute(&self, mut spec: RunSpec) -> Result<RunReport, RouterError> {
         // 1. Validate spec
@@ -241,6 +259,19 @@ impl Router {
             agents: agent_ids.clone(),
             task: spec.task.clone(),
         });
+
+        // 4b. Emit RunStarted on the universal event bus (traceability).
+        self.emit_bus_event(
+            BusEvent::new("gestalt", "run_started", format!("{} agents: {}", agent_ids.len(), spec.task))
+                .with_run_id(run_id.to_string())
+                .with_project(std::env::var("GESTALT_PROJECT").unwrap_or_else(|_| "default".into()))
+                .with_state("Running")
+                .with_metadata(serde_json::json!({
+                    "agents": agent_ids,
+                    "base_sha": base_sha,
+                    "requested_by": std::env::var("GESTALT_REQUESTED_BY").unwrap_or_else(|_| "cli".into()),
+                })),
+        );
         self.broadcast_ws_event(WsEvent::RunStarted {
             run_id: run_id.to_string(),
             task: spec.task.clone(),
@@ -566,6 +597,21 @@ impl Router {
             run_id,
             summary: summary.clone(),
         });
+
+        // 10b. Emit RunFinished on the universal event bus (traceability).
+        let run_id_str_for_bus = run_id.to_string();
+        self.emit_bus_event(
+            BusEvent::new("gestalt", "run_finished", summary.clone())
+                .with_run_id(run_id_str_for_bus.clone())
+                .with_project(std::env::var("GESTALT_PROJECT").unwrap_or_else(|_| "default".into()))
+                .with_state("Success")
+                .with_metadata(serde_json::json!({
+                    "agents": agent_results.len(),
+                    "merged_branches": merged_branches.len(),
+                    "conflicts": conflicts.len(),
+                    "requested_by": std::env::var("GESTALT_REQUESTED_BY").unwrap_or_else(|_| "cli".into()),
+                })),
+        );
         self.broadcast_ws_event(WsEvent::RunFinished {
             run_id: run_id.to_string(),
             summary: summary.clone(),

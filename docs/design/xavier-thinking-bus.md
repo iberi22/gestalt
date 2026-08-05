@@ -466,9 +466,14 @@ push("hermes", "run_finished", summary, project="xavier", state="Success",
 | Phase | Status | Evidence |
 |-------|--------|----------|
 | P0 — Bus + sink | ✅ DONE | event_bus.rs, xavier_sink.rs, `gestalt bus serve/push`, recent_timeline; E2E POST → StateDb → Xavier kind=execution verificado (commit 5063c89) |
-| P1 — Thinking loop | ✅ DONE | thinking.rs, OllamaSynthesizer (+fallback estructural), `gestalt thinking`; E2E: 27 ejecuciones → insight indexado gestalt/thinking/2026-08-05 |
+| P1 — Thinking loop | ✅ DONE | thinking.rs, StructuralSynthesizer (determinista, SIN Ollama — decisión 2026-08-05), `gestalt thinking`; E2E: 27 ejecuciones → insight indexado gestalt/thinking/2026-08-05 |
 | P2 — Hermes + dashboard | ✅ DONE | project-admin/event.py, /api/gestalt/events + /api/gestalt/thinking, vistas bus+thinking |
 | P3 — Hardening + docs | ✅ DONE | `gestalt bus replay` (cursor, dry-run), MemoryResult tolerante, features.json (3 features), SRS REQ-022/023, AGENTS.md SWAL goal |
+| **Bus ↔ Router** | ✅ DONE | **El eslabón faltante**: router.execute() emite `run_started`/`run_finished` al bus en tiempo real (emit_bus_event) — todo run orquestado queda trazado (requested_by, agents, base_sha) |
+| **Dedup** | ✅ DONE | SHA-256 sobre identidad semántica del evento + ventana 300s con reloj del SERVIDOR (created_at) — retries/replays no duplican; E2E: push idéntico → deduped=true |
 
-**Pendiente (mejora continua):** levantar Ollama (qwen3-coder) para insights con LLM real
-(en vez de fallback estructural); cron 30m de `gestalt thinking`; dedup de eventos repetidos.
+**Decisión (2026-08-05, Belal):** NO usar Ollama ni ningún LLM externo para el thinking
+loop — síntesis determinista por agregación. Cero dependencias de servicios.
+
+**Pendiente (mejora continua):** cron 30m de `gestalt thinking`; event.py wiring automático
+en workflows de Hermes (hook post-tarea compleja).

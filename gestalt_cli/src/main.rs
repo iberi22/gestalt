@@ -1822,10 +1822,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let seq = gestalt_router::event_bus::handle_event(&db, &ev, sink.as_ref())
                     .await
                     .map_err(|e| format!("Failed to push event: {}", e))?;
-                println!(
-                    "✅ Event pushed (seq={}) agent={} type={}",
-                    seq, ev.agent, ev.event_type
-                );
+                match seq {
+                    Some(seq) => println!(
+                        "✅ Event pushed (seq={}) agent={} type={}",
+                        seq, ev.agent, ev.event_type
+                    ),
+                    None => println!(
+                        "⏭️  Event deduplicated (identical event within window) agent={} type={}",
+                        ev.agent, ev.event_type
+                    ),
+                }
             },
 
             BusAction::Replay { after_seq, dry_run } => {
@@ -1914,7 +1920,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
 
             let synthesizer: Arc<dyn gestalt_router::thinking::InsightSynthesizer> =
-                Arc::new(bus::OllamaSynthesizer::from_env());
+                Arc::new(bus::StructuralSynthesizer);
             let loop_ = ThinkingLoop::new(xavier, synthesizer).with_window(window);
 
             println!("🧠 Gestalt Thinking Loop (window={}m)", window);
@@ -1937,9 +1943,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 std::process::exit(0);
             }
 
-            println!(
-                "   Synthesizing insight (Ollama qwen3-coder, structural fallback if offline)..."
-            );
+            println!("   Synthesizing deterministic insight (no LLM dependency)...");
             match loop_.run(force).await? {
                 Some(insight) => {
                     println!("\n━━━ INSIGHT ━━━\n{}\n━━━━━━━━━━━━━", insight);

@@ -17,6 +17,9 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tracing::warn;
 
+/// How many seconds back we consider an event a duplicate (same stable hash).
+pub const DEDUP_WINDOW_SECS: i64 = 300;
+
 /// A structured event pushed onto the universal information bus.
 ///
 /// Carries full traceability metadata: who sent it (`agent`), what happened
@@ -91,11 +94,40 @@ impl BusEvent {
         self
     }
 
+    /// Override the RFC3339 timestamp (mainly for tests).
+    pub fn with_ts(mut self, ts: impl Into<String>) -> Self {
+        self.ts = ts.into();
+        self
+    }
+
     /// The timeline run_id used for persistence: the event's own run_id when
     /// present, otherwise a synthetic "bus" bucket so events without a run
     /// still land in a queryable timeline stream.
     pub fn timeline_run_id(&self) -> String {
         self.run_id.clone().unwrap_or_else(|| "bus".to_string())
+    }
+
+    /// Stable content hash used for dedup: SHA-256 over the semantic identity
+    /// of the event (agent + type + run + project + state + summary + ts).
+    /// Two identical events (retries, replay, double-push) share the same hash
+    /// and are skipped within the dedup window.
+    pub fn dedup_hash(&self) -> String {
+        use sha2::{Digest, Sha256};
+        let mut hasher = Sha256::new();
+        hasher.update(self.agent.as_bytes());
+        hasher.update([0u8]);
+        hasher.update(self.event_type.as_bytes());
+        hasher.update([0u8]);
+        hasher.update(self.run_id.as_deref().unwrap_or("").as_bytes());
+        hasher.update([0u8]);
+        hasher.update(self.project.as_deref().unwrap_or("").as_bytes());
+        hasher.update([0u8]);
+        hasher.update(self.state.as_deref().unwrap_or("").as_bytes());
+        hasher.update([0u8]);
+        hasher.update(self.summary.as_bytes());
+        hasher.update([0u8]);
+        hasher.update(self.ts.as_bytes());
+        format!("{:x}", hasher.finalize())
     }
 }
 
@@ -115,17 +147,62 @@ pub fn persist_event(db: &StateDb, ev: &BusEvent) -> Result<i64, String> {
     .map_err(|e| e.to_string())
 }
 
-/// Handle a bus event end-to-end: durable persistence (always) + broadcast +
-/// optional Xavier streaming (fire-and-forget).
+/// Check whether an identical event (same dedup hash) was persisted within the
+/// dedup window. Retries, replays and double-pushes are skipped — this keeps
+/// both StateDb and Xavier free of repetitive duplicates.
+///
+/// The window is measured against the SERVER-side `created_at` of existing
+/// timeline rows (not the emitter-provided `ts`), so emitters with skewed
+/// clocks still deduplicate correctly.
+pub fn is_duplicate(db: &StateDb, ev: &BusEvent) -> Result<bool, String> {
+    let hash = ev.dedup_hash();
+    let recent = db
+        .recent_timeline(500)
+        .map_err(|e| format!("Failed to read timeline for dedup: {}", e))?;
+
+    for existing in recent {
+        let parsed: BusEvent = match serde_json::from_str(&existing.payload) {
+            Ok(b) => b,
+            Err(_) => continue,
+        };
+        if parsed.dedup_hash() == hash {
+            // Same event identity; only a duplicate if the existing row was
+            // created within the dedup window (server clock).
+            let now = chrono::Utc::now();
+            let age_secs = (now - existing.created_at).num_seconds();
+            if age_secs <= DEDUP_WINDOW_SECS {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
+}
+
+/// Handle a bus event end-to-end: dedup check (skip repeats) → durable
+/// persistence (always) → optional Xavier streaming (fire-and-forget).
 ///
 /// - `db`: durable SQLite timeline (required).
 /// - `sink`: optional real-time forwarder to Xavier (`kind=execution`).
 ///   Errors are logged as warnings and never block the caller.
+///
+/// Returns `Ok(Some(seq))` when persisted, `Ok(None)` when skipped as a
+/// duplicate within the dedup window.
 pub async fn handle_event(
     db: &Arc<StateDb>,
     ev: &BusEvent,
     sink: Option<&crate::xavier_sink::XavierEventSink>,
-) -> Result<i64, String> {
+) -> Result<Option<i64>, String> {
+    // Dedup: skip identical events within the window (retries/replays).
+    if is_duplicate(db, ev)? {
+        warn!(
+            agent = %ev.agent,
+            event_type = %ev.event_type,
+            run_id = ?ev.run_id,
+            "bus event SKIPPED (duplicate within window)"
+        );
+        return Ok(None);
+    }
+
     let seq = persist_event(db, ev)?;
 
     if let Some(sink) = sink {
@@ -139,7 +216,7 @@ pub async fn handle_event(
         }
     }
 
-    Ok(seq)
+    Ok(Some(seq))
 }
 
 #[cfg(test)]
@@ -182,5 +259,53 @@ mod tests {
             .with_run_id("01ABCD")
             .with_state("Running");
         assert_eq!(ev.timeline_run_id(), "01ABCD");
+    }
+
+    #[test]
+    fn dedup_hash_is_stable_and_distinct() {
+        let a = BusEvent::new("hermes", "run_finished", "27/27 PASS")
+            .with_run_id("r1")
+            .with_ts("2026-08-05T10:00:00Z");
+        let b = BusEvent::new("hermes", "run_finished", "27/27 PASS")
+            .with_run_id("r1")
+            .with_ts("2026-08-05T10:00:00Z");
+        let c = BusEvent::new("hermes", "run_finished", "27/27 PASS")
+            .with_run_id("r1")
+            .with_ts("2026-08-05T10:01:00Z");
+
+        assert_eq!(
+            a.dedup_hash(),
+            b.dedup_hash(),
+            "identical events share hash"
+        );
+        assert_ne!(
+            a.dedup_hash(),
+            c.dedup_hash(),
+            "different ts → different hash"
+        );
+        assert_eq!(a.dedup_hash().len(), 64, "sha256 hex");
+    }
+
+    #[tokio::test]
+    async fn handle_event_dedups_identical_pushes() {
+        let db = Arc::new(
+            StateDb::open(
+                std::env::temp_dir()
+                    .join(format!("gestalt-dedup-test-{}.db", uuid::Uuid::new_v4())),
+            )
+            .unwrap(),
+        );
+
+        let ev = BusEvent::new("hermes", "run_finished", "dedup test")
+            .with_run_id("run-dedup")
+            .with_ts(chrono::Utc::now().to_rfc3339());
+
+        // First push persists.
+        let first = handle_event(&db, &ev, None).await.unwrap();
+        assert!(first.is_some(), "first push persists");
+
+        // Identical push within the window is skipped.
+        let second = handle_event(&db, &ev, None).await.unwrap();
+        assert!(second.is_none(), "duplicate push is deduplicated");
     }
 }

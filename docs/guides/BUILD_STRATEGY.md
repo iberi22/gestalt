@@ -43,5 +43,4 @@ cargo test --all
 ```bash
 cargo build -p gestalt_core
 cargo test -p gestalt_cli
-cargo check -p gestalt_swarm
 ```

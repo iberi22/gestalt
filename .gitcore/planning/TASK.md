@@ -1,34 +1,35 @@
-# 📋 TASK.md - Release Tasks (`v1.0.0`)
+# TASK.md — Session: feature-scan features.json
 
-_Last update: 2026-03-03_
+_Last update: 2026-07-27_
 
-## Release Objective
-Validate production gates and finalize release readiness for `v1.0.0`.
+## Objective
+Full feature scan of `.gitcore/features.json` with concrete grep/find against codebase (Ola 5 / commit `28e9209` lineage). No GH issues.
 
-## Completed Issues (`v1.0.0`)
-| Issue | Title | Status |
-|---|---|---|
-| #33 | Integrate Resilience and Compaction framework improvements | ✅ Closed |
-| #31 | PLAN: Production-Ready CLI Roadmap | ✅ Closed |
-| #8 | CLEANUP: Resolve compiler warnings and errors | ✅ Closed |
-| #19 | Native Agent Tools Implementation | ✅ Closed |
-| #21 | Multi-Agent Handoff & Hive Delegation | ✅ Closed |
-| #82 | Benchmark + Leaderboard system | ✅ Closed |
-| #83 | VFS binary support + FileWatcher | ✅ Closed |
+## Done
+- [x] Read all 12 features from `.gitcore/features.json`
+- [x] Concrete greps per feature (swarm_bridge, SurrealDbAdapter, tantivy/BM25, BeliefGraph, MCP, router Ola5 symbols, CliAdapter, StateDbEventLog)
+- [x] Set `progress_pct: 100` for implemented features (incl. `feat-unified-storage` — graph deferred to belief-graph)
+- [x] Left failing: `feat-hybrid-search` (35), `feat-belief-graph` (0)
+- [x] Metadata invariant: `passing(10) + failing(2) == total_features(12)`
+- [x] `overall_progress_pct` → 82.1; synced `implementation-score.json`
+- [x] No GitHub issues created
 
-## Gate Checklist
-- [x] Benchmark workflow made permission-safe for PR comments.
-- [x] Benchmark workflow imports Rust metrics into leaderboard storage (`agent_benchmark sync-rust`).
-- [x] Timeline schema initialization hardened for engine compatibility.
-- [x] Base-version patch validation hardened in FileManager.
-- [x] Runtime file-read observation sanitized.
-- [x] CLI HTTP timeout support for MCP calls.
-- [x] MCP blocking handlers converted to async-safe execution.
-- [x] Full workspace tests passing in clean CI run (`cargo test --workspace --all-targets`).
-- [x] Final warning budget validated for release branch (`cargo clippy --workspace --all-targets -D warnings`).
-- [x] Tag and release artifacts published as `v1.0.0`.
+## Verdict table
+| id | passes | pct | grep result |
+|----|--------|-----|-------------|
+| feat-swarm-bridge | true | 100 | AGENTS×15 + asyncio.gather |
+| feat-swarm-smart-selection | true | 100 | select_agents |
+| feat-swarm-dynamic-count | true | 100 | score_goal_complexity / calculate_optimal_n |
+| feat-swarm-streaming | true | 100 | --watch / --poll-interval |
+| feat-unified-storage | true | 100 | SurrealDbAdapter + cosine vectors |
+| feat-hybrid-search | false | 35 | no tantivy/BM25 |
+| feat-belief-graph | false | 0 | no BeliefGraph |
+| feat-mcp-server | true | 70 | client/registry only |
+| feat-src-reference | true | 80 | SRC.md skeleton |
+| feat-router-mvp | true | 100 | AtomicCheckpointer…Router::execute |
+| feat-cli-run | true | 100 | RunSpec + CliAdapter + JoinSet |
+| feat-event-log | true | 100 | StateDbEventLog + gestalt-ws |
 
-## Notes
-- Open GitHub issues: none (as of 2026-03-03).
-- Any new scope is blocked until the gate checklist is green.
-- Use GitHub issue comments for live status; keep this file as synchronized summary.
+## Do not
+- Create GitHub issues
+- Mark hybrid/belief as passing without code

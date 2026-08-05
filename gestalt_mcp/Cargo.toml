@@ -1,0 +1,46 @@
+[package]
+name = "gestalt_mcp"
+version = "1.0.0"
+edition = "2021"
+description = "Gestalt standalone MCP server — exposes Gestalt tools via the Model Context Protocol (HTTP/SSE + stdio)"
+
+[[bin]]
+name = "gestalt_mcp"
+path = "src/main.rs"
+
+[lib]
+name = "gestalt_mcp"
+path = "src/lib.rs"
+
+[dependencies]
+gestalt_core = { path = "../gestalt_core" }
+
+# Async runtime
+tokio = { version = "1.49", features = ["full"] }
+async-trait = "0.1"
+
+# MCP protocol
+mcp-protocol-sdk = { version = "0.5.1", features = ["http", "stdio"] }
+
+# CLI
+clap = { version = "4.5", features = ["derive"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# File system
+ignore = "0.4"
+
+# Lazy statics (task store)
+lazy_static = "1.5"
+
+# UUID (instance id)
+uuid = { version = "1.15", features = ["v4"] }
+
+# Error handling
+anyhow = "1.0"

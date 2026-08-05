@@ -17,12 +17,13 @@ Gestalt is a context-aware AI Agent Orchestration Platform built in Rust. It pro
 - **Cleanup:** Doctor module for orphaned run detection and pruning
 - **Tools:** 12+ built-in (git, shell, file, search, ask_ai, etc.)
 
-## 📦 Workspace Crates (4 active, 1 excluded)
+## 📦 Workspace Crates (5 active, 1 excluded)
 
 | Crate | Type | Description |
 |-------|------|-------------|
 | `gestalt_core` | lib | VFS, auth, LLM adapters, agent tools, MCP client |
 | `gestalt_cli` | bin | REPL + CLI commands (includes `gestalt run`) |
+| `gestalt_mcp` | lib+bin | **Standalone MCP server** — 18+ tools, HTTP/SSE + stdio transport, `GestaltAppContext` shared state |
 | `gestalt-router` | lib | **Wave 1 — Router MVP** WorktreeManager, Checkpointer, OverlapDetector, Integrate, Timeline, Doctor, Router::execute |
 | `gestalt_swarm` | bin | **EXCLUDED** Legacy swarm coordinator (not in workspace) |
 | `synapse-agentic` | lib | Tool registry + agentic primitives |
@@ -51,6 +52,7 @@ Gestalt is a context-aware AI Agent Orchestration Platform built in Rust. It pro
 - **CI:** ✅ All 119 tests passing (`cargo test -p gestalt-router`)
 - **Build:** ✅ `cargo check --workspace` clean
 - **Linting:** Zero clippy errors on main
+- **Tests:** ✅ gestalt_mcp — 7 integration tests passing
 - **Vulnerabilities:** 5 Dependabot alerts pending (jsonwebtoken, lru, rand, rustls-webpki)
 
 ## 🗑️ Removed (2026-04-16)
@@ -58,7 +60,6 @@ Gestalt is a context-aware AI Agent Orchestration Platform built in Rust. It pro
 - gestalt_app (Flutter app)
 - gestalt_terminal (TUI)
 - gestalt_ui (UI components)
-- gestalt_mcp (standalone server)
 - gestaltctl (admin binary)
 - gestalt_infra_github
 - gestalt_infra_embeddings

@@ -35,42 +35,17 @@ jobs:
         run: |
           cargo test -p gestalt_core --all-targets
           cargo test -p gestalt_cli --all-targets
-          cargo test -p gestalt_timeline --lib -- --test-threads=1
+          cargo test -p gestalt-router --all-targets
+          cargo test -p gestalt-state --all-targets
+          cargo test -p gestalt-ws --all-targets
+          cargo test -p gestalt-wasm --all-targets
           cargo check \
             -p synapse-agentic \
-            -p gestalt_mcp \
-            -p gestaltctl \
-            -p gestalt_infra_github \
-            -p gestalt_infra_embeddings \
+            -p gestalt-merge \
             --all-targets
 
       - name: Cargo Build All Features
         run: cargo build --workspace --all-features --all-targets
-
-  build-backend:
-    name: Build Backend (Windows)
-    runs-on: windows-latest
-    needs: [quality-gate]
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Install Rust Toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: x86_64-pc-windows-msvc
-
-      - name: Rust Cache
-        uses: Swatinem/rust-cache@v2
-
-      - name: Build Backend
-        run: cargo build --release -p gestalt_timeline
-
-      - name: Upload Backend Artifact
-        uses: actions/upload-artifact@v7
-        with:
-          name: neural-link-backend-windows
-          path: target/release/gestalt.exe
-          if-no-files-found: error
 
   build-cli:
     name: Build CLI
@@ -122,7 +97,7 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Setup Java
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v5.6.0
         with:
           distribution: 'zulu'
           java-version: '17'
@@ -147,15 +122,9 @@ jobs:
 
   create-release:
     name: Create Release
-    needs: [quality-gate, build-backend, build-cli, build-mobile]
+    needs: [quality-gate, build-cli, build-mobile]
     runs-on: ubuntu-latest
     steps:
-      - name: Download Windows Backend
-        uses: actions/download-artifact@v8
-        with:
-          name: neural-link-backend-windows
-          path: release-assets
-
       - name: Download Android App
         uses: actions/download-artifact@v8
         with:
@@ -192,7 +161,6 @@ jobs:
 
       - name: Prepare Release Binaries
         run: |
-          cp release-assets/gestalt.exe release-assets/gestalt_timeline.exe
           mkdir -p release-assets/neural-link-app-android
           cp release-assets/app-release.apk release-assets/neural-link-app-android/app-release.apk
 
@@ -204,7 +172,6 @@ jobs:
           draft: false
           prerelease: false
           files: |
-            release-assets/gestalt_timeline.exe
             release-assets/neural-link-app-android/app-release.apk
             release-assets/gestalt-cli-windows/gestalt-cli-windows.exe
             release-assets/gestalt-cli-linux/gestalt-cli-linux

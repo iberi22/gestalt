@@ -304,15 +304,15 @@ mod tests {
         assert!(!mem.release_lock("test.lock", "agent-1"));
     }
 
-    #[test]
-    fn test_lock_expiry() {
+    #[tokio::test]
+    async fn test_lock_expiry() {
         let mem = MemState::new();
 
         // Acquire with 0-second TTL (effectively immediate expiry)
         assert!(mem.try_lock("/tmp/expire.lock", "agent-1", "run-1", 0));
 
         // Give time for the 0-second TTL to expire
-        std::thread::sleep(Duration::from_millis(10));
+        tokio::time::sleep(Duration::from_millis(10)).await;
 
         // After expiry, a different agent should be able to acquire
         assert!(mem.try_lock("/tmp/expire.lock", "agent-2", "run-2", 30));

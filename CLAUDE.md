@@ -9,7 +9,7 @@ gestalt/
 ├── gestalt_cli/          # CLI binary (entry point)
 ├── gestalt_core/         # Core library (agents, tools, context)
 ├── gestalt_timeline/     # Timeline tracking
-├── gestalt_swarm/        # Swarm orchestration
+├── gestalt_swarm/        # EXCLUDED — Legacy swarm orchestration (not in workspace)
 ├── gestalt_mcp/          # MCP protocol integration
 ├── gestalt_infra_github/ # GitHub integration
 ├── synapse-agentic/      # Agentic primitives

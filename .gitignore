@@ -22,3 +22,12 @@ metrics.db
 # OS
 .DS_Store
 Thumbs.db
+
+# Patch files
+*.patch
+
+# Audit notes
+audit_notes.md
+
+# Existing checkout
+/existing

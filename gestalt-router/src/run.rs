@@ -1,7 +1,6 @@
 use crate::run_state::AgentState;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::path::{Component, Path, PathBuf};
 use thiserror::Error;
 use uuid::Uuid;
 
@@ -196,81 +195,5 @@ impl RouterError {
     #[allow(non_snake_case)]
     pub fn Timeout(msg: impl Into<String>) -> Self {
         Self::timeout(msg)
-    }
-}
-
-fn run_git_cmd(repo_path: &Path, args: &[&str]) -> Result<String, String> {
-    let output = std::process::Command::new("git")
-        .args(args)
-        .current_dir(repo_path)
-        .output()
-        .map_err(|e| e.to_string())?;
-
-    if output.status.success() {
-        Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
-    } else {
-        Err(String::from_utf8_lossy(&output.stderr).trim().to_string())
-    }
-}
-
-fn normalize_path(path: &Path) -> PathBuf {
-    let mut components = Vec::new();
-    let mut is_absolute = path.is_absolute();
-    for component in path.components() {
-        match component {
-            Component::ParentDir => {
-                components.pop();
-            },
-            Component::CurDir => {},
-            Component::Normal(c) => {
-                components.push(c);
-            },
-            Component::RootDir => {
-                is_absolute = true;
-            },
-            _ => {},
-        }
-    }
-    let mut result = PathBuf::new();
-    if is_absolute {
-        result.push("/");
-    }
-    for c in components {
-        result.push(c);
-    }
-    result
-}
-
-fn is_symlink_escape(worktree_root: &Path, file_path: &Path) -> bool {
-    if let Ok(target) = std::fs::read_link(file_path) {
-        let resolved = if target.is_absolute() {
-            target
-        } else {
-            let parent = file_path.parent().unwrap_or(worktree_root);
-            parent.join(target)
-        };
-        let norm_root = normalize_path(worktree_root);
-        let norm_resolved = normalize_path(&resolved);
-        if !norm_resolved.starts_with(&norm_root) {
-            return true;
-        }
-    }
-    false
-}
-
-fn scan_for_symlink_escapes(dir: &Path, current_dir: &Path, escaped_symlinks: &mut Vec<PathBuf>) {
-    if let Ok(entries) = std::fs::read_dir(current_dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if let Ok(metadata) = std::fs::symlink_metadata(&path) {
-                if metadata.file_type().is_symlink() {
-                    if is_symlink_escape(dir, &path) {
-                        escaped_symlinks.push(path.clone());
-                    }
-                } else if metadata.is_dir() {
-                    scan_for_symlink_escapes(dir, &path, escaped_symlinks);
-                }
-            }
-        }
     }
 }

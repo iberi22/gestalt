@@ -23,7 +23,6 @@ We follow **Conventional Commits** with extended context.
 ## Scopes
 - `cli`: gestalt_cli
 - `core`: gestalt_core
-- `swarm`: gestalt_swarm
 - `timeline`: gestalt_timeline
 - `synapse`: synapse-agentic
 - `docs`: documentation

@@ -44,9 +44,10 @@ BASE = """# [Ola 1.{n:02d}] {title}
 {files}
 
 ## DO NOT touch
-- gestalt_core/, synapse-agentic/, gestalt_swarm/ (excluded)
+- gestalt_core/, synapse-agentic/
 - gestalt_cli/src/repl.rs (unrelated)
 - Any file not listed in 'Files to Modify'
+- Note: gestalt_swarm is legacy and excluded from the Cargo workspace — never use cargo -p gestalt_swarm
 
 ## Anti-Hallucination Guard
 1. Verify file existence with `ls path/to/file` before modifying

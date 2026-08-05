@@ -9,143 +9,10 @@ use anyhow::Result;
 use std::path::PathBuf;
 use tracing::warn;
 
-// ============================================================================
-// Local Mocks for Missing gestalt_timeline Crate
-// ============================================================================
+use gestalt_core::models::{
+    categorize_error, AgentStats, ExecutionMetrics, NextStep, PriorityUpdate,
+};
 
-pub fn categorize_error(e: &str) -> Option<String> {
-    if e.contains("timeout") {
-        Some("Timeout".to_string())
-    } else if e.contains("rate limit") {
-        Some("RateLimit".to_string())
-    } else {
-        Some("Generic".to_string())
-    }
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct FlexibleTimestamp(String);
-
-impl FlexibleTimestamp {
-    pub fn now() -> Self {
-        Self("2025-01-01T00:00:00Z".to_string())
-    }
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct ExecutionMetrics {
-    pub id: Option<String>,
-    pub run_id: String,
-    pub agent_id: String,
-    pub agent_type: String,
-    pub success: bool,
-    pub duration_ms: u64,
-    pub tools_used: u32,
-    pub return_code: Option<i32>,
-    pub error_category: Option<String>,
-    pub error_message: Option<String>,
-    pub timestamp: FlexibleTimestamp,
-    pub project_id: Option<String>,
-    pub output_lines: Option<u32>,
-    pub metadata: std::collections::HashMap<String, String>,
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct NextStep {
-    pub agent_type: String,
-    pub confidence: f32,
-    pub action: String,
-    pub reason: String,
-    pub error_category: Option<String>,
-}
-
-pub struct PriorityUpdate {
-    pub agent_type: String,
-    pub old_priority: f32,
-    pub new_priority: f32,
-    pub reason: String,
-}
-
-pub struct AgentStats {
-    pub agent_type: String,
-    pub failure_rate: f32,
-}
-
-pub struct Settings {
-    pub database: String,
-}
-
-impl Settings {
-    pub fn new() -> Result<Self> {
-        Ok(Self {
-            database: "mock".to_string(),
-        })
-    }
-}
-
-pub struct SurrealClient;
-
-impl SurrealClient {
-    pub async fn connect(_db_url: &str) -> Result<Self> {
-        Ok(Self)
-    }
-}
-
-pub struct FeedbackLoopService {
-    _client: SurrealClient,
-}
-
-impl FeedbackLoopService {
-    pub fn new(client: SurrealClient) -> Self {
-        Self { _client: client }
-    }
-
-    pub async fn record_metrics(&self, _metrics: ExecutionMetrics) -> Result<()> {
-        Ok(())
-    }
-
-    pub async fn analyze_and_update_priorities(
-        &self,
-        _run_id: &str,
-    ) -> Result<Vec<PriorityUpdate>> {
-        // Return dummy priority update for testing/compilation
-        Ok(vec![PriorityUpdate {
-            agent_type: "CoderAgent".to_string(),
-            old_priority: 1.0,
-            new_priority: 1.5,
-            reason: "Increased success rate detected".to_string(),
-        }])
-    }
-
-    pub async fn generate_next_steps(&self) -> Result<Vec<NextStep>> {
-        Ok(vec![NextStep {
-            agent_type: "CoderAgent".to_string(),
-            confidence: 0.9,
-            action: "Refactor database pool".to_string(),
-            reason: "Database timeout errors observed".to_string(),
-            error_category: Some("Timeout".to_string()),
-        }])
-    }
-
-    pub async fn get_priority(&self, _agent_type: &str) -> f32 {
-        1.5
-    }
-
-    pub async fn get_all_priorities(&self) -> Vec<(String, f32)> {
-        vec![("CoderAgent".to_string(), 1.5)]
-    }
-
-    pub async fn get_stats(&self) -> Result<Vec<AgentStats>> {
-        Ok(vec![AgentStats {
-            agent_type: "CoderAgent".to_string(),
-            failure_rate: 0.1,
-        }])
-    }
-
-    pub async fn get_next_steps_for_agent(&self, _agent_type: &str) -> Result<Vec<NextStep>> {
-        self.generate_next_steps().await
-    }
-}
 
 // ============================================================================
 // Swarm Bridge Parsing & Handling
@@ -217,68 +84,14 @@ fn convert_result(run_id: &str, result: &SwarmBridgeResult) -> ExecutionMetrics 
         error_message: error_msg.map(|e| e.chars().take(200).collect()),
         timestamp: chrono::Utc::now().to_rfc3339(),
         project_id: None,
-        output_lines: result.lines.as_ref().map(|l| l.len() as u32),
+        output_lines: result.lines.as_ref().map(|l| l.len() as u64),
         metadata: Default::default(),
-    }
-}
-
-pub fn categorize_error(stderr: &str) -> Option<String> {
-    let lower = stderr.to_lowercase();
-    if lower.contains("timeout") || lower.contains("timed out") {
-        Some("timeout".to_string())
-    } else if lower.contains("rate limit") || lower.contains("429") {
-        Some("rate_limit".to_string())
-    } else if lower.contains("auth") || lower.contains("key") {
-        Some("authentication".to_string())
-    } else {
-        Some("unknown".to_string())
     }
 }
 
 // ============================================================================
 // Core Models and Feedback Loop Data Structures
 // ============================================================================
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct ExecutionMetrics {
-    pub id: Option<String>,
-    pub run_id: String,
-    pub agent_id: String,
-    pub agent_type: String,
-    pub success: bool,
-    pub duration_ms: u64,
-    pub tools_used: u32,
-    pub return_code: Option<i32>,
-    pub error_category: Option<String>,
-    pub error_message: Option<String>,
-    pub timestamp: String,
-    pub project_id: Option<String>,
-    pub output_lines: Option<u32>,
-    pub metadata: serde_json::Value,
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct NextStep {
-    pub agent_type: String,
-    pub confidence: f64,
-    pub action: String,
-    pub reason: String,
-    pub error_category: Option<String>,
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct PriorityUpdate {
-    pub agent_type: String,
-    pub old_priority: u32,
-    pub new_priority: u32,
-    pub reason: String,
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct AgentStats {
-    pub agent_type: String,
-    pub failure_rate: f64,
-}
 
 /// ExecutionHistory: tracks per-agent success/fail/timeout rates
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -289,14 +102,14 @@ pub struct ExecutionHistory {
     pub timeout_count: usize,
     pub total_duration_ms: u64,
     pub success_rate: f64,
-    pub current_priority: u32,
+    pub current_priority: u64,
 }
 
 /// MetricDrivenPriorities: represents priority adjustments driven by historical execution metrics
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct MetricDrivenPriorities {
     pub agent_type: String,
-    pub priority: u32,
+    pub priority: u64,
     pub reason: String,
 }
 
@@ -364,7 +177,7 @@ pub struct FeedbackReport {
 impl FeedbackReport {
     pub fn generate(
         history: &[ExecutionMetrics],
-        priorities: &std::collections::HashMap<String, u32>,
+        priorities: &std::collections::HashMap<String, u64>,
     ) -> Self {
         let mut agent_types = std::collections::HashSet::new();
         for m in history {
@@ -406,7 +219,7 @@ impl FeedbackReport {
                 } else {
                     0.0
                 },
-                current_priority: *priorities.get(&at).unwrap_or(&100),
+                current_priority: *priorities.get(&at).unwrap_or(&100u64),
             });
         }
 
@@ -464,7 +277,7 @@ impl FeedbackReport {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
 pub struct SwarmMetricsDb {
     pub metrics: Vec<ExecutionMetrics>,
-    pub priorities: std::collections::HashMap<String, u32>,
+    pub priorities: std::collections::HashMap<String, u64>,
 }
 
 // ============================================================================
@@ -482,7 +295,17 @@ impl FeedbackLoopService {
         Self { db_path: path }
     }
 
-    fn read_db(&self) -> SwarmMetricsDb {
+    fn get_lock_file(&self) -> Result<std::fs::File> {
+        let lock_path = self.db_path.with_extension("lock");
+        let file = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .open(&lock_path)?;
+        Ok(file)
+    }
+
+    fn read_db_unlocked(&self) -> SwarmMetricsDb {
         if let Ok(content) = std::fs::read_to_string(&self.db_path) {
             serde_json::from_str(&content).unwrap_or_default()
         } else {
@@ -490,27 +313,53 @@ impl FeedbackLoopService {
         }
     }
 
-    fn write_db(&self, db: &SwarmMetricsDb) -> Result<()> {
+    fn write_db_unlocked(&self, db: &SwarmMetricsDb) -> Result<()> {
         let content = serde_json::to_string_pretty(db)?;
         let _ = std::fs::write(&self.db_path, &content);
         Ok(())
     }
 
+    fn read_db(&self) -> SwarmMetricsDb {
+        match self.get_lock_file() {
+            Ok(file) => {
+                let lock = fd_lock::RwLock::new(file);
+                let _guard = lock.read().ok();
+                self.read_db_unlocked()
+            }
+            Err(_) => self.read_db_unlocked()
+        }
+    }
+
+    fn update_db<F, R>(&self, f: F) -> Result<R>
+    where
+        F: FnOnce(&mut SwarmMetricsDb) -> R,
+    {
+        let file = self.get_lock_file()?;
+        let mut lock = fd_lock::RwLock::new(file);
+        let _guard = lock.write()?; // exclusive write lock
+
+        let mut db = self.read_db_unlocked();
+        let result = f(&mut db);
+        self.write_db_unlocked(&db)?;
+
+        Ok(result)
+    }
+
     pub async fn record_metrics(&self, metrics: ExecutionMetrics) -> Result<()> {
-        let mut db = self.read_db();
-        db.metrics.push(metrics);
-        self.write_db(&db)?;
+        self.update_db(|db| {
+            db.metrics.push(metrics);
+        })?;
         Ok(())
     }
 
-    pub async fn get_priority(&self, agent_type: &str) -> u32 {
+    pub async fn get_priority(&self, agent_type: &str) -> u64 {
         let db = self.read_db();
-        *db.priorities.get(agent_type).unwrap_or(&100)
+        *db.priorities.get(agent_type).unwrap_or(&100u64)
     }
 
-    pub async fn get_all_priorities(&self) -> Vec<(String, u32)> {
+    pub async fn get_all_priorities(&self) -> Vec<(String, u64)> {
         let db = self.read_db();
-        let mut priorities: Vec<(String, u32)> = db.priorities.clone().into_iter().collect();
+        let mut priorities: Vec<(String, u64)> = db.priorities.clone().into_iter().collect();
         priorities.sort_by(|a, b| b.1.cmp(&a.1));
         priorities
     }
@@ -544,55 +393,51 @@ impl FeedbackLoopService {
         &self,
         _run_id: &str,
     ) -> Result<Vec<PriorityUpdate>> {
-        let mut db = self.read_db();
-        let mut updates = Vec::new();
+        self.update_db(|db| {
+            let mut updates = Vec::new();
 
-        let mut agent_types = std::collections::HashSet::new();
-        for m in &db.metrics {
-            agent_types.insert(m.agent_type.clone());
-        }
+            let mut agent_types = std::collections::HashSet::new();
+            for m in &db.metrics {
+                agent_types.insert(m.agent_type.clone());
+            }
 
-        for at in agent_types {
-            let agent_metrics: Vec<&ExecutionMetrics> =
-                db.metrics.iter().filter(|m| m.agent_type == at).collect();
-            let total = agent_metrics.len();
-            if total > 0 {
-                let successful = agent_metrics.iter().filter(|m| m.success).count();
-                let success_rate = successful as f64 / total as f64;
+            for at in agent_types {
+                let agent_metrics: Vec<&ExecutionMetrics> =
+                    db.metrics.iter().filter(|m| m.agent_type == at).collect();
+                let total = agent_metrics.len();
+                if total > 0 {
+                    let successful = agent_metrics.iter().filter(|m| m.success).count();
+                    let success_rate = successful as f64 / total as f64;
 
-                let old_priority = *db.priorities.get(&at).unwrap_or(&100);
+                    let old_priority = *db.priorities.get(&at).unwrap_or(&100u64);
 
-                // Adjust priority dynamically based on success rate
-                let new_priority = if success_rate >= 0.90 {
-                    150
-                } else if success_rate >= 0.70 {
-                    100
-                } else {
-                    50
-                };
+                    // Adjust priority dynamically based on success rate
+                    let new_priority = if success_rate >= 0.90 {
+                        150
+                    } else if success_rate >= 0.70 {
+                        100
+                    } else {
+                        50
+                    };
 
-                if old_priority != new_priority {
-                    let reason = format!(
-                        "MetricDrivenPriorities: success rate is {:.1}% based on {} executions",
-                        success_rate * 100.0,
-                        total
-                    );
-                    updates.push(PriorityUpdate {
-                        agent_type: at.clone(),
-                        old_priority,
-                        new_priority,
-                        reason,
-                    });
-                    db.priorities.insert(at, new_priority);
+                    if old_priority != new_priority {
+                        let reason = format!(
+                            "MetricDrivenPriorities: success rate is {:.1}% based on {} executions",
+                            success_rate * 100.0,
+                            total
+                        );
+                        updates.push(PriorityUpdate {
+                            agent_type: at.clone(),
+                            old_priority,
+                            new_priority,
+                            reason,
+                        });
+                        db.priorities.insert(at, new_priority);
+                    }
                 }
             }
-        }
-
-        if !updates.is_empty() {
-            self.write_db(&db)?;
-        }
-
-        Ok(updates)
+            updates
+        })
     }
 
     pub async fn generate_next_steps(&self) -> Result<Vec<NextStep>> {
@@ -978,5 +823,62 @@ mod tests {
 
         // Clean up test database file
         let _ = std::fs::remove_file(&db_path);
+    }
+
+    #[tokio::test]
+    async fn test_concurrent_writes_no_clobber() {
+        let temp_dir = std::env::temp_dir();
+        let db_path = temp_dir.join("test_swarm_metrics_concurrent.json");
+        // Clean up both JSON and lock file
+        let _ = std::fs::remove_file(&db_path);
+        let _ = std::fs::remove_file(db_path.with_extension("lock"));
+
+        let service = std::sync::Arc::new(FeedbackLoopService {
+            db_path: db_path.clone(),
+        });
+
+        // Spawn 40 concurrent tasks, each writing one unique metric
+        let num_tasks = 40;
+        let mut handles = vec![];
+
+        for i in 0..num_tasks {
+            let s = service.clone();
+            handles.push(tokio::spawn(async move {
+                let metrics = ExecutionMetrics {
+                    id: None,
+                    run_id: "concurrent-run".to_string(),
+                    agent_id: format!("agent-{}", i),
+                    agent_type: "TestAgent".to_string(),
+                    success: true,
+                    duration_ms: 100,
+                    tools_used: 1,
+                    return_code: Some(0),
+                    error_category: None,
+                    error_message: None,
+                    timestamp: "2026-03-31T00:00:00Z".to_string(),
+                    project_id: None,
+                    output_lines: Some(5),
+                    metadata: serde_json::Value::Null,
+                };
+                s.record_metrics(metrics).await.unwrap();
+            }));
+        }
+
+        // Wait for all tasks to complete
+        for h in handles {
+            h.await.unwrap();
+        }
+
+        // Generate report or read db directly to count records
+        let report = service.generate_report().await.unwrap();
+        assert_eq!(
+            report.total_executions, num_tasks,
+            "Expected exactly {} executions recorded without clobbering!",
+            num_tasks
+        );
+
+        // Clean up
+        let _ = std::fs::remove_file(&db_path);
+        let _ = std::fs::remove_file(db_path.with_extension("lock"));
     }
 }

@@ -1,3 +1,4 @@
+pub mod belief_graph;
 pub mod detector;
 pub mod repo;
 pub mod scanner;

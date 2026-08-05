@@ -1,7 +1,7 @@
 # Gestalt Architecture
 
-> Last Updated: 2026-07-26
-> Status: v2.0 — State backend refactored to SQLite + MemState
+> Last Updated: 2026-07-27
+> Status: v2.1 — Ola 5: gestalt_core domain models, gestalt-ws, transactional state, merge patterns
 
 ## Overview
 
@@ -34,14 +34,15 @@ file system isolation, and timeline tracking.
 
 ## Crate Map
 
-| Crate | Purpose |
-|-------|---------|
-| gestalt-state | SQLite state backend + MemState (new) |
-| gestalt-router | Agent orchestration, worktrees, merge |
-| gestalt_core | Domain types, VFS, XavierClient |
-| gestalt_cli | CLI entry point |
-| gestalt-merge | Branch merging |
-| synapse-agentic | Agent tool primitives |
+|| Crate | Purpose |
+||-------|---------|
+|| gestalt-state | SQLite StateDB + MemState — transactional with auto-retry, virtual_fs |
+|| gestalt-router | Agent orchestration, worktrees, merge (AtomicCheckpointer, ProcessReaper, SerialMergeQueue, WriteSetValidator) |
+|| gestalt_core | Domain types (CoreError, Role, Message), VFS, XavierClient |
+|| gestalt_cli | CLI entry point |
+|| gestalt-merge | Branch merging, CleanSlateRetry integration |
+|| gestalt-ws | WebSocket server — timeline event broadcast to clients |
+|| synapse-agentic | Agent tool primitives |
 
 ## Key Decisions
 
@@ -84,6 +85,18 @@ VfsPort (trait)
 Used for agent workspace isolation. Each agent gets an isolated overlay that is flushed
 to disk only after the run completes.
 
+## Domain Module (`gestalt_core/src/domain/`)
+
+The `domain/` module in `gestalt_core` centralises shared domain types used across all crates:
+
+| File | Contents |
+|------|----------|
+| `error.rs` | `CoreError` enum with typed variants (Vfs, Repository, Mcp, Database, Embedding, Agent, Indexing, Config, Validation, Internal) and a `Result<T>` alias |
+| `mod.rs` | Primitive domain models: `Role`, `Message`, `AgentResponse`, `ConsensusResult` |
+| `genui.rs` | GenUI interaction models |
+| `memory.rs` | Memory/recall models |
+| `rag/` | RAG chunking and embedding models (`embeddings.rs`, `mod.rs`) |
+
 ## Communication Patterns
 
 | Pattern | Mechanism | Use Case |
@@ -91,6 +104,21 @@ to disk only after the run completes.
 | **In-Process** | `tokio::spawn` + shared `Arc<>` state | Swarm (parallel agents, same binary) |
 | **StateDB Events** | SQLite timeline table + MemState broadcast | All agents (persistent event log) |
 | **Process Spawning** | `tokio::process::Command` + stdout/stderr capture | External CLI agents (codex, claude) |
+
+## Ola 5 Patterns
+
+New concurrency, resilience, and integration patterns introduced in v2.1:
+
+| Pattern | Crate | Purpose |
+|---------|-------|---------|
+| **AtomicCheckpointer** | `gestalt-router` (`checkpoint.rs`) | Git-aware checkpoint with rollback: on manifest write failure (real or simulated), performs `git reset --mixed` to original SHA, guaranteeing atomic worktree state |
+| **ProcessReaper** | `gestalt-router` (`agent.rs`) | Cgroups-aware child-process reaper: on `Drop`, sends `SIGTERM` to the process group (descendants + root), ensuring no orphan agents remain after a run ends |
+| **SerialMergeQueue** | `gestalt-router` (`router.rs`) | Sequential branch integration queue: enqueues branches one-at-a-time, accumulating merges; on conflict, rolls back and records the conflict without advancing the queue |
+| **CleanSlateRetry** | `gestalt-router` (`integrate.rs`) | Retry policy for `integrate_branches`: on every retry attempt, starts from a clean-slate base commit, re-applying all remaining branches with a fresh `SerialMergeQueue` |
+| **WriteSetValidator** | `gestalt-router` (`worktree.rs`) | Write-scope enforcement for agent workspaces: validates every `write_block` against the agent's declared `allowed_paths`, rejecting out-of-scope writes with a structured error before they touch the worktree |
+| **TransactionalStateDb** | `gestalt-state` (`statedb.rs`) | Auto-retry wrapper around SQLite `execute_transaction`: uses `Exclusive` transaction behaviour with exponential backoff (50ms × attempt) on `DatabaseBusy`/`DatabaseLocked`, up to a configurable max retries |
+| **StateDbVfs** | `gestalt-state` (`virtual_fs.rs`) | SQLite-backed versioned virtual file system implementing the `VirtualFS` trait: stores file versions with SHA-256 content hashing, supports `read_file`, `write_block` (find-replace), `list_versions`, `get_diff`, and delegated file locking |
+|| **SwarmHealthMonitor** | `gestalt_swarm` (`health.rs`, legacy-only — crate excluded from workspace) | Heartbeat-based health tracking for swarm agents: per-agent `AgentHealth` (heartbeat, uptime, liveness), `watch`-channel `HealthEvent` broadcast to subscribers, restart decisions (`should_restart`), graceful `shutdown`, and a `RecoveryManager` for automated recovery actions |
 
 ## Dependencies
 
@@ -122,6 +150,14 @@ gestalt_cli
 
 gestalt-merge
 └── thiserror
+
+gestalt-ws
+├── tokio
+├── tokio-tungstenite
+├── futures-util
+├── serde / serde_json
+├── chrono
+└── gestalt-state
 
 synapse-agentic
 ├── tokio

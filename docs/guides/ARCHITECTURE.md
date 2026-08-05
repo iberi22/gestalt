@@ -1,6 +1,6 @@
 # Gestalt — Architecture Overview
 
-> **Versión:** 2.0.0 (Router redesign) · Jul 2026
+> **Versión:** 2.1.0 (Ola 5) · Jul 2026
 > **Ver también:** [REDESIGN.md](../REDESIGN.md)
 
 ## System Architecture
@@ -79,12 +79,38 @@
 
 | Crate | Type | Purpose |
 |-------|------|---------|
-| `gestalt_core` | Library | VFS trait, LLM adapters, tool registry |
+| `gestalt_core` | Library | VFS trait, LLM adapters, tool registry, domain layer |
 | `gestalt_router` | Library + Binary | Orchestration core |
 | `gestalt_merge` | Library | 3-way merge engine (Phase 2) |
 | `gestalt_cli` | Binary | CLI interface |
+| `gestalt-state` | Library | Transactional SQLite StateDB + DashMap MemState, `virtual_fs` (`StateDbVfs`), auto-retry on transient DB errors |
+| `gestalt-ws` | Library | WebSocket server — broadcasts `MemState` timeline events to clients (port :3001) |
 | `gestalt_swarm` | Binary | Legacy — pending migration |
 | `synapse-agentic` | Library | Actor model (Phase 3+) |
+
+## gestalt_core Domain Layer
+
+`gestalt_core/src/domain/` centraliza los tipos de dominio puros, independientes de infraestructura:
+
+| Módulo | Contenido |
+|--------|-----------|
+| `domain/error.rs` | `CoreError` — enum unificado de errores (VFS, Repository, MCP, Database, Embedding, Agent, Indexing, Config, Validation) vía `thiserror` |
+| `domain/memory.rs` | Tipos de memoria de agentes |
+| `domain/genui.rs` | Tipos de UI generativa |
+| `domain/rag/` | Embeddings y chunking para RAG |
+
+## Ola 5 Patterns
+
+Patrones de robustez introducidos en la Ola 5, implementados principalmente en `gestalt-router`:
+
+| Patrón | Ubicación | Propósito |
+|--------|-----------|-----------|
+| `AtomicCheckpointer` | `gestalt-router/src/checkpoint.rs` | Checkpoints atómicos de estado de ejecución (write-temp + rename) |
+| `ProcessReaper` | `gestalt-router/src/agent.rs` | Reaping de subprocesos de agentes huérfanos/zombies |
+| `CleanSlateRetry` | `gestalt-router/src/integrate.rs` | Reintento de integración desde un estado limpio tras fallo |
+| `WriteSetValidator` | `gestalt-router/src/worktree.rs` | Valida que los writes de un agente ocurran solo dentro de paths declarados |
+| `SerialMergeQueue` | `gestalt-router/src/router.rs` | Cola serial de merges para integración determinística |
+| `SwarmHealthMonitor` | `gestalt_swarm/src/health.rs` | Monitoreo de salud del swarm (legacy, pendiente de migración) |
 
 ## Previous Architecture (archived)
 

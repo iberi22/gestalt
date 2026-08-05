@@ -1,32 +1,19 @@
-# Gestalt Swarm
+# Gestalt Swarm (legacy)
 
-Gestalt Swarm is a high-throughput parallel execution bridge for AI agent tasks. It is designed to run many short-lived tasks in parallel, making it ideal for large-scale codebase analysis or refactoring.
+⛔ **Excluded from the Cargo workspace** — not listed in root `Cargo.toml` members.
+Do not run `cargo -p gestalt_swarm` from the Gestalt workspace; it will not resolve as a package.
 
-## CLI Usage
-
-The `swarm` command provides several subcommands for managing and running parallel tasks.
-
-### 1. Check Status
-Verify that the swarm is active and ready to accept tasks.
+## Current alternatives
 
 ```bash
-cargo run -p gestalt_swarm -- status
+python scripts/swarm_bridge.py --goal "Refactor unwrap() in gestalt_core"
+cargo run --release -p gestalt_cli -- swarm --help
 ```
 
-### 2. Run a Task
-Submit a goal to the swarm for parallel execution.
+## Standalone (legacy only)
 
-```bash
-cargo run -p gestalt_swarm -- run --goal "Refactor all unwrap() calls in gestalt_core"
-```
-
-### 3. Verbose Output
-Use the `--verbose` or `-v` flag to enable debug logging.
-
-```bash
-cargo run -p gestalt_swarm -- -v status
-```
+To build this crate in isolation (outside workspace membership), use a dedicated manifest / path build — not `cargo --workspace`. Prefer migration into `gestalt_cli` / router instead of re-adding the member.
 
 ## Architecture
 
-Swarm utilizes a lead agent to decompose complex goals into smaller, independent tasks which are then dispatched to a pool of worker agents. It leverages the Virtual File System (VFS) to ensure that parallel modifications do not conflict and can be merged safely.
+Swarm originally used a lead agent to decompose goals into parallel worker tasks with VFS isolation. That role is now covered by workspace members (`gestalt_cli`, `gestalt-router`) and `scripts/swarm_bridge.py`.

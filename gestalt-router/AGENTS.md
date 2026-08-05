@@ -28,7 +28,7 @@ Welcome! This document outlines the absolute design non-negotiables for the **ge
 - **Fail Gracefully**: Never panic or crash due to rate-limiting or service-down events.
 
 ### 7. Workspace Crate Exclusion
-- **No gestalt_swarm workspace inclusion**: The `gestalt_swarm` package is explicitly excluded from the Cargo workspace members. Keep it excluded.
+- **`gestalt_swarm` is already excluded** from the Cargo workspace (`Cargo.toml` `members`) — done in PR #457. Do not re-add it; treat it as legacy-only (present on disk, not a workspace member).
 
 ## 🚀 Key Framework Packages
 

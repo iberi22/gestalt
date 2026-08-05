@@ -44,15 +44,18 @@ jobs:
       - name: Cargo Test (CLI)
         run: cargo test -p gestalt_cli --all-targets
 
-      - name: Cargo Test (Timeline)
-        run: cargo test -p gestalt_timeline --lib
+      - name: Cargo Test (Router + State + WS + WASM)
+        run: |
+          cargo test -p gestalt-router --all-targets
+          cargo test -p gestalt-state --all-targets
+          cargo test -p gestalt-ws --all-targets
+          cargo test -p gestalt-wasm --all-targets
 
       - name: Cargo Check (Other packages)
         run: |
           cargo check \
             -p synapse-agentic \
-            -p gestalt_mcp \
-            -p gestaltctl \
+            -p gestalt-merge \
             -p gestalt_infra_github \
             -p gestalt_infra_embeddings \
             --all-targets

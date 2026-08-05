@@ -660,6 +660,156 @@ impl ToolHandler for TaskStatusHandler {
     }
 }
 
+/// BM25 Full-Text Search Handler
+pub struct Bm25SearchHandler;
+
+#[async_trait]
+impl ToolHandler for Bm25SearchHandler {
+    async fn call(&self, arguments: HashMap<String, Value>) -> McpResult<CallToolResult> {
+        let index_path = arguments
+            .get("index_path")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let query = arguments
+            .get("query")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let limit = arguments
+            .get("limit")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(10) as usize;
+
+        if index_path.is_empty() {
+            return Ok(err_result("Error: index_path is required".to_string()));
+        }
+        if query.is_empty() {
+            return Ok(err_result("Error: query is required".to_string()));
+        }
+
+        use gestalt_core::ports::outbound::search::LocalSearchEngine;
+        use gestalt_search::TantivySearchEngine;
+
+        match TantivySearchEngine::new(index_path, 1) {
+            Ok(engine) => {
+                match engine.search(query, limit).await {
+                    Ok(results) => {
+                        let serializable: Vec<serde_json::Value> = results
+                            .into_iter()
+                            .map(|r| {
+                                serde_json::json!({
+                                    "id": r.id,
+                                    "path": r.path,
+                                    "content": r.content,
+                                    "snippet": r.snippet,
+                                    "score": r.score,
+                                })
+                            })
+                            .collect();
+                        let output = serde_json::to_string_pretty(&serializable).unwrap_or_else(|_| "[]".to_string());
+                        Ok(ok_result(output))
+                    }
+                    Err(e) => Ok(err_result(format!("Search error: {}", e))),
+                }
+            }
+            Err(e) => Ok(err_result(format!("Failed to open search engine: {}", e))),
+        }
+    }
+}
+
+/// Index a document into Tantivy search engine
+pub struct SearchIndexHandler;
+
+#[async_trait]
+impl ToolHandler for SearchIndexHandler {
+    async fn call(&self, arguments: HashMap<String, Value>) -> McpResult<CallToolResult> {
+        let index_path = arguments
+            .get("index_path")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let doc_id = arguments
+            .get("doc_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let doc_path = arguments
+            .get("doc_path")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let content = arguments
+            .get("content")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let kind = arguments
+            .get("kind")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+
+        if index_path.is_empty() {
+            return Ok(err_result("Error: index_path is required".to_string()));
+        }
+        if doc_id.is_empty() {
+            return Ok(err_result("Error: doc_id is required".to_string()));
+        }
+        if doc_path.is_empty() {
+            return Ok(err_result("Error: doc_path is required".to_string()));
+        }
+        if content.is_empty() {
+            return Ok(err_result("Error: content is required".to_string()));
+        }
+        if kind.is_empty() {
+            return Ok(err_result("Error: kind is required".to_string()));
+        }
+
+        use gestalt_core::ports::outbound::search::LocalSearchEngine;
+        use gestalt_search::TantivySearchEngine;
+
+        match TantivySearchEngine::new(index_path, 1) {
+            Ok(engine) => {
+                match engine.index_document(doc_id, doc_path, content, kind).await {
+                    Ok(_) => Ok(ok_result(format!("Document '{}' indexed successfully", doc_id))),
+                    Err(e) => Ok(err_result(format!("Indexing error: {}", e))),
+                }
+            }
+            Err(e) => Ok(err_result(format!("Failed to open search engine: {}", e))),
+        }
+    }
+}
+
+/// Retrieve search index statistics
+pub struct SearchStatsHandler;
+
+#[async_trait]
+impl ToolHandler for SearchStatsHandler {
+    async fn call(&self, arguments: HashMap<String, Value>) -> McpResult<CallToolResult> {
+        let index_path = arguments
+            .get("index_path")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+
+        if index_path.is_empty() {
+            return Ok(err_result("Error: index_path is required".to_string()));
+        }
+
+        use gestalt_core::ports::outbound::search::LocalSearchEngine;
+        use gestalt_search::TantivySearchEngine;
+
+        match TantivySearchEngine::new(index_path, 1) {
+            Ok(engine) => {
+                match engine.doc_count().await {
+                    Ok(count) => {
+                        let stats = serde_json::json!({
+                            "document_count": count,
+                            "index_path": index_path
+                        });
+                        Ok(ok_result(serde_json::to_string_pretty(&stats).unwrap_or_default()))
+                    }
+                    Err(e) => Ok(err_result(format!("Stats error: {}", e))),
+                }
+            }
+            Err(e) => Ok(err_result(format!("Failed to open search engine: {}", e))),
+        }
+    }
+}
+
 /// Register all standard (built-in) tools on an McpServer.
 ///
 /// These are the tools from the original gestalt_mcp skeleton: echo, file
@@ -863,6 +1013,60 @@ pub async fn register_standard_tools(server: &McpServer) -> anyhow::Result<()> {
                 "required": ["id"]
             }),
             TaskStatusHandler,
+        )
+        .await?;
+
+    // bm25_search
+    server
+        .add_tool(
+            "bm25_search".to_string(),
+            Some("Search the local Tantivy index using BM25".to_string()),
+            serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "index_path": { "type": "string", "description": "Path to the Tantivy index directory" },
+                    "query": { "type": "string", "description": "Search query" },
+                    "limit": { "type": "integer", "description": "Maximum number of results to return (default 10)" }
+                },
+                "required": ["index_path", "query"]
+            }),
+            Bm25SearchHandler,
+        )
+        .await?;
+
+    // search_index
+    server
+        .add_tool(
+            "search_index".to_string(),
+            Some("Index a document into the local Tantivy search engine".to_string()),
+            serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "index_path": { "type": "string", "description": "Path to the Tantivy index directory" },
+                    "doc_id": { "type": "string", "description": "Unique identifier for the document" },
+                    "doc_path": { "type": "string", "description": "File path or origin of the document" },
+                    "content": { "type": "string", "description": "Text content to index" },
+                    "kind": { "type": "string", "description": "Category or kind of the document (e.g. code, plan, etc.)" }
+                },
+                "required": ["index_path", "doc_id", "doc_path", "content", "kind"]
+            }),
+            SearchIndexHandler,
+        )
+        .await?;
+
+    // search_stats
+    server
+        .add_tool(
+            "search_stats".to_string(),
+            Some("Get document count and index statistics for a local Tantivy index".to_string()),
+            serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "index_path": { "type": "string", "description": "Path to the Tantivy index directory" }
+                },
+                "required": ["index_path"]
+            }),
+            SearchStatsHandler,
         )
         .await?;
 

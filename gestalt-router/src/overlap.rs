@@ -1,4 +1,4 @@
-use crate::run::RouterError;
+use crate::run::{ConflictInfo, RouterError};
 use gestalt_state::memstate::MemState;
 use gestalt_ws::WsEvent;
 use gestalt_ws::WsServer;
@@ -315,11 +315,13 @@ pub enum ConflictKind {
     AddedByThem,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ConflictInfo {
-    pub path: PathBuf,
-    pub kind: ConflictKind,
+impl PartialEq for ConflictInfo {
+    fn eq(&self, other: &Self) -> bool {
+        self.agent_id == other.agent_id && self.path == other.path
+    }
 }
+
+impl Eq for ConflictInfo {}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OverlapInfo {
@@ -392,7 +394,7 @@ pub struct IndependentMergeResult {
     pub merge_sha: Option<String>,
     pub merged_branches: Vec<String>,
     pub failed_agents: HashMap<String, String>,
-    pub conflicts: Vec<crate::run::ConflictInfo>,
+    pub conflicts: Vec<ConflictInfo>,
 }
 
 /// Integrates branches of successful agents independently, while reporting failed agents separately.
@@ -647,22 +649,25 @@ pub fn test_mergeability(
             let has_our = stages.contains(&2);
             let has_their = stages.contains(&3);
 
-            let kind = if content_conflict_paths.contains(&path) {
+            let _kind = if content_conflict_paths.contains(&path) {
                 ConflictKind::Content
             } else {
                 map_stages_to_kind(has_base, has_our, has_their)
             };
 
             seen_paths.insert(path.clone());
-            conflicts.push(ConflictInfo { path, kind });
+            conflicts.push(ConflictInfo {
+                agent_id: String::new(),
+                path: path.to_string_lossy().into_owned(),
+            });
         }
 
         // Any path explicitly mentioned in "CONFLICT (content)" but not captured in stage records
         for path in content_conflict_paths {
             if seen_paths.insert(path.clone()) {
                 conflicts.push(ConflictInfo {
-                    path,
-                    kind: ConflictKind::Content,
+                    agent_id: String::new(),
+                    path: path.to_string_lossy().into_owned(),
                 });
             }
         }
@@ -752,7 +757,7 @@ pub fn test_mergeability(
             let has_our = stages.contains(&2);
             let has_their = stages.contains(&3);
 
-            let kind = if let Some(blk) = path_block_kinds.get(&path) {
+            let _kind = if let Some(blk) = path_block_kinds.get(&path) {
                 if blk == "changed in both" {
                     ConflictKind::BothModified
                 } else if blk == "added in both" {
@@ -764,7 +769,10 @@ pub fn test_mergeability(
                 map_stages_to_kind(has_base, has_our, has_their)
             };
 
-            conflicts.push(ConflictInfo { path, kind });
+            conflicts.push(ConflictInfo {
+                agent_id: String::new(),
+                path: path.to_string_lossy().into_owned(),
+            });
         }
 
         conflicts.sort_by(|a, b| a.path.cmp(&b.path));

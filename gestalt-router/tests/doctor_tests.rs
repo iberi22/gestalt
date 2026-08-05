@@ -1,6 +1,12 @@
 use gestalt_router::doctor::{Doctor, DoctorError, ManifestJson, OrphanedRun};
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, OnceLock};
 use uuid::Uuid;
+
+fn get_env_lock() -> &'static Mutex<()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+}
 
 #[test]
 fn test_orphaned_run_construction() {
@@ -118,6 +124,7 @@ fn test_orphaned_run_with_multiple_worktrees() {
 
 #[test]
 fn test_doctor_pruning_and_orphans() {
+    let _lock = get_env_lock().lock().unwrap_or_else(|e| e.into_inner());
     let temp_dir = TempDir::new();
     let gestalt_home = temp_dir.path().to_path_buf();
 
@@ -226,6 +233,194 @@ fn test_doctor_pruning_and_orphans() {
         !active_run_dir.exists(),
         "Active run directory should be cleaned up"
     );
+
+    std::env::remove_var("GESTALT_HOME");
+}
+
+#[test]
+fn test_doctor_cleanup_single_run() {
+    let _lock = get_env_lock().lock().unwrap_or_else(|e| e.into_inner());
+    let temp_dir = TempDir::new();
+    let gestalt_home = temp_dir.path().to_path_buf();
+
+    // Set GESTALT_HOME to our temp directory so we don't modify ~/.gestalt
+    std::env::set_var("GESTALT_HOME", &gestalt_home);
+
+    let runs_dir = gestalt_home.join("runs");
+    std::fs::create_dir_all(&runs_dir).unwrap();
+
+    // Create a dummy git repo
+    let repo_temp = TempDir::new();
+    let repo_path = repo_temp.path();
+    std::process::Command::new("git")
+        .arg("init")
+        .current_dir(repo_path)
+        .output()
+        .unwrap();
+
+    std::process::Command::new("git")
+        .args(["config", "user.email", "test@example.com"])
+        .current_dir(repo_path)
+        .output()
+        .unwrap();
+
+    std::process::Command::new("git")
+        .args(["config", "user.name", "Test User"])
+        .current_dir(repo_path)
+        .output()
+        .unwrap();
+
+    std::process::Command::new("git")
+        .args(["commit", "--allow-empty", "-m", "initial commit"])
+        .current_dir(repo_path)
+        .output()
+        .unwrap();
+
+    // Create a branch for the worktree
+    let branch_name = "gestalt/test-run-cleanup-branch";
+    std::process::Command::new("git")
+        .args(["branch", branch_name])
+        .current_dir(repo_path)
+        .output()
+        .unwrap();
+
+    // Create a worktree under runs_dir
+    let wt_path = runs_dir.join("wt-1");
+    std::process::Command::new("git")
+        .args(["worktree", "add", wt_path.to_str().unwrap(), branch_name])
+        .current_dir(repo_path)
+        .output()
+        .unwrap();
+
+    assert!(wt_path.exists());
+
+    // Construct an OrphanedRun
+    let orphan = OrphanedRun {
+        run_id: "cleanup-run-id".to_string(),
+        worktrees: vec![wt_path.clone()],
+        branches: vec![branch_name.to_string()],
+        manifest_exists: false,
+        status: "Orphaned".to_string(),
+    };
+
+    let doctor = Doctor::new(false, false);
+    let report = doctor.cleanup(&orphan, repo_path).unwrap();
+
+    assert_eq!(report.worktrees_removed, 1);
+    assert_eq!(report.branches_deleted, 1);
+    assert!(report.errors.is_empty());
+
+    // Verify they are physically and logically deleted
+    assert!(!wt_path.exists());
+
+    // Branch should be deleted
+    let branch_check = std::process::Command::new("git")
+        .args(["show-ref", "--verify", &format!("refs/heads/{}", branch_name)])
+        .current_dir(repo_path)
+        .output()
+        .unwrap();
+    assert!(!branch_check.status.success());
+
+    std::env::remove_var("GESTALT_HOME");
+}
+
+#[test]
+fn test_doctor_cleanup_stale_worktree_non_existent() {
+    let _lock = get_env_lock().lock().unwrap_or_else(|e| e.into_inner());
+    let temp_dir = TempDir::new();
+    let gestalt_home = temp_dir.path().to_path_buf();
+
+    // Set GESTALT_HOME to our temp directory so we don't modify ~/.gestalt
+    std::env::set_var("GESTALT_HOME", &gestalt_home);
+
+    let runs_dir = gestalt_home.join("runs");
+    std::fs::create_dir_all(&runs_dir).unwrap();
+
+    // Create a dummy git repo
+    let repo_temp = TempDir::new();
+    let repo_path = repo_temp.path();
+    std::process::Command::new("git")
+        .arg("init")
+        .current_dir(repo_path)
+        .output()
+        .unwrap();
+
+    // Create a branch that doesn't exist anymore or just some branch
+    let branch_name = "gestalt/non-existent-branch";
+
+    // Non-existent worktree path
+    let wt_path = runs_dir.join("non-existent-wt-path");
+
+    // Construct an OrphanedRun
+    let orphan = OrphanedRun {
+        run_id: "cleanup-run-non-existent-id".to_string(),
+        worktrees: vec![wt_path.clone()],
+        branches: vec![branch_name.to_string()],
+        manifest_exists: false,
+        status: "Orphaned".to_string(),
+    };
+
+    let doctor = Doctor::new(false, false);
+    let report = doctor.cleanup(&orphan, repo_path).unwrap();
+
+    // Since wt_path doesn't exist, it should be skipped with a warning, not counted as removed, and no errors
+    assert_eq!(report.worktrees_removed, 0);
+    // Since the branch doesn't exist, deleting it with git branch -D should fail (it will add an error to report.errors)
+    assert_eq!(report.branches_deleted, 0);
+    assert_eq!(report.errors.len(), 1);
+    assert!(report.errors[0].contains("Failed to delete branch"));
+
+    std::env::remove_var("GESTALT_HOME");
+}
+
+#[test]
+fn test_doctor_cleanup_all() {
+    let _lock = get_env_lock().lock().unwrap_or_else(|e| e.into_inner());
+    let temp_dir = TempDir::new();
+    let gestalt_home = temp_dir.path().to_path_buf();
+
+    // Set GESTALT_HOME to our temp directory so we don't modify ~/.gestalt
+    std::env::set_var("GESTALT_HOME", &gestalt_home);
+
+    let runs_dir = gestalt_home.join("runs");
+    std::fs::create_dir_all(&runs_dir).unwrap();
+
+    // Create a dummy git repo
+    let repo_temp = TempDir::new();
+    let repo_path = repo_temp.path();
+    std::process::Command::new("git")
+        .arg("init")
+        .current_dir(repo_path)
+        .output()
+        .unwrap();
+
+    // Create an orphaned run manifest in runs_dir
+    let orphaned_run_id = "00000000-0000-0000-0000-000000000099";
+    let orphaned_run_dir = runs_dir.join(orphaned_run_id);
+    std::fs::create_dir_all(&orphaned_run_dir).unwrap();
+
+    // We point worktrees to non-existent path
+    let non_existent_wt = runs_dir.join("non_existent_wt_cleanup_all");
+    let orphaned_manifest_content = serde_json::json!({
+        "run_id": orphaned_run_id,
+        "sha_base": "base-sha",
+        "worktrees": [non_existent_wt.to_str().unwrap()],
+        "branches": ["gestalt/orphaned-run-cleanup-all"]
+    });
+    std::fs::write(
+        orphaned_run_dir.join("manifest.json"),
+        orphaned_manifest_content.to_string(),
+    )
+    .unwrap();
+
+    let doctor = Doctor::new(false, false);
+    let reports = doctor.cleanup_all(repo_path).unwrap();
+
+    // It should have found 1 orphaned run, which has 1 non-existent worktree (skipped) and 1 non-existent branch (which errors because it doesn't exist)
+    assert_eq!(reports.len(), 1);
+    assert_eq!(reports[0].worktrees_removed, 0);
+    assert_eq!(reports[0].branches_deleted, 0);
+    assert_eq!(reports[0].errors.len(), 1);
 
     std::env::remove_var("GESTALT_HOME");
 }

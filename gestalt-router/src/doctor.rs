@@ -70,6 +70,13 @@ pub struct ManifestJson {
     pub created_at: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CleanupReport {
+    pub worktrees_removed: usize,
+    pub branches_deleted: usize,
+    pub errors: Vec<String>,
+}
+
 pub struct Doctor {
     pub force: bool,
     pub push: bool,
@@ -535,6 +542,116 @@ impl Doctor {
 
         Ok(pruned_run_ids)
     }
+
+    /// Cleanup worktrees and branches for a single orphaned run.
+    pub fn cleanup(&self, orphan: &OrphanedRun, repo_path: &Path) -> Result<CleanupReport> {
+        let mut worktrees_removed = 0;
+        let mut branches_deleted = 0;
+        let mut errors = Vec::new();
+
+        let runs_dir = get_runs_dir();
+        let runs_dir_canonical = runs_dir.canonicalize().unwrap_or_else(|_| runs_dir.clone());
+        let repo_path_canonical = repo_path
+            .canonicalize()
+            .unwrap_or_else(|_| repo_path.to_path_buf());
+
+        for wt in &orphan.worktrees {
+            if is_safe_to_delete_worktree(wt, &runs_dir_canonical, &repo_path_canonical) {
+                if wt.exists() {
+                    let wt_str = wt.to_string_lossy();
+                    let res = std::process::Command::new("git")
+                        .args(["worktree", "remove", &wt_str])
+                        .current_dir(repo_path)
+                        .output();
+
+                    match res {
+                        Ok(out) if out.status.success() => {
+                            worktrees_removed += 1;
+                        }
+                        Ok(_) => {
+                            // Try force remove
+                            let force_res = std::process::Command::new("git")
+                                .args(["worktree", "remove", "--force", &wt_str])
+                                .current_dir(repo_path)
+                                .output();
+                            match force_res {
+                                Ok(force_out) if force_out.status.success() => {
+                                    worktrees_removed += 1;
+                                }
+                                Ok(force_out) => {
+                                    let err_msg = format!(
+                                        "Failed to force remove worktree {}: {}",
+                                        wt_str,
+                                        String::from_utf8_lossy(&force_out.stderr).trim()
+                                    );
+                                    errors.push(err_msg);
+                                }
+                                Err(e) => {
+                                    errors.push(format!("Git worktree force remove process error: {}", e));
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            errors.push(format!("Git worktree remove process error: {}", e));
+                        }
+                    }
+                } else {
+                    // Check path.exists() before calling git; skip with warning
+                    println!(
+                        "Warning: Worktree path {} does not exist physically, skipping git removal",
+                        wt.display()
+                    );
+                }
+            } else {
+                errors.push(format!("Worktree path {} is NOT safe to delete", wt.display()));
+            }
+        }
+
+        for branch in &orphan.branches {
+            // Use git branch -D (force delete) for orphaned branches only
+            let res = std::process::Command::new("git")
+                .args(["branch", "-D", branch])
+                .current_dir(repo_path)
+                .output();
+
+            match res {
+                Ok(out) if out.status.success() => {
+                    branches_deleted += 1;
+                }
+                Ok(out) => {
+                    let err_msg = format!(
+                        "Failed to delete branch {}: {}",
+                        branch,
+                        String::from_utf8_lossy(&out.stderr).trim()
+                    );
+                    errors.push(err_msg);
+                }
+                Err(e) => {
+                    errors.push(format!("Git branch delete process error: {}", e));
+                }
+            }
+        }
+
+        Ok(CleanupReport {
+            worktrees_removed,
+            branches_deleted,
+            errors,
+        })
+    }
+
+    /// Cleanup all orphaned runs.
+    pub fn cleanup_all(&self, repo_path: &Path) -> Result<Vec<CleanupReport>> {
+        let log_func = |msg: &str| {
+            println!("Doctor cleanup_all: {}", msg);
+        };
+        let orphans = self.find_orphaned_runs(&log_func, repo_path);
+        let mut reports = Vec::new();
+        for orphan in orphans {
+            let report = self.cleanup(&orphan, repo_path)?;
+            reports.push(report);
+        }
+        Ok(reports)
+    }
 }
 
 // Helpers
@@ -571,7 +688,21 @@ fn is_safe_to_delete_worktree(
 ) -> bool {
     let path_canonical = match path.canonicalize() {
         Ok(p) => p,
-        Err(_) => path.to_path_buf(), // If it doesn't exist, we might not canonicalize it, but let's check prefix
+        Err(_) => {
+            if let Some(parent) = path.parent() {
+                if let Ok(parent_canonical) = parent.canonicalize() {
+                    if let Some(file_name) = path.file_name() {
+                        parent_canonical.join(file_name)
+                    } else {
+                        path.to_path_buf()
+                    }
+                } else {
+                    path.to_path_buf()
+                }
+            } else {
+                path.to_path_buf()
+            }
+        }
     };
 
     // Must be under ~/.gestalt/runs/ (runs_dir_canonical)

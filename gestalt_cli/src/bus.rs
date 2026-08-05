@@ -142,3 +142,105 @@ pub async fn serve(
 
     Ok(())
 }
+
+// ── Thinking loop: Ollama synthesizer + structural fallback ────────────────
+
+/// Synthesizes cross-run insights via a local Ollama LLM (qwen3-coder).
+///
+/// Resilience (AGENTS.md §4): if Ollama is unreachable or the call fails,
+/// `synthesize` falls back to a deterministic structural summary instead of
+/// erroring — the thinking loop never crashes on LLM unavailability.
+pub struct OllamaSynthesizer {
+    endpoint: String,
+    model: String,
+}
+
+impl OllamaSynthesizer {
+    pub fn new(endpoint: impl Into<String>, model: impl Into<String>) -> Self {
+        Self {
+            endpoint: endpoint.into(),
+            model: model.into(),
+        }
+    }
+
+    /// Default: Ollama on localhost:11434 with qwen3-coder.
+    pub fn from_env() -> Self {
+        Self::new(
+            std::env::var("OLLAMA_URL").unwrap_or_else(|_| "http://localhost:11434".into()),
+            std::env::var("OLLAMA_MODEL").unwrap_or_else(|_| "qwen3-coder".into()),
+        )
+    }
+}
+
+#[async_trait::async_trait]
+impl gestalt_router::thinking::InsightSynthesizer for OllamaSynthesizer {
+    async fn synthesize(&self, executions: &[String]) -> Result<String, String> {
+        let prompt = format!(
+            "You are Xavier's thinking layer. Based on these recent agent executions:\n\n{}\n\n\
+             Produce a concise insight with exactly 4 sections:\n\
+             - PATTERNS: recurring behaviors or outcomes\n\
+             - BLOCKERS: repeated failures or stalls\n\
+             - DECISIONS: choices made and their rationale\n\
+             - NEXT: recommended next steps\n\n\
+             Keep under 200 words. No preamble.",
+            executions.join("\n")
+        );
+
+        let client = reqwest::Client::new();
+        let resp = client
+            .post(format!("{}/api/generate", self.endpoint))
+            .json(&serde_json::json!({
+                "model": self.model,
+                "prompt": prompt,
+                "stream": false,
+            }))
+            .send()
+            .await;
+
+        match resp {
+            Ok(r) if r.status().is_success() => {
+                let body: serde_json::Value = r
+                    .json()
+                    .await
+                    .map_err(|e| format!("Ollama response parse failed: {}", e))?;
+                let text = body["response"].as_str().unwrap_or("").trim().to_string();
+                if text.is_empty() {
+                    Err("Ollama returned empty response".into())
+                } else {
+                    Ok(text)
+                }
+            },
+            Ok(r) => {
+                // Fallback: structural summary (deterministic, no LLM needed).
+                warn!("Ollama returned {} — using structural fallback", r.status());
+                Ok(structural_insight(executions))
+            },
+            Err(e) => {
+                warn!("Ollama unreachable ({}) — using structural fallback", e);
+                Ok(structural_insight(executions))
+            },
+        }
+    }
+}
+
+/// Deterministic structural insight — patterns/blockers/decisions/next derived
+/// from event metadata without any LLM call. Keeps the loop useful when the
+/// local model is down.
+fn structural_insight(executions: &[String]) -> String {
+    let mut states = std::collections::HashMap::<String, usize>::new();
+    for exec in executions {
+        // Content format: "[event_type] agent run_id — summary"
+        let head = exec.split_whitespace().next().unwrap_or("unknown");
+        *states.entry(head.to_string()).or_insert(0) += 1;
+    }
+    let mut parts: Vec<String> = states
+        .iter()
+        .map(|(k, v)| format!("{}: {}", k, v))
+        .collect();
+    parts.sort();
+    format!(
+        "PATTERNS: {} total executions ({})\nBLOCKERS: none detected (LLM offline)\nDECISIONS: n/a\nNEXT: re-run with Ollama online for deeper synthesis",
+        executions.len(),
+        parts.join(", ")
+    )
+}

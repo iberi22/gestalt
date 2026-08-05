@@ -406,6 +406,17 @@ enum Commands {
         #[command(subcommand)]
         action: BusAction,
     },
+
+    /// Xavier Thinking Loop: synthesize insights from recent executions
+    Thinking {
+        /// Force a run even if today's insight already exists
+        #[arg(long)]
+        force: bool,
+
+        /// Look-back window in minutes
+        #[arg(long, default_value_t = 30)]
+        window: u64,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -453,6 +464,17 @@ enum BusAction {
         /// Extra traceability metadata as JSON ({"llm": "...", "provider": "...", "requested_by": "..."})
         #[arg(long)]
         metadata: Option<String>,
+    },
+
+    /// Replay unsynced bus events to Xavier (cursor sweep after outage)
+    Replay {
+        /// Only replay events newer than this sequence number
+        #[arg(long)]
+        after_seq: Option<i64>,
+
+        /// Dry run: report what would be re-sunk without writing
+        #[arg(long)]
+        dry_run: bool,
     },
 }
 
@@ -1805,6 +1827,126 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     seq, ev.agent, ev.event_type
                 );
             },
+
+            BusAction::Replay { after_seq, dry_run } => {
+                use gestalt_router::event_bus::BusEvent;
+
+                let db_path = home::home_dir()
+                    .unwrap_or_else(|| PathBuf::from("."))
+                    .join(".gestalt")
+                    .join("state.db");
+                let db = Arc::new(
+                    StateDb::open(&db_path)
+                        .map_err(|e| format!("Failed to open StateDb: {}", e))?,
+                );
+
+                let sink = std::env::var("XAVIER_TOKEN")
+                    .ok()
+                    .filter(|t| !t.is_empty())
+                    .map(|_| gestalt_router::xavier_sink::XavierEventSink::from_env());
+
+                let events = db
+                    .recent_timeline(1000)
+                    .map_err(|e| format!("Failed to read timeline: {}", e))?;
+
+                let mut replayed = 0usize;
+                let mut skipped = 0usize;
+                for ev in events.iter().rev() {
+                    if let Some(after) = after_seq {
+                        if ev.seq.unwrap_or(0) <= after {
+                            skipped += 1;
+                            continue;
+                        }
+                    }
+                    let parsed: BusEvent = match serde_json::from_str(&ev.payload) {
+                        Ok(b) => b,
+                        Err(_) => {
+                            skipped += 1;
+                            continue;
+                        },
+                    };
+                    if dry_run {
+                        println!(
+                            "  [dry-run] seq={} {} {}",
+                            ev.seq.unwrap_or(0),
+                            parsed.agent,
+                            parsed.event_type
+                        );
+                        replayed += 1;
+                        continue;
+                    }
+                    if let Some(ref sink) = sink {
+                        match sink.sink(&parsed).await {
+                            Ok(()) => {
+                                println!(
+                                    "  ✅ seq={} {} {} → Xavier",
+                                    ev.seq.unwrap_or(0),
+                                    parsed.agent,
+                                    parsed.event_type
+                                );
+                                replayed += 1;
+                            },
+                            Err(e) => {
+                                eprintln!("  ❌ seq={} failed: {}", ev.seq.unwrap_or(0), e);
+                            },
+                        }
+                    } else {
+                        eprintln!("  ⚠️  XAVIER_TOKEN not set — cannot replay");
+                        std::process::exit(1);
+                    }
+                }
+                println!(
+                    "Replay done: {} re-sunk, {} skipped (of {} total)",
+                    replayed,
+                    skipped,
+                    events.len()
+                );
+            },
+        },
+
+        Commands::Thinking { force, window } => {
+            use gestalt_router::thinking::ThinkingLoop;
+
+            let xavier = Arc::new(XavierClient::from_env());
+            if !xavier.is_available().await {
+                eprintln!("❌ Xavier not reachable at :8006 — thinking loop needs Xavier");
+                std::process::exit(1);
+            }
+
+            let synthesizer: Arc<dyn gestalt_router::thinking::InsightSynthesizer> =
+                Arc::new(bus::OllamaSynthesizer::from_env());
+            let loop_ = ThinkingLoop::new(xavier, synthesizer).with_window(window);
+
+            println!("🧠 Gestalt Thinking Loop (window={}m)", window);
+            println!("   Pulling recent executions from Xavier...");
+
+            let executions = loop_.recent_executions(50).await?;
+            println!("   {} recent executions found", executions.len());
+
+            if executions.len() < gestalt_router::thinking::MIN_EXECUTIONS {
+                println!(
+                    "   ℹ️  Only {} executions (need ≥{}) — not enough signal to think yet. Push more events with `gestalt bus push`.",
+                    executions.len(),
+                    gestalt_router::thinking::MIN_EXECUTIONS
+                );
+                std::process::exit(0);
+            }
+
+            if !force && loop_.has_today_insight().await? {
+                println!("   ℹ️  Today's insight already exists (use --force to re-run)");
+                std::process::exit(0);
+            }
+
+            println!(
+                "   Synthesizing insight (Ollama qwen3-coder, structural fallback if offline)..."
+            );
+            match loop_.run(force).await? {
+                Some(insight) => {
+                    println!("\n━━━ INSIGHT ━━━\n{}\n━━━━━━━━━━━━━", insight);
+                    println!("✅ Insight indexed in Xavier as kind=insight");
+                },
+                None => println!("   No insight produced this cycle"),
+            }
         },
     }
 

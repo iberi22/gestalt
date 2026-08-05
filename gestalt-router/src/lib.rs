@@ -7,6 +7,7 @@ pub mod overlap;
 pub mod router;
 pub mod run;
 pub mod run_state;
+pub mod thinking;
 pub mod timeline;
 pub mod worktree;
 pub mod ws;

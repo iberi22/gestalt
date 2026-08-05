@@ -1,5 +1,11 @@
 # AGENTS.md — Gestalt Agent Design Non-Negotiables
 
+> **SWAL goal:** `docs/SWAL/GOAL.md` (monorepo) · local: `.gitcore/docs/SWAL_GOAL.md`
+> Pro = SWAL node · Xavier memory · edge-mesh namespaces · no Stripe Pro · GitCore 3.8
+> Gestalt = **tool** pública del ecosistema (vitrina técnica): orquestador multi-agente,
+> bus de eventos universal (trazabilidad quién/llm/proveedor/decisión → Xavier kind=execution),
+> Thinking Loop (kind=insight), VFS/isolación, conflictos, merge. No es producto de negocio.
+
 Welcome! This document outlines the absolute design non-negotiables (reglas inquebrantables de diseño) for developers creating, extending, or maintaining agents within the Gestalt framework.
 
 ## 🛑 Design Non-Negotiables

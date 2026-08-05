@@ -36,7 +36,10 @@ async fn test_server() -> McpServer {
 #[tokio::test]
 async fn test_tools_list() {
     let server = test_server().await;
-    let tools = server.list_tools().await.expect("list_tools should succeed");
+    let tools = server
+        .list_tools()
+        .await
+        .expect("list_tools should succeed");
 
     // We should have all 12 standard + 6 gestalt = 18 tools
     assert!(
@@ -121,9 +124,7 @@ async fn test_system_info_tool() {
 async fn test_nonexistent_tool() {
     let server = test_server().await;
 
-    let result = server
-        .call_tool("nonexistent_tool_xyz", None)
-        .await;
+    let result = server.call_tool("nonexistent_tool_xyz", None).await;
 
     assert!(
         result.is_err(),

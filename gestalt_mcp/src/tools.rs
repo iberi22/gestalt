@@ -256,12 +256,12 @@ async fn search_code(pattern: &str, path: &str, extensions: &str) -> Vec<Value> 
                     }
                 }
             }
-        }
+        },
         Err(_) => {
             results.push(serde_json::json!({
                 "error": "ripgrep not found. Install it with: sudo apt install ripgrep"
             }));
-        }
+        },
     }
 
     results
@@ -300,7 +300,7 @@ impl ToolHandler for GitStatusHandler {
                     structured_content: None,
                     meta: None,
                 })
-            }
+            },
             Err(e) => Ok(err_result(format!("git error: {}", e))),
         }
     }
@@ -350,7 +350,7 @@ impl ToolHandler for GitLogHandler {
                     structured_content: None,
                     meta: None,
                 })
-            }
+            },
             Err(e) => Ok(err_result(format!("git error: {}", e))),
         }
     }
@@ -389,15 +389,17 @@ impl ToolHandler for FileReadHandler {
                         "\n... (showing {} of {} lines. Use lines=N to see more)",
                         max_lines, total
                     );
-                    let mut out: Vec<String> =
-                        lines[..max_lines as usize].iter().map(|s| s.to_string()).collect();
+                    let mut out: Vec<String> = lines[..max_lines as usize]
+                        .iter()
+                        .map(|s| s.to_string())
+                        .collect();
                     out.push(truncated_msg);
                     out.join("\n")
                 } else {
                     content
                 };
                 Ok(ok_result(truncated))
-            }
+            },
             Err(e) => Ok(err_result(format!("Error reading file: {}", e))),
         }
     }
@@ -409,7 +411,10 @@ pub struct FileTreeHandler;
 #[async_trait]
 impl ToolHandler for FileTreeHandler {
     async fn call(&self, arguments: HashMap<String, Value>) -> McpResult<CallToolResult> {
-        let path = arguments.get("path").and_then(|v| v.as_str()).unwrap_or(".");
+        let path = arguments
+            .get("path")
+            .and_then(|v| v.as_str())
+            .unwrap_or(".");
         let max_depth = arguments.get("depth").and_then(|v| v.as_u64()).unwrap_or(3) as usize;
 
         let mut tree_entries = Vec::new();
@@ -535,7 +540,7 @@ impl ToolHandler for ShellExecuteHandler {
                     structured_content: None,
                     meta: None,
                 })
-            }
+            },
             Ok(Err(e)) => Ok(err_result(format!("Execution error: {}", e))),
             Err(_) => Ok(err_result(format!(
                 "Timeout after {}s: {}",
@@ -649,7 +654,7 @@ impl ToolHandler for TaskStatusHandler {
                 Ok(ok_result(
                     serde_json::to_string_pretty(&result).unwrap_or_default(),
                 ))
-            }
+            },
             None => Ok(err_result(format!("Task not found: {}", id))),
         }
     }

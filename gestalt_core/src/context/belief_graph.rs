@@ -194,8 +194,9 @@ impl BeliefGraph {
         let source_norm = normalize_concept(source);
         let target_norm = normalize_concept(target);
         let pid = provenance_id.unwrap_or_else(|| "unknown".to_string());
-        let confidence = confidence_override
-            .unwrap_or_else(|| evaluate_confidence(source_type.unwrap_or("unknown"), relation_type));
+        let confidence = confidence_override.unwrap_or_else(|| {
+            evaluate_confidence(source_type.unwrap_or("unknown"), relation_type)
+        });
 
         // Ensure both endpoints exist
         if self.get_node(&source_norm).is_none() {
@@ -730,11 +731,25 @@ mod tests {
     async fn test_contradiction_detection() {
         let graph = BeliefGraph::new();
         graph
-            .add_relation("Alice", "Bob", "likes", Some("s1".into()), Some("user"), None)
+            .add_relation(
+                "Alice",
+                "Bob",
+                "likes",
+                Some("s1".into()),
+                Some("user"),
+                None,
+            )
             .await
             .unwrap();
         graph
-            .add_relation("Alice", "Bob", "dislikes", Some("s2".into()), Some("user"), None)
+            .add_relation(
+                "Alice",
+                "Bob",
+                "dislikes",
+                Some("s2".into()),
+                Some("user"),
+                None,
+            )
             .await
             .unwrap();
 

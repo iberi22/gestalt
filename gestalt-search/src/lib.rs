@@ -92,7 +92,10 @@ impl TantivySearchEngine {
         };
 
         let index = if index_dir_path.join("meta.json").exists() {
-            info!("Opening existing Tantivy index at {}", index_dir_path.display());
+            info!(
+                "Opening existing Tantivy index at {}",
+                index_dir_path.display()
+            );
             Index::open_in_dir(&index_dir_path)?
         } else {
             info!("Creating new Tantivy index at {}", index_dir_path.display());

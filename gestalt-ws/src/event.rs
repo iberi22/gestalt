@@ -150,10 +150,16 @@ mod tests {
     #[test]
     fn test_ws_envelope_backward_compatibility() {
         // Without version field, should default to CURRENT_VERSION
-        let raw_json = r#"{"type":"state_changed","data":{"run_id":"r1","agent_id":"a1","state":"running"}}"#;
+        let raw_json =
+            r#"{"type":"state_changed","data":{"run_id":"r1","agent_id":"a1","state":"running"}}"#;
         let deser: WsEnvelope = serde_json::from_str(raw_json).unwrap();
         assert_eq!(deser.version, CURRENT_VERSION);
-        if let WsEvent::StateChanged { run_id, agent_id, state } = deser.event {
+        if let WsEvent::StateChanged {
+            run_id,
+            agent_id,
+            state,
+        } = deser.event
+        {
             assert_eq!(run_id, "r1");
             assert_eq!(agent_id, "a1");
             assert_eq!(state, "running");

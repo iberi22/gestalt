@@ -118,17 +118,12 @@ impl Default for RateLimit {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub enum AgentStatus {
+    #[default]
     Disponible,
     Ocupado,
     Error(String),
-}
-
-impl Default for AgentStatus {
-    fn default() -> Self {
-        AgentStatus::Disponible
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -187,9 +182,10 @@ impl Default for RoutingConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub enum RoutingStrategy {
     /// Coincidencia por capacidades
+    #[default]
     CapabilityMatch,
     /// Round-robin entre disponibles
     RoundRobin,
@@ -197,12 +193,6 @@ pub enum RoutingStrategy {
     Cheapest,
     /// Mayor capacidad primero
     MostCapable,
-}
-
-impl Default for RoutingStrategy {
-    fn default() -> Self {
-        Self::CapabilityMatch
-    }
 }
 
 impl AgentRegistry {
@@ -300,7 +290,7 @@ impl AgentRegistry {
                 });
             },
             RoutingStrategy::MostCapable => {
-                candidates.sort_by(|a, b| b.capabilities.len().cmp(&a.capabilities.len()));
+                candidates.sort_by_key(|a| std::cmp::Reverse(a.capabilities.len()));
             },
             RoutingStrategy::CapabilityMatch => {
                 // Prefiere el que tenga más capacidades relevantes para la tarea

@@ -582,6 +582,7 @@ async fn run_swarm_task(
 }
 
 #[cfg(test)]
+#[allow(clippy::items_after_test_module)]
 mod tests {
     use super::*;
 
@@ -665,7 +666,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("Gestalt CLI starting with URL: {}", url);
 
     // Create blocking HTTP client inside spawn_blocking to avoid nested tokio runtime
-    let http_client = tokio::task::spawn_blocking(move || build_http_client())
+    let http_client = tokio::task::spawn_blocking(build_http_client)
         .await
         .map_err(std::io::Error::other)??;
 

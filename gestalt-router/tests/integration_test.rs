@@ -175,7 +175,7 @@ fn test_state_db_event_log_creation() {
     let run_id = Uuid::new_v4();
     let _log = StateDbEventLog::new(db, run_id);
     // Construction succeeds without panic/error
-    assert!(true);
+    assert!(db_path.exists());
 }
 
 #[test]

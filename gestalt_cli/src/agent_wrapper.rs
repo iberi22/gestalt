@@ -542,9 +542,9 @@ impl VirtualFS for InMemoryVfs {
             let new_content = if block.old_string.is_empty() && current_content.is_empty() {
                 // New file
                 block.new_string.clone()
-            } else if current_content.contains(&block.old_string) {
-                current_content.replace(&block.old_string, &block.new_string)
-            } else if !block.context.is_empty() && current_content.contains(&block.context) {
+            } else if current_content.contains(&block.old_string)
+                || (!block.context.is_empty() && current_content.contains(&block.context))
+            {
                 current_content.replace(&block.old_string, &block.new_string)
             } else if current_content.is_empty() {
                 block.new_string.clone()

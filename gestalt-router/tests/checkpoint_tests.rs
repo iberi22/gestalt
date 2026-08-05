@@ -238,7 +238,7 @@ fn test_checkpoint_permission_errors() {
 
     // Either it returns an error or fails gracefully. We want to verify we don't crash.
     match result {
-        Ok(res) => {
+        Ok(_res) => {
             // If it succeeds, it might not have committed the unreadable file
         },
         Err(e) => {

@@ -107,8 +107,11 @@ std::thread_local! {
     }) };
 
     /// Thread-local hook executed before each integration attempt to allow dynamic repo adjustments (e.g. mock updates).
-    pub static TEST_HOOK: std::cell::RefCell<Option<Box<dyn FnMut(&mut Vec<(String, String)>)>>> = const { std::cell::RefCell::new(None) };
+    pub static TEST_HOOK: std::cell::RefCell<Option<TestHookFn>> = const { std::cell::RefCell::new(None) };
 }
+
+/// Test hook signature: receives mutable mock repository entries before each integration attempt.
+pub type TestHookFn = Box<dyn FnMut(&mut Vec<(String, String)>)>;
 
 /// Helper struct for clean-slate retry documentation matching.
 pub struct CleanSlateRetry;

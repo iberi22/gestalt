@@ -194,7 +194,7 @@ mod tests {
         assert_eq!(e.target, "Bob");
         assert_eq!(e.relation_type, "knows");
         assert!((e.confidence_score - 0.9).abs() < f32::EPSILON);
-        assert!(e.is_inferred == false);
+        assert!(!e.is_inferred);
         assert!(e.contradicts_edge_id.is_none());
     }
 

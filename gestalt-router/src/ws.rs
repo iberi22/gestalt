@@ -106,13 +106,7 @@ impl WsRouterBridge {
                 let path = payload
                     .as_ref()
                     .and_then(|v| v.get("path"))
-                    .and_then(|v| {
-                        if let Some(s) = v.as_str() {
-                            Some(s.to_string())
-                        } else {
-                            None
-                        }
-                    })
+                    .and_then(|v| v.as_str().map(str::to_string))
                     .unwrap_or_else(|| "unknown".to_string());
 
                 let agent_a = payload

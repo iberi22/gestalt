@@ -31,7 +31,6 @@ use tracing::info;
 fn normalize_concept(raw: &str) -> String {
     let cleaned: String = raw
         .to_lowercase()
-        .trim()
         .split_whitespace()
         .filter(|s| !s.is_empty())
         .collect::<Vec<_>>()
@@ -552,21 +551,11 @@ impl Default for BeliefGraph {
 // ---------------------------------------------------------------------------
 
 /// A lightweight document descriptor used for grounding validation.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct MemoryDocument {
     pub id: Option<String>,
     pub path: String,
     pub content: String,
-}
-
-impl Default for MemoryDocument {
-    fn default() -> Self {
-        Self {
-            id: None,
-            path: String::new(),
-            content: String::new(),
-        }
-    }
 }
 
 /// Numeric summary of the graph.

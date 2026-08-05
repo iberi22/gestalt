@@ -18,6 +18,7 @@ use crate::domain::belief::{Belief, BeliefEdge, BeliefNode};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::path::Path;
 use std::sync::{Arc, RwLock};
 use tokio::sync::RwLock as AsyncRwLock;
 use tracing::info;
@@ -538,6 +539,55 @@ impl BeliefGraph {
             edge_count: self.edges.read().expect("poisoned").len(),
         }
     }
+
+    // -----------------------------------------------------------------------
+    // Persistence
+    // -----------------------------------------------------------------------
+
+    /// Serialize the current graph state to a JSON string.
+    pub fn save_to_string(&self) -> Result<String> {
+        let nodes = self.nodes.read().expect("poisoned").clone();
+        let edges = self.edges.read().expect("poisoned").clone();
+        let persisted = PersistedBeliefGraph { nodes, edges };
+        let json = serde_json::to_string(&persisted)?;
+        Ok(json)
+    }
+
+    /// Load graph state from a JSON string.
+    pub fn load_from_string(json: &str) -> Result<Self> {
+        let persisted: PersistedBeliefGraph = serde_json::from_str(json)?;
+
+        let mut adjacency: HashMap<String, HashSet<String>> = HashMap::new();
+        for edge in &persisted.edges {
+            let sn = normalize_concept(&edge.source);
+            let tn = normalize_concept(&edge.target);
+            adjacency.entry(sn).or_default().insert(tn);
+        }
+
+        for node in persisted.nodes.values() {
+            let norm = normalize_concept(&node.concept);
+            adjacency.entry(norm).or_default();
+        }
+
+        Ok(Self {
+            nodes: RwLock::new(persisted.nodes),
+            edges: RwLock::new(persisted.edges),
+            adjacency: RwLock::new(adjacency),
+        })
+    }
+
+    /// Serialize the current graph state to a JSON file.
+    pub fn save_to_file(&self, path: &Path) -> Result<()> {
+        let json = self.save_to_string()?;
+        std::fs::write(path, json)?;
+        Ok(())
+    }
+
+    /// Load graph state from a JSON file.
+    pub fn load_from_file(path: &Path) -> Result<Self> {
+        let json = std::fs::read_to_string(path)?;
+        Self::load_from_string(&json)
+    }
 }
 
 impl Default for BeliefGraph {
@@ -549,6 +599,13 @@ impl Default for BeliefGraph {
 // ---------------------------------------------------------------------------
 // Supporting types
 // ---------------------------------------------------------------------------
+
+/// Serializable representation of the `BeliefGraph` for persistence.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PersistedBeliefGraph {
+    pub nodes: HashMap<String, BeliefNode>,
+    pub edges: Vec<BeliefEdge>,
+}
 
 /// A lightweight document descriptor used for grounding validation.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -864,5 +921,59 @@ mod tests {
         assert!(graph.get_node("d").is_some());
         // Old nodes should be gone
         assert!(graph.get_node("a").is_none());
+    }
+
+    // -----------------------------------------------------------------------
+    // Persistence / Serialization
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn test_belief_graph_string_roundtrip() {
+        let graph = BeliefGraph::new();
+        graph.add_node("concept_a", 0.95);
+        graph.add_node("concept_b", 0.85);
+        graph.add_edge("concept_a", "concept_b", "depends_on").await;
+
+        let json = graph.save_to_string().unwrap();
+        let reconstructed = BeliefGraph::load_from_string(&json).unwrap();
+
+        assert_eq!(reconstructed.stats().node_count, 2);
+        assert_eq!(reconstructed.stats().edge_count, 1);
+        assert!(reconstructed.get_node("concept_a").is_some());
+        assert!(reconstructed.get_node("concept_b").is_some());
+
+        let related = reconstructed.get_related("concept_a");
+        assert_eq!(related.len(), 1);
+        assert_eq!(related[0], "concept_b");
+    }
+
+    #[tokio::test]
+    async fn test_belief_graph_file_roundtrip() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let file_path = temp_dir.path().join("belief_graph.json");
+
+        let graph = BeliefGraph::new();
+        graph.add_node("Alpha", 0.7);
+        graph.add_node("Beta", 0.8);
+        graph.add_edge("Alpha", "Beta", "leads_to").await;
+
+        graph.save_to_file(&file_path).unwrap();
+        assert!(file_path.exists());
+
+        let reconstructed = BeliefGraph::load_from_file(&file_path).unwrap();
+        assert_eq!(reconstructed.stats().node_count, 2);
+        assert_eq!(reconstructed.stats().edge_count, 1);
+        assert!(reconstructed.get_node("alpha").is_some());
+        assert!(reconstructed.get_node("beta").is_some());
+    }
+
+    #[tokio::test]
+    async fn test_belief_graph_empty_roundtrip() {
+        let graph = BeliefGraph::new();
+        let json = graph.save_to_string().unwrap();
+        let reconstructed = BeliefGraph::load_from_string(&json).unwrap();
+
+        assert_eq!(reconstructed.stats().node_count, 0);
+        assert_eq!(reconstructed.stats().edge_count, 0);
     }
 }

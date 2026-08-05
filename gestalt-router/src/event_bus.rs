@@ -107,10 +107,14 @@ impl BusEvent {
         self.run_id.clone().unwrap_or_else(|| "bus".to_string())
     }
 
-    /// Stable content hash used for dedup: SHA-256 over the semantic identity
-    /// of the event (agent + type + run + project + state + summary + ts).
-    /// Two identical events (retries, replay, double-push) share the same hash
-    /// and are skipped within the dedup window.
+    /// Stable content hash used for dedup: SHA-256 over the SEMANTIC identity
+    /// of the event (agent + type + run + project + state + summary).
+    ///
+    /// NOTE: `ts` is intentionally EXCLUDED — emitters generate a fresh
+    /// timestamp on every push (e.g. event.py), so including it would make
+    /// every push look unique and dedup would never fire. Two pushes of the
+    /// same logical event (retries, replay, cron tick re-sent) share the same
+    /// hash and are skipped within the dedup window.
     pub fn dedup_hash(&self) -> String {
         use sha2::{Digest, Sha256};
         let mut hasher = Sha256::new();
@@ -125,8 +129,6 @@ impl BusEvent {
         hasher.update(self.state.as_deref().unwrap_or("").as_bytes());
         hasher.update([0u8]);
         hasher.update(self.summary.as_bytes());
-        hasher.update([0u8]);
-        hasher.update(self.ts.as_bytes());
         format!("{:x}", hasher.finalize())
     }
 }
@@ -268,22 +270,34 @@ mod tests {
             .with_ts("2026-08-05T10:00:00Z");
         let b = BusEvent::new("hermes", "run_finished", "27/27 PASS")
             .with_run_id("r1")
-            .with_ts("2026-08-05T10:00:00Z");
+            .with_ts("2026-08-05T10:00:01Z");
         let c = BusEvent::new("hermes", "run_finished", "27/27 PASS")
             .with_run_id("r1")
-            .with_ts("2026-08-05T10:01:00Z");
+            .with_ts("2026-08-05T10:01:00Z")
+            .with_metadata(serde_json::json!({"llm": "deepseek"}));
 
+        // ts is NOT part of the semantic identity — same event, different ts.
         assert_eq!(
             a.dedup_hash(),
             b.dedup_hash(),
-            "identical events share hash"
+            "same event with different ts shares hash"
         );
-        assert_ne!(
+        assert_eq!(
             a.dedup_hash(),
             c.dedup_hash(),
-            "different ts → different hash"
+            "metadata is not part of the semantic identity either"
         );
         assert_eq!(a.dedup_hash().len(), 64, "sha256 hex");
+
+        // Different summary → different hash.
+        let d = BusEvent::new("hermes", "run_finished", "28/28 PASS")
+            .with_run_id("r1")
+            .with_ts("2026-08-05T10:00:00Z");
+        assert_ne!(
+            a.dedup_hash(),
+            d.dedup_hash(),
+            "different summary → different hash"
+        );
     }
 
     #[tokio::test]

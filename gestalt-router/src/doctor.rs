@@ -567,7 +567,7 @@ impl Doctor {
                     match res {
                         Ok(out) if out.status.success() => {
                             worktrees_removed += 1;
-                        }
+                        },
                         Ok(_) => {
                             // Try force remove
                             let force_res = std::process::Command::new("git")
@@ -577,7 +577,7 @@ impl Doctor {
                             match force_res {
                                 Ok(force_out) if force_out.status.success() => {
                                     worktrees_removed += 1;
-                                }
+                                },
                                 Ok(force_out) => {
                                     let err_msg = format!(
                                         "Failed to force remove worktree {}: {}",
@@ -585,15 +585,18 @@ impl Doctor {
                                         String::from_utf8_lossy(&force_out.stderr).trim()
                                     );
                                     errors.push(err_msg);
-                                }
+                                },
                                 Err(e) => {
-                                    errors.push(format!("Git worktree force remove process error: {}", e));
-                                }
+                                    errors.push(format!(
+                                        "Git worktree force remove process error: {}",
+                                        e
+                                    ));
+                                },
                             }
-                        }
+                        },
                         Err(e) => {
                             errors.push(format!("Git worktree remove process error: {}", e));
-                        }
+                        },
                     }
                 } else {
                     // Check path.exists() before calling git; skip with warning
@@ -603,7 +606,10 @@ impl Doctor {
                     );
                 }
             } else {
-                errors.push(format!("Worktree path {} is NOT safe to delete", wt.display()));
+                errors.push(format!(
+                    "Worktree path {} is NOT safe to delete",
+                    wt.display()
+                ));
             }
         }
 
@@ -617,7 +623,7 @@ impl Doctor {
             match res {
                 Ok(out) if out.status.success() => {
                     branches_deleted += 1;
-                }
+                },
                 Ok(out) => {
                     let err_msg = format!(
                         "Failed to delete branch {}: {}",
@@ -625,10 +631,10 @@ impl Doctor {
                         String::from_utf8_lossy(&out.stderr).trim()
                     );
                     errors.push(err_msg);
-                }
+                },
                 Err(e) => {
                     errors.push(format!("Git branch delete process error: {}", e));
-                }
+                },
             }
         }
 
@@ -702,7 +708,7 @@ fn is_safe_to_delete_worktree(
             } else {
                 path.to_path_buf()
             }
-        }
+        },
     };
 
     // Must be under ~/.gestalt/runs/ (runs_dir_canonical)

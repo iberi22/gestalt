@@ -315,7 +315,11 @@ fn test_doctor_cleanup_single_run() {
 
     // Branch should be deleted
     let branch_check = std::process::Command::new("git")
-        .args(["show-ref", "--verify", &format!("refs/heads/{}", branch_name)])
+        .args([
+            "show-ref",
+            "--verify",
+            &format!("refs/heads/{}", branch_name),
+        ])
         .current_dir(repo_path)
         .output()
         .unwrap();

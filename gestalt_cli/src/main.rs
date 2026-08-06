@@ -417,6 +417,10 @@ enum Commands {
         /// Look-back window in minutes
         #[arg(long, default_value_t = 30)]
         window: u64,
+
+        /// Gated run: only run when ≥ MIN_EXECUTIONS new signal since last insight — never empty ticks
+        #[arg(long)]
+        gated: bool,
     },
 
     /// Observe active daemon for discovering agents, injecting hooks, and tracking artifacts
@@ -1918,7 +1922,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             },
         },
 
-        Commands::Thinking { force, window } => {
+        Commands::Thinking { force, window, gated } => {
             use gestalt_router::thinking::ThinkingLoop;
 
             let xavier = Arc::new(XavierClient::from_env());
@@ -1940,6 +1944,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 StateDb::open(&db_path).map_err(|e| format!("Failed to open StateDb: {}", e))?;
 
             println!("🧠 Gestalt Thinking Loop (window={}m)", window);
+
+            if gated && !force {
+                println!("   Checking gated run policy (MIN_EXECUTIONS={})...", gestalt_router::thinking::MIN_EXECUTIONS);
+                if !loop_.should_run(&db, gestalt_router::thinking::MIN_EXECUTIONS).await {
+                    let pending = loop_.pending_executions_since_last_insight(&db).await;
+                    println!(
+                        "   ℹ️  Gated run: only {} new executions (need ≥{}) since last insight. Refusing to run (never empty ticks).",
+                        pending,
+                        gestalt_router::thinking::MIN_EXECUTIONS
+                    );
+                    std::process::exit(0);
+                }
+            }
+
             println!("   Pulling recent bus events from StateDb timeline...");
 
             let executions = loop_.recent_executions_from_db(&db, 100);

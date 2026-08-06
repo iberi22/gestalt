@@ -1,12 +1,10 @@
-use wasm_bindgen::prelude::*;
+#![cfg(target_arch = "wasm32")]
+
 use serde::{Deserialize, Serialize};
+use wasm_bindgen::prelude::*;
 
 // Re-export MemoryNode, MemoryEdge, GraphOps, MemorySync, EventBus from gestalt-proto
-pub use gestalt_proto::memory::{GraphOps, MemoryEdge, MemoryNode, MemorySync};
-pub use gestalt_proto::event::EventBus;
-
-pub mod git;
-pub mod state;
+pub use gestalt_proto::{EventBus, GraphOps, MemoryEdge, MemoryNode, MemorySync};
 
 #[wasm_bindgen]
 pub struct WasmGraph {
@@ -41,7 +39,7 @@ impl WasmGraph {
     }
 }
 
-impl GraphOps for WasmGraph {
+impl gestalt_proto::GraphOps for WasmGraph {
     fn add_node(&mut self, node: MemoryNode) {
         self.add_node(node);
     }
@@ -74,7 +72,7 @@ impl MemorySyncWrapper {
     }
 }
 
-impl MemorySync for MemorySyncWrapper {
+impl gestalt_proto::MemorySync for MemorySyncWrapper {
     fn sync(&mut self) -> Result<(), String> {
         Ok(())
     }
@@ -101,7 +99,7 @@ impl WasmEventBus {
     }
 }
 
-impl EventBus for WasmEventBus {
+impl gestalt_proto::EventBus for WasmEventBus {
     fn publish(&self, event: String) {
         self.publish(event);
     }
@@ -210,8 +208,105 @@ impl AgentResult {
 }
 
 #[wasm_bindgen]
-pub fn init_gestalt() -> GestaltEngine {
-    GestaltEngine {}
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct ConflictInfo {
+    #[wasm_bindgen(getter_with_clone)]
+    pub agent_id: String,
+    #[wasm_bindgen(getter_with_clone)]
+    pub path: String,
+}
+
+#[wasm_bindgen]
+impl ConflictInfo {
+    #[wasm_bindgen(constructor)]
+    pub fn new(agent_id: String, path: String) -> ConflictInfo {
+        ConflictInfo { agent_id, path }
+    }
+}
+
+#[wasm_bindgen]
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct RunReport {
+    #[wasm_bindgen(getter_with_clone)]
+    pub run_id: String,
+    #[wasm_bindgen(getter_with_clone)]
+    pub task: String,
+    pub duration_ms: f64,
+    #[wasm_bindgen(getter_with_clone)]
+    pub events_path: String,
+    pub success: bool,
+    agents: Vec<AgentResult>,
+    merged_branches: Vec<String>,
+    conflicts: Vec<ConflictInfo>,
+}
+
+#[wasm_bindgen]
+impl RunReport {
+    #[wasm_bindgen(constructor)]
+    pub fn new(
+        run_id: String,
+        task: String,
+        duration_ms: f64,
+        events_path: String,
+        success: bool,
+        agents: JsValue,
+        merged_branches: JsValue,
+        conflicts: JsValue,
+    ) -> Result<RunReport, JsValue> {
+        let agents: Vec<AgentResult> = serde_wasm_bindgen::from_value(agents)?;
+        let merged_branches: Vec<String> = serde_wasm_bindgen::from_value(merged_branches)?;
+        let conflicts: Vec<ConflictInfo> = serde_wasm_bindgen::from_value(conflicts)?;
+        Ok(RunReport {
+            run_id,
+            task,
+            duration_ms,
+            events_path,
+            success,
+            agents,
+            merged_branches,
+            conflicts,
+        })
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn agents(&self) -> JsValue {
+        serde_wasm_bindgen::to_value(&self.agents).unwrap_or(JsValue::NULL)
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn merged_branches(&self) -> JsValue {
+        serde_wasm_bindgen::to_value(&self.merged_branches).unwrap_or(JsValue::NULL)
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn conflicts(&self) -> JsValue {
+        serde_wasm_bindgen::to_value(&self.conflicts).unwrap_or(JsValue::NULL)
+    }
+}
+
+#[wasm_bindgen]
+pub struct EventStream {
+    events: Vec<String>,
+    index: usize,
+}
+
+#[wasm_bindgen]
+impl EventStream {
+    #[wasm_bindgen(constructor)]
+    pub fn new(events: JsValue) -> Result<EventStream, JsValue> {
+        let events: Vec<String> = serde_wasm_bindgen::from_value(events)?;
+        Ok(EventStream { events, index: 0 })
+    }
+
+    pub fn next(&mut self) -> Option<String> {
+        if self.index < self.events.len() {
+            let ev = self.events[self.index].clone();
+            self.index += 1;
+            Some(ev)
+        } else {
+            None
+        }
+    }
 }
 
 #[wasm_bindgen]
@@ -225,14 +320,19 @@ impl GestaltEngine {
     }
 
     pub fn execute_run_spec(&self, spec_val: JsValue) -> Result<RunReport, JsValue> {
+        // Deserialize the JsValue to our own RunSpec
         let spec: RunSpec = serde_wasm_bindgen::from_value(spec_val)
             .map_err(|e| JsValue::from_str(&format!("Invalid RunSpec: {}", e)))?;
 
+        // Simulating the execution
         let mut agents_results = Vec::new();
         for agent in spec.agents {
             agents_results.push(AgentResult {
                 agent_id: agent.id.clone(),
-                output: Some(format!("Executed agent: {} with command: {}", agent.id, agent.command)),
+                output: Some(format!(
+                    "Executed agent: {} with command: {}",
+                    agent.id, agent.command
+                )),
                 error: None,
                 branch: Some(format!("feature/{}", agent.id)),
                 changed_files: vec![format!("src/{}.rs", agent.id)],
@@ -266,31 +366,6 @@ impl GestaltEngine {
 }
 
 #[wasm_bindgen]
-pub struct EventStream {
-    events: Vec<String>,
-    index: usize,
-}
-
-#[wasm_bindgen]
-impl EventStream {
-    #[wasm_bindgen(constructor)]
-    pub fn new(events: JsValue) -> Result<EventStream, JsValue> {
-        let events: Vec<String> = serde_wasm_bindgen::from_value(events)?;
-        Ok(EventStream { events, index: 0 })
-    }
-
-    pub fn next(&mut self) -> Option<String> {
-        if self.index < self.events.len() {
-            let ev = self.events[self.index].clone();
-            self.index += 1;
-            Some(ev)
-        } else {
-            None
-        }
-    }
-}
-
-#[wasm_bindgen]
-pub fn init_gestalt_engine() -> GestaltEngine {
+pub fn init_gestalt() -> GestaltEngine {
     GestaltEngine::new()
 }

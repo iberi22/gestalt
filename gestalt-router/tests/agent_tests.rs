@@ -1,3 +1,5 @@
+//! Unit and integration tests for Gestalt Agent execution and orchestration runners.
+
 use gestalt_router::agent::{AgentOutcome, AgentRunner, SubprocessRunner};
 use gestalt_router::run::{AgentResult, AgentSpec, RunSpec};
 use gestalt_router::run_state::AgentState;

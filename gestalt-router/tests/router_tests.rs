@@ -1,4 +1,4 @@
-//! Comprehensive integration tests for gestalt-router.
+//! Comprehensive unit and integration tests for gestalt-router.
 //!
 //! Covers: type validation, checkpoint, overlap, integrate, timeline, workflow,
 //! and edge-case scenarios across all public modules.

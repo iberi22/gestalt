@@ -56,7 +56,7 @@ fi
 
 # ── Stage 4: Tests ───────────────────────────────────────
 header "🧪 [4/5] Cargo Test (gestalt-state)"
-if eval "$BUILD_ENV && cargo test -p gestalt-state -- --skip test_try_lock_exclusive 2>&1"; then
+if eval "$BUILD_ENV && cargo test -p gestalt-state 2>&1"; then
     pass "gestalt-state tests: PASS"
 else
     fail "gestalt-state tests: FAIL"

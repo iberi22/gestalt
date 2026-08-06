@@ -5,6 +5,7 @@
 mod agent_wrapper;
 mod bus;
 mod config;
+mod observe;
 mod repl;
 
 use crate::config::CliConfig;
@@ -416,6 +417,13 @@ enum Commands {
         /// Look-back window in minutes
         #[arg(long, default_value_t = 30)]
         window: u64,
+    },
+
+    /// Observe active daemon for discovering agents, injecting hooks, and tracking artifacts
+    Observe {
+        /// Run discovery once and exit
+        #[arg(long)]
+        once: bool,
     },
 }
 
@@ -1958,6 +1966,36 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     println!("✅ Insight indexed in Xavier as kind=insight");
                 },
                 None => println!("   No insight produced this cycle"),
+            }
+        },
+
+        Commands::Observe { once } => {
+            if once {
+                let results = observe::discover_agents()?;
+                println!("[Discovery] Starting agent discovery pass...");
+                println!(
+                    "[Discovery] Detected {} agents in PATH:",
+                    results.path_agents.len()
+                );
+                for agent in &results.path_agents {
+                    println!("  - {}", agent.display());
+                }
+                println!(
+                    "[Discovery] Detected {} config directories:",
+                    results.config_dirs.len()
+                );
+                for dir in &results.config_dirs {
+                    println!("  - {}", dir.display());
+                }
+                println!(
+                    "[Discovery] Detected {} agents in Orca hooks:",
+                    results.orca_hooks.len()
+                );
+                for hook in &results.orca_hooks {
+                    println!("  - {}", hook.display());
+                }
+            } else {
+                observe::run_daemon_loop().await?;
             }
         },
     }

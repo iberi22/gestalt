@@ -26,3 +26,4 @@ gestalt-state = { path = "../gestalt-state" }
 gestalt-search = { path = "../gestalt-search" }
 uuid = { version = "1.15", features = ["v4", "serde"] }
 axum = "0.8"
+tempfile = "3.24"

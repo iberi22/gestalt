@@ -1333,7 +1333,8 @@ fn test_reconstruct_run_helper() {
         task: "some task".into(),
         agents: vec!["agent-a".into(), "agent-b".into()],
         sha_base: "sha123".into(),
-    }).unwrap();
+    })
+    .unwrap();
 
     // Now append agent state changes
     log.append(Event::AgentStateChanged {
@@ -1341,14 +1342,16 @@ fn test_reconstruct_run_helper() {
         agent_id: "agent-a".into(),
         from: AgentState::Pending,
         to: AgentState::Running,
-    }).unwrap();
+    })
+    .unwrap();
 
     log.append(Event::AgentStateChanged {
         run_id,
         agent_id: "agent-b".into(),
         from: AgentState::Pending,
         to: AgentState::Running,
-    }).unwrap();
+    })
+    .unwrap();
 
     // Reconstruct at this point - both are Running, so aggregate is Running
     let (events, final_state) = log.reconstruct().unwrap();
@@ -1361,7 +1364,8 @@ fn test_reconstruct_run_helper() {
         agent_id: "agent-a".into(),
         from: AgentState::Running,
         to: AgentState::Success,
-    }).unwrap();
+    })
+    .unwrap();
 
     // Reconstruct at this point - agent-a is Success, agent-b is Running. Aggregate should be Running.
     let (events, final_state) = log.reconstruct().unwrap();
@@ -1374,7 +1378,8 @@ fn test_reconstruct_run_helper() {
         agent_id: "agent-b".into(),
         from: AgentState::Running,
         to: AgentState::Crashed,
-    }).unwrap();
+    })
+    .unwrap();
 
     // Reconstruct - agent-a is Success, agent-b is Crashed. Aggregate should be Crashed.
     let (events, final_state) = log.reconstruct().unwrap();

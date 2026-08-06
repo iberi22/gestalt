@@ -222,17 +222,35 @@ pub fn reconstruct_run(
     // Priority: Crashed > Timeout > Quarantined > Running > Success > NoChanges > Pending
     let final_state = if agent_states.is_empty() {
         AgentState::Pending
-    } else if agent_states.values().any(|s| matches!(s, AgentState::Crashed)) {
+    } else if agent_states
+        .values()
+        .any(|s| matches!(s, AgentState::Crashed))
+    {
         AgentState::Crashed
-    } else if agent_states.values().any(|s| matches!(s, AgentState::Timeout)) {
+    } else if agent_states
+        .values()
+        .any(|s| matches!(s, AgentState::Timeout))
+    {
         AgentState::Timeout
-    } else if agent_states.values().any(|s| matches!(s, AgentState::Quarantined)) {
+    } else if agent_states
+        .values()
+        .any(|s| matches!(s, AgentState::Quarantined))
+    {
         AgentState::Quarantined
-    } else if agent_states.values().any(|s| matches!(s, AgentState::Running)) {
+    } else if agent_states
+        .values()
+        .any(|s| matches!(s, AgentState::Running))
+    {
         AgentState::Running
-    } else if agent_states.values().any(|s| matches!(s, AgentState::Success)) {
+    } else if agent_states
+        .values()
+        .any(|s| matches!(s, AgentState::Success))
+    {
         AgentState::Success
-    } else if agent_states.values().any(|s| matches!(s, AgentState::NoChanges)) {
+    } else if agent_states
+        .values()
+        .any(|s| matches!(s, AgentState::NoChanges))
+    {
         AgentState::NoChanges
     } else {
         AgentState::Pending

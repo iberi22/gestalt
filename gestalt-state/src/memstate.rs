@@ -316,8 +316,8 @@ mod tests {
         assert!(mem.get_agent_state("run-1", "agent-1").is_none());
     }
 
-    #[test]
-    fn test_try_lock_exclusive() {
+    #[tokio::test]
+    async fn test_try_lock_exclusive() {
         let mem = MemState::new();
 
         // First acquire succeeds

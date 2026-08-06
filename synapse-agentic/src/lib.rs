@@ -1,3 +1,5 @@
+#![deny(clippy::all)]
+
 pub mod context;
 pub mod graph;
 pub mod providers;

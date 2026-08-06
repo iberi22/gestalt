@@ -1,3 +1,5 @@
+//! Unit and integration tests for Gestalt Router Doctor cleanup and pruning utilities.
+
 use gestalt_router::doctor::{Doctor, DoctorError, ManifestJson, OrphanedRun};
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};

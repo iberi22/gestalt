@@ -20,7 +20,10 @@ pub fn bus_event_to_otel_attributes(event: &BusEvent) -> Value {
     // Map trace_id and gen_ai.conversation.id if run_id is present
     if let Some(ref run_id) = event.run_id {
         attrs.insert("trace_id".to_string(), Value::String(run_id.clone()));
-        attrs.insert("gen_ai.conversation.id".to_string(), Value::String(run_id.clone()));
+        attrs.insert(
+            "gen_ai.conversation.id".to_string(),
+            Value::String(run_id.clone()),
+        );
     }
 
     // Map span_type
@@ -29,10 +32,16 @@ pub fn bus_event_to_otel_attributes(event: &BusEvent) -> Value {
         "checkpoint" => "execute_tool",
         _ => "chat",
     };
-    attrs.insert("span_type".to_string(), Value::String(span_type.to_string()));
+    attrs.insert(
+        "span_type".to_string(),
+        Value::String(span_type.to_string()),
+    );
 
     // Map agent
-    attrs.insert("gen_ai.agent.name".to_string(), Value::String(event.agent.clone()));
+    attrs.insert(
+        "gen_ai.agent.name".to_string(),
+        Value::String(event.agent.clone()),
+    );
 
     // Map other standard BusEvent fields to semantic convention attributes if useful
     if let Some(ref project) = event.project {
@@ -41,8 +50,14 @@ pub fn bus_event_to_otel_attributes(event: &BusEvent) -> Value {
     if let Some(ref state) = event.state {
         attrs.insert("gen_ai.state".to_string(), Value::String(state.clone()));
     }
-    attrs.insert("gen_ai.event.summary".to_string(), Value::String(event.summary.clone()));
-    attrs.insert("gen_ai.event.ts".to_string(), Value::String(event.ts.clone()));
+    attrs.insert(
+        "gen_ai.event.summary".to_string(),
+        Value::String(event.summary.clone()),
+    );
+    attrs.insert(
+        "gen_ai.event.ts".to_string(),
+        Value::String(event.ts.clone()),
+    );
 
     // Map metadata to gen_ai.* attributes
     if let Value::Object(ref meta_obj) = event.metadata {

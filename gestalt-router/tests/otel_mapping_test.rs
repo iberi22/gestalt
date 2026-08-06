@@ -66,12 +66,19 @@ fn test_run_started_mapping() {
 
 #[test]
 fn test_unknown_event_type_fallback() {
-    let event = BusEvent::new("external-bot", "some_crazy_new_event", "Something unknown happened");
+    let event = BusEvent::new(
+        "external-bot",
+        "some_crazy_new_event",
+        "Something unknown happened",
+    );
 
     let otel = bus_event_to_otel_attributes(&event);
 
     // Verify it doesn't panic and falls back to chat
     assert_eq!(otel["span_type"], json!("chat"));
     assert_eq!(otel["gen_ai.agent.name"], json!("external-bot"));
-    assert_eq!(otel["gen_ai.event.summary"], json!("Something unknown happened"));
+    assert_eq!(
+        otel["gen_ai.event.summary"],
+        json!("Something unknown happened")
+    );
 }

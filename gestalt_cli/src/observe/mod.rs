@@ -1,7 +1,7 @@
-pub mod proc_monitor;
+pub mod artifact_ingest;
 pub mod inject;
 pub mod orca_bridge;
-pub mod artifact_ingest;
+pub mod proc_monitor;
 
 use std::path::PathBuf;
 
@@ -15,16 +15,7 @@ pub struct DiscoveryResults {
 pub fn discover_agents() -> Result<DiscoveryResults, String> {
     // Walk PATH directories
     let target_binaries = [
-        "agy",
-        "kimi",
-        "opencode",
-        "hermes",
-        "gestalt",
-        "claude",
-        "codex",
-        "orca",
-        "jules",
-        "agent",
+        "agy", "kimi", "opencode", "hermes", "gestalt", "claude", "codex", "orca", "jules", "agent",
     ];
 
     let mut path_agents = Vec::new();
@@ -204,7 +195,10 @@ mod tests {
         assert!(results.path_agents.iter().any(|p| p.ends_with("orca")));
 
         assert_eq!(results.config_dirs.len(), 2);
-        assert!(results.config_dirs.iter().any(|p| p.ends_with(".config/opencode")));
+        assert!(results
+            .config_dirs
+            .iter()
+            .any(|p| p.ends_with(".config/opencode")));
         assert!(results.config_dirs.iter().any(|p| p.ends_with(".hermes")));
 
         assert_eq!(results.orca_hooks.len(), 1);

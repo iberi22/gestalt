@@ -1973,15 +1973,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             if once {
                 let results = observe::discover_agents()?;
                 println!("[Discovery] Starting agent discovery pass...");
-                println!("[Discovery] Detected {} agents in PATH:", results.path_agents.len());
+                println!(
+                    "[Discovery] Detected {} agents in PATH:",
+                    results.path_agents.len()
+                );
                 for agent in &results.path_agents {
                     println!("  - {}", agent.display());
                 }
-                println!("[Discovery] Detected {} config directories:", results.config_dirs.len());
+                println!(
+                    "[Discovery] Detected {} config directories:",
+                    results.config_dirs.len()
+                );
                 for dir in &results.config_dirs {
                     println!("  - {}", dir.display());
                 }
-                println!("[Discovery] Detected {} agents in Orca hooks:", results.orca_hooks.len());
+                println!(
+                    "[Discovery] Detected {} agents in Orca hooks:",
+                    results.orca_hooks.len()
+                );
                 for hook in &results.orca_hooks {
                     println!("  - {}", hook.display());
                 }

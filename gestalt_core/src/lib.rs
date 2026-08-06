@@ -19,5 +19,6 @@ pub mod domain;
 pub mod mcp;
 pub mod models;
 pub mod ports;
+pub mod search;
 
 pub use domain::error::{CoreError, Result as CoreResult};

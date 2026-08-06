@@ -6,6 +6,7 @@
 mod app_context;
 mod gestalt_tools;
 mod tools;
+mod server;
 
 use std::sync::Arc;
 
@@ -161,7 +162,10 @@ async fn register_all_tools(server: &McpServer, ctx: Arc<GestaltAppContext>) -> 
     tools::register_standard_tools(server).await?;
 
     // 2. Gestalt-specific tools (belief graph, search, agent, etc.)
-    gestalt_tools::register_gestalt_tools(server, ctx).await?;
+    gestalt_tools::register_gestalt_tools(server, ctx.clone()).await?;
+
+    // 3. Standalone server tools
+    server::register_standalone_tools(server, ctx).await?;
 
     Ok(())
 }

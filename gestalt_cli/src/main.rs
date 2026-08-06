@@ -230,8 +230,32 @@ struct Args {
     verbose: bool,
 }
 
+#[derive(Subcommand, Debug, Clone)]
+enum McpAction {
+    /// Start the standalone MCP server
+    Serve {
+        /// Host to bind to
+        #[arg(long, default_value = "127.0.0.1")]
+        host: String,
+
+        /// Port to bind to
+        #[arg(long, default_value_t = 3000)]
+        port: u16,
+
+        /// Transport mode: "http" or "stdio"
+        #[arg(long, default_value = "http")]
+        transport: String,
+    },
+}
+
 #[derive(Subcommand, Debug)]
 enum Commands {
+    /// Model Context Protocol (MCP) commands
+    Mcp {
+        #[command(subcommand)]
+        action: McpAction,
+    },
+
     /// Start the MCP server
     Serve {
         /// Host to bind to
@@ -756,6 +780,38 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .map_err(std::io::Error::other)??;
 
     match args.command {
+        Commands::Mcp { action } => match action {
+            McpAction::Serve { host, port, transport } => {
+                info!("Starting standalone MCP Server on {}:{}", host, port);
+                println!("🚀 Starting Standalone MCP Server on {}:{} ({})", host, port, transport);
+
+                info!("Building gestalt_mcp...");
+                println!("🔨 Building gestalt_mcp...");
+
+                let build_status = tokio::process::Command::new("cargo")
+                    .args(["build", "-p", "gestalt_mcp"])
+                    .status()
+                    .await?;
+
+                if !build_status.success() {
+                    error!("Failed to build gestalt_mcp");
+                    std::process::exit(1);
+                }
+
+                info!("Starting MCP Server...");
+
+                let mut child = tokio::process::Command::new("./target/debug/gestalt_mcp")
+                    .arg("--transport")
+                    .arg(transport)
+                    .arg("--bind")
+                    .arg(format!("{}:{}", host, port))
+                    .spawn()?;
+
+                let status = child.wait().await?;
+                std::process::exit(status.code().unwrap_or(0));
+            }
+        },
+
         Commands::Serve { host, port } => {
             info!("Starting MCP Server on {}:{}", host, port);
             println!("🚀 Starting Gestalt MCP Server on {}:{}", host, port);

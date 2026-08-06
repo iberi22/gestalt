@@ -115,8 +115,8 @@ The engine: concurrent agent runs, file isolation, conflict control, merge.
 | FEAT-GT-006 | Capability-based routing (`CapabilityMatch`) from `agent-registry.toml` | `[DONE]` | `agent-registry.toml` `[routing]` |
 | FEAT-GT-007 | Doctor / orphaned-run cleanup (`gestalt doctor`) | `[DONE]` | `gestalt-router/src/doctor.rs` |
 | FEAT-GT-008 | Real-time conflict detection hardening (issue G4: timed out) | `[PENDING]` | `GLOBAL_GOAL.md` known issues |
-| FEAT-GT-009 | Broken test recovery (issue T1: `agent_tests`, `doctor_tests`, `router_tests` imports; T2: clippy in `gestalt-merge`/`synapse-agentic`; G3: ignored `test_try_lock_exclusive`) | `[PENDING]` | `GLOBAL_GOAL.md` known issues |
-| FEAT-GT-010 | LLM provider resilience layer: automatic failover (OpenRouter → local/Ollama → alt), structured error capture, clean `Timeout`/`Crashed` states | `[PENDING]` | AGENTS.md non-negotiable #4 |
+| FEAT-GT-009 | Broken test recovery (issue T1: `agent_tests`, `doctor_tests`, `router_tests` imports; T2: clippy in `gestalt-merge`/`synapse-agentic`; G3: ignored `test_try_lock_exclusive`) | `[DONE]` | PR #526 |
+| FEAT-GT-010 | LLM provider resilience layer: automatic failover (OpenRouter → local/Ollama → alt), structured error capture, clean `Timeout`/`Crashed` states | `[DONE]` | PR #527 |
 
 ### Pillar B — Universal Event Bus & Traceability
 
@@ -130,9 +130,9 @@ The nervous system: one ingress for every agent event, durable + semantic.
 | FEAT-GT-014 | Router↔bus integration (orchestrated runs auto-traced) | `[DONE]` | `router.rs` `emit_bus_event` |
 | FEAT-GT-015 | Dedup (SHA-256 semantic identity, 300s server-clock window) | `[DONE]` | `event_bus.rs`; E2E identical push → `deduped=true` |
 | FEAT-GT-016 | Replay cursor (`gestalt bus replay --after-seq`, `--dry-run`) | `[DONE]` | `gestalt_cli/src/main.rs` |
-| FEAT-GT-017 | Secret/token filter: skip or redact summaries containing `XAVIER_TOKEN`, `password`, key material before sink/WS | `[PENDING]` | Design doc risk R7 mitigation |
+| FEAT-GT-017 | Secret/token filter: skip or redact summaries containing `XAVIER_TOKEN`, `password`, key material before sink/WS | `[DONE]` | PR #520 |
 | FEAT-GT-018 | SRS + feature tracking sync: REQ-022/REQ-023 present (`docs/SRS/REQUIREMENTS.md`), `feat-event-bus`/`feat-xavier-thinking` present (`.gitcore/features.json`); keep both current as features land | `[PARTIAL]` | Exists; needs updates per phase |
-| FEAT-GT-019 | Multi-project scoping: `project` as first-class filter on `GET /api/events`, per-project namespaces in Xavier paths | `[PENDING]` | — |
+| FEAT-GT-019 | Multi-project scoping: `project` as first-class filter on `GET /api/events`, per-project namespaces in Xavier paths | `[IN WAVE-9]` | — |
 | FEAT-GT-020 | Bus auth (optional localhost token) — only if bus is exposed beyond localhost | `[PENDING]` | Design doc non-goal today |
 
 ### Pillar C — Memory & Thinking (Xavier)
@@ -147,8 +147,8 @@ The brain: execution memory in, synthesized insight out, context fed back.
 | FEAT-GT-024 | PRE-run context feed: `search(kind=insight + execution tail)` → `XAVIER_CONTEXT` env for launched agents (`gestalt xavier cycle "task" --agent "cmd"`) | `[PARTIAL]` | Works for Gestalt-launched runs; not yet universal |
 | FEAT-GT-025 | POST-run archival (`kind=run_result`) | `[DONE]` | `XavierClient.archive_run` |
 | FEAT-GT-026 | `kind=decision` memories (approved gate receipts, architectural decisions) | `[PENDING]` | Design doc appendix B |
-| FEAT-GT-027 | Thinking trigger policy: execution-gated cron (run only when ≥ `MIN_EXECUTIONS` new signal since last insight — never empty ticks) | `[PENDING]` | SWAL philosophy §1.5 |
-| FEAT-GT-028 | Insight quality loop: dashboard review/approve of insights; promote approved → `kind=decision` | `[PENDING]` | — |
+| FEAT-GT-027 | Thinking trigger policy: execution-gated cron (run only when ≥ `MIN_EXECUTIONS` new signal since last insight — never empty ticks) | `[IN WAVE-9]` | — |
+| FEAT-GT-028 | Insight quality loop: dashboard review/approve of insights; promote approved → `kind=decision` | `[IN WAVE-9]` | — |
 
 ### Pillar D — Real-Time Observability
 
@@ -160,9 +160,9 @@ The eyes: live timeline, dashboards, debug-grade history, interop.
 | FEAT-GT-030 | StateDb timeline (`StateDbEventLog`, `Event` enum: RunStarted, AgentStateChanged, Checkpoint, Overlap, MergeConflict…) | `[DONE]` | `gestalt-router/src/timeline.rs` |
 | FEAT-GT-031 | Dashboard Events view (project-admin): `GET /api/gestalt/events?since=<ts>` proxy + live WS panel | `[PENDING]` | Design doc §4.5 |
 | FEAT-GT-032 | Dashboard Thinking view: `/api/gestalt/thinking` (recent `kind=insight`) | `[PENDING]` | Design doc §4.5 |
-| FEAT-GT-033 | Flight-recorder timeline: reconstruct one run/conversation end-to-end by `run_id` (Honeycomb pattern) — `gestalt timeline show <run_id>` | `[PENDING]` | Data already in StateDb; needs query/CLI |
-| FEAT-GT-034 | OTel GenAI interop: map `BusEvent` → `metadata.otel` (span types `invoke_agent`/`execute_tool`/`chat`, `gen_ai.*` attrs, conversation ID = `run_id`) | `[PENDING]` | OTel GenAI semconv (Development status) |
-| FEAT-GT-035 | WS auth (token) for `:3001` | `[PENDING]` | `GLOBAL_GOAL.md` recommended steps |
+| FEAT-GT-033 | Flight-recorder timeline: reconstruct one run/conversation end-to-end by `run_id` (Honeycomb pattern) — `gestalt timeline show <run_id>` | `[DONE]` | PR #521 |
+| FEAT-GT-034 | OTel GenAI interop: map `BusEvent` → `metadata.otel` (span types `invoke_agent`/`execute_tool`/`chat`, `gen_ai.*` attrs, conversation ID = `run_id`) | `[DONE]` | PR #522 |
+| FEAT-GT-035 | WS auth (token) for `:3001` | `[IN WAVE-9]` | — |
 
 ### Pillar E — Ecosystem Integration & Autonomous Observation
 
@@ -173,13 +173,13 @@ The reach: see every agent on the machine, with or without its cooperation.
 | FEAT-GT-036 | Agent registry (capabilities, rate limits, providers, tiny agents) | `[DONE]` | `agent-registry.toml` |
 | FEAT-GT-037 | MCP server (18 tools, stdio + HTTP) | `[DONE]` | `gestalt_mcp` → `~/.local/bin/gestalt-mcp` |
 | FEAT-GT-038 | Hermes↔Gestalt protocol (`POST /v1/orchestrate`) | `[DONE]` | `docs/hermes-gestalt-protocol.md` |
-| FEAT-GT-039 | **Observe daemon** `gestalt observe` — system-wide agent detection without agent instruction. Plan: `~/.hermes/plans/2026-08-06-gestalt-observe-daemon.md` | `[PENDING]` | Phase 0 verified (below) |
-| FEAT-GT-040 | Observe source 1: discovery + merge-safe hook injection (opencode plugin JS, codex `hooks.json`, claude `settings.json`; guards: timeout ≤10s, fail-open, exit 0) | `[PENDING]` | 9 agents in PATH, 7 config dirs verified |
-| FEAT-GT-041 | Observe source 2: `/proc` poll (5s) with exact-cmdline matching (filters ~10 generic node/python processes) | `[PENDING]` | Phase 0 noise census |
+| FEAT-GT-039 | **Observe daemon** `gestalt observe` — system-wide agent detection without agent instruction. Plan: `~/.hermes/plans/2026-08-06-gestalt-observe-daemon.md` | `[DONE]` | PR #523 |
+| FEAT-GT-040 | Observe source 1: discovery + merge-safe hook injection (opencode plugin JS, codex `hooks.json`, claude `settings.json`; guards: timeout ≤10s, fail-open, exit 0) | `[DONE]` | PR #524 |
+| FEAT-GT-041 | Observe source 2: `/proc` poll (5s) with exact-cmdline matching (filters ~10 generic node/python processes) | `[DONE]` | PR #525 |
 | FEAT-GT-042 | Observe source 3: Orca bridge (`~/.config/orca/agent-hooks/endpoint.env` → `ORCA_AGENT_HOOK_PORT=42423` + token; Orca already hooks claude/codex/kimi/copilot/cursor/antigravity in `~/.orca/agent-hooks/`) | `[PENDING]` | Verified on disk |
 | FEAT-GT-043 | Observe source 4: artifact ingest (Claude `projects/*.jsonl`, Hermes session DB, Jules via GitHub API) | `[PENDING]` | — |
 | FEAT-GT-044 | `event.py` one-line push helper in project-admin (Hermes/Python agents → bus, fire-and-forget, 3s timeout, never raises) | `[PENDING]` | Design doc §4.4 |
-| FEAT-GT-045 | WASM runner: `gestalt-wasm` → `swal-agent-runner` (WebContainer browser node); currently on disk, not a workspace member | `[PENDING]` | `gestalt-wasm/` |
+| FEAT-GT-045 | WASM runner: `gestalt-wasm` → `swal-agent-runner` (WebContainer browser node); currently on disk, not a workspace member | `[IN WAVE-9]` | gestalt-wasm/ |
 | FEAT-GT-046 | GitHub sync (force-push clean main; CI visibility for the showcase) | `[PENDING]` | `GLOBAL_GOAL.md` Fase 3 |
 
 ---
@@ -361,11 +361,12 @@ shared semantic memory + automatic synthesis** in one local system. That combina
 
 ## 11. Feature Index (status rollup)
 
-- **DONE (22):** FEAT-GT-001..007, 011..016, 021..023, 025, 029, 030, 036..038
-- **PARTIAL (2):** FEAT-GT-018, 024
-- **PENDING (22):** FEAT-GT-008..010, 017, 019, 020, 026..028, 031..035, 039..046
+- **DONE (30):** FEAT-GT-001..007, FEAT-GT-009, FEAT-GT-010, FEAT-GT-011..017, FEAT-GT-021..023, FEAT-GT-025, FEAT-GT-029, FEAT-GT-030, FEAT-GT-033, FEAT-GT-034, FEAT-GT-036..038, FEAT-GT-039..041 (PR #520-#527)
+- **PARTIAL (2):** FEAT-GT-018, FEAT-GT-024
+- **IN WAVE-9 (7):** FEAT-GT-019, FEAT-GT-027, FEAT-GT-028, FEAT-GT-035, FEAT-GT-045, feat-belief-graph, feat-hybrid-search
+- **PENDING (9):** FEAT-GT-008, FEAT-GT-020 (bus auth non-goal), FEAT-GT-026, FEAT-GT-031, FEAT-GT-032, FEAT-GT-042, FEAT-GT-043, FEAT-GT-044, FEAT-GT-046
 
-(Total: 46 features = 22 DONE + 2 PARTIAL + 22 PENDING.)
+(Total: 48 features = 30 DONE + 2 PARTIAL + 7 IN WAVE-9 + 9 PENDING.)
 
 Priority order for PENDING: **FEAT-GT-039 (observe daemon)** > FEAT-GT-009 (test debt)
 > FEAT-GT-040..042 (observe sources) > FEAT-GT-044 (event.py) > FEAT-GT-031/032 (dashboards)

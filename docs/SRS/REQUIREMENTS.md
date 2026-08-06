@@ -242,7 +242,7 @@ JSONL event log for tracking run lifecycle events
 
 - **Category:** Functional
 - **Priority:** P1
-- **SRS Status:** `active`
+- **SRS Status:** implemented (PR #520; verified 2026-08-06)
 - **Files:** gestalt-router/src/event_bus.rs, gestalt-router/src/xavier_sink.rs, gestalt_cli/src/bus.rs
 
 ### Description
@@ -254,7 +254,7 @@ El router de Gestalt emite `run_started`/`run_finished` al bus en cada ejecució
 
 - **Category:** Functional
 - **Priority:** P1
-- **SRS Status:** `active`
+- **SRS Status:** implemented (PR #521; verified 2026-08-06)
 - **Files:** gestalt-router/src/thinking.rs, gestalt_cli/src/bus.rs (OllamaSynthesizer)
 
 ### Description

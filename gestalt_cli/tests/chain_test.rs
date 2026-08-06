@@ -13,7 +13,7 @@ pub mod agent_wrapper;
 #[path = "../src/chain.rs"]
 pub mod chain;
 
-use chain::{topological_sort, run_chain, ChainStep};
+use chain::{run_chain, topological_sort, ChainStep};
 use std::fs;
 use std::sync::{Mutex, OnceLock};
 use tempfile::tempdir;
@@ -146,13 +146,24 @@ requires = ["step1"]
 
     fs::write(&spec_path, spec_content).expect("Failed to write temp spec");
 
-    let result = run_chain(spec_path.to_str().unwrap(), Some("test-project".to_string()), false).await;
+    let result = run_chain(
+        spec_path.to_str().unwrap(),
+        Some("test-project".to_string()),
+        false,
+    )
+    .await;
     assert!(result.is_ok(), "Chain execution failed: {:?}", result);
 
     // Verify context propagation
     let xavier_ctx = std::env::var("XAVIER_CONTEXT").expect("XAVIER_CONTEXT should be set");
-    assert!(xavier_ctx.contains("hello_from_step1"), "Should contain output of step1");
-    assert!(xavier_ctx.contains("hello_from_step2"), "Should contain output of step2");
+    assert!(
+        xavier_ctx.contains("hello_from_step1"),
+        "Should contain output of step1"
+    );
+    assert!(
+        xavier_ctx.contains("hello_from_step2"),
+        "Should contain output of step2"
+    );
 }
 
 #[tokio::test]
@@ -178,7 +189,12 @@ requires = ["fail_step"]
 
     fs::write(&spec_path, spec_content).expect("Failed to write temp spec");
 
-    let result = run_chain(spec_path.to_str().unwrap(), Some("test-project".to_string()), false).await;
+    let result = run_chain(
+        spec_path.to_str().unwrap(),
+        Some("test-project".to_string()),
+        false,
+    )
+    .await;
     assert!(result.is_err(), "Chain should have failed");
     let err_msg = result.unwrap_err();
     assert!(err_msg.contains("Chain halted") || err_msg.contains("failed"));
@@ -205,12 +221,27 @@ task = "hello_after_failure"
 
     fs::write(&spec_path, spec_content).expect("Failed to write temp spec");
 
-    let result = run_chain(spec_path.to_str().unwrap(), Some("test-project".to_string()), true).await;
-    assert!(result.is_err(), "Overall chain should still return Err at the end due to a failed step");
+    let result = run_chain(
+        spec_path.to_str().unwrap(),
+        Some("test-project".to_string()),
+        true,
+    )
+    .await;
+    assert!(
+        result.is_err(),
+        "Overall chain should still return Err at the end due to a failed step"
+    );
     let err_msg = result.unwrap_err();
-    assert!(err_msg.contains("failed to execute successfully"), "Expected failure summary, got: {}", err_msg);
+    assert!(
+        err_msg.contains("failed to execute successfully"),
+        "Expected failure summary, got: {}",
+        err_msg
+    );
 
     // Verify context propagation of the successful step (indicating it ran even after the failure)
     let xavier_ctx = std::env::var("XAVIER_CONTEXT").expect("XAVIER_CONTEXT should be set");
-    assert!(xavier_ctx.contains("hello_after_failure"), "The successful step should have executed");
+    assert!(
+        xavier_ctx.contains("hello_after_failure"),
+        "The successful step should have executed"
+    );
 }

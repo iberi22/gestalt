@@ -9,9 +9,9 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tracing::{error, info, warn};
 
-use gestalt_router::event_bus::{BusEvent, handle_event};
+use crate::agent_wrapper::{AgentWrapper, BlockEdit, InMemoryVfs};
+use gestalt_router::event_bus::{handle_event, BusEvent};
 use gestalt_state::StateDb;
-use crate::agent_wrapper::{AgentWrapper, InMemoryVfs, BlockEdit};
 
 /// Default event to trigger subsequent steps
 fn default_on_event() -> String {
@@ -48,7 +48,10 @@ pub fn topological_sort(steps: &[ChainStep]) -> Result<Vec<ChainStep>, String> {
     let mut steps_map: HashMap<String, &ChainStep> = HashMap::new();
     for step in steps {
         if steps_map.insert(step.name.clone(), step).is_some() {
-            return Err(format!("Duplicate step name '{}' in specification", step.name));
+            return Err(format!(
+                "Duplicate step name '{}' in specification",
+                step.name
+            ));
         }
     }
 
@@ -161,13 +164,19 @@ pub async fn run_chain(
     let mut any_step_failed = false;
 
     for step in sorted_steps {
-        info!("Executing step '{}' using agent '{}'", step.name, step.agent);
+        info!(
+            "Executing step '{}' using agent '{}'",
+            step.name, step.agent
+        );
 
         // 1. Emit `run_started` event on the universal event bus
         let start_ev = BusEvent::new(
             &step.agent,
             "run_started",
-            format!("Step '{}' (agent: '{}') started: {}", step.name, step.agent, step.task),
+            format!(
+                "Step '{}' (agent: '{}') started: {}",
+                step.name, step.agent, step.task
+            ),
         )
         .with_run_id(&shared_run_id)
         .with_project(&proj_name)
@@ -241,7 +250,7 @@ pub async fn run_chain(
                         ));
                     }
                 }
-            }
+            },
             Err(err_msg) => {
                 error!("Step '{}' execution error: {}", step.name, err_msg);
                 any_step_failed = true;
@@ -261,9 +270,12 @@ pub async fn run_chain(
                 }
 
                 if !continue_on_error {
-                    return Err(format!("Chain halted. Step '{}' failed: {}", step.name, err_msg));
+                    return Err(format!(
+                        "Chain halted. Step '{}' failed: {}",
+                        step.name, err_msg
+                    ));
                 }
-            }
+            },
         }
     }
 
@@ -288,13 +300,13 @@ fn build_output_summary(step_name: &str, stdout: &str, edits: &[BlockEdit]) -> S
             match edit {
                 BlockEdit::Insert { path, line, .. } => {
                     summary.push_str(&format!(" - Inserted lines in {path} at line {line}\n"));
-                }
+                },
                 BlockEdit::Delete { path, line } => {
                     summary.push_str(&format!(" - Deleted line in {path} at line {line}\n"));
-                }
+                },
                 BlockEdit::Replace { path, line, .. } => {
                     summary.push_str(&format!(" - Replaced content in {path} at line {line}\n"));
-                }
+                },
             }
         }
     }

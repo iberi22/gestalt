@@ -2375,7 +2375,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     std::process::exit(1);
                 }
                 println!("✅ Chain run completed successfully.");
-            }
+            },
         },
     }
 

@@ -1,8 +1,8 @@
-use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::time::Duration;
 use async_trait::async_trait;
 use gestalt_core::ports::outbound::llm_resilience::{LlmResilience, LlmResilienceError};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
+use std::time::Duration;
 use synapse_agentic::providers::LLMProvider;
 
 struct MockProvider {
@@ -86,7 +86,11 @@ async fn test_rate_limit_retry_and_crashed_error() {
     let primary = Arc::new(MockProvider {
         name: "Rate_Limited_Provider".to_string(),
         call_count: primary_calls.clone(),
-        behavior: Arc::new(|_| Err(anyhow::anyhow!("Rate limit exceeded: 429 Too Many Requests"))),
+        behavior: Arc::new(|_| {
+            Err(anyhow::anyhow!(
+                "Rate limit exceeded: 429 Too Many Requests"
+            ))
+        }),
         delay: None,
     });
 

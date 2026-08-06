@@ -86,7 +86,11 @@ impl LlmResilience {
 
         for (provider_idx, provider) in providers.enumerate() {
             let mut backoff = self.initial_backoff;
-            let provider_label = if provider_idx == 0 { "primary" } else { "fallback" };
+            let provider_label = if provider_idx == 0 {
+                "primary"
+            } else {
+                "fallback"
+            };
 
             for attempt in 1..=self.max_retries {
                 tracing::info!(
@@ -108,7 +112,7 @@ impl LlmResilience {
                             provider.name()
                         );
                         return Ok(text);
-                    }
+                    },
                     Ok(Err(e)) => {
                         let err_msg = e.to_string();
                         tracing::warn!(
@@ -123,7 +127,7 @@ impl LlmResilience {
                             provider.name(),
                             err_msg
                         )));
-                    }
+                    },
                     Err(_) => {
                         tracing::warn!(
                             "Provider '{}' call timed out after {:?}. Attempt {}/{}",
@@ -137,7 +141,7 @@ impl LlmResilience {
                             provider.name(),
                             self.timeout
                         )));
-                    }
+                    },
                 }
 
                 // If not the last attempt, sleep with backoff

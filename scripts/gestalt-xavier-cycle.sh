@@ -7,7 +7,7 @@ set -euo pipefail
 
 # ═══ Config ═══════════════════════════════════════════════
 XAVIER_URL="${XAVIER_URL:-http://127.0.0.1:8006}"
-XAVIER_TOKEN="${XAVIER_TOKEN:-016d5454d90d1dc1711abc7ce008fc0d67622b569c3059e01b86f3228b3ce34a}"
+XAVIER_TOKEN="${XAVIER_TOKEN:-}"
 GESTALT_DIR="$HOME/proyectosSWAL/gestalt"
 QUERY="${1:-}"
 TIMESTAMP="$(date +%s)"

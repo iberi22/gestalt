@@ -37,8 +37,7 @@ impl XavierAgent {
     pub async fn from_env() -> anyhow::Result<Self> {
         Self::new(
             std::env::var("XAVIER_URL").unwrap_or_else(|_| "http://localhost:8006".into()),
-            std::env::var("XAVIER_TOKEN")
-                .unwrap_or_else(|_| "mZHbmzjEKrBohyzkWtVkKemWdYytuFEP".into()),
+            std::env::var("XAVIER_TOKEN").unwrap_or_default(),
         )
         .await
     }

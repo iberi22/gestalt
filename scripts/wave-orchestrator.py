@@ -7,7 +7,7 @@ Prueba el ciclo completo Gestalt ↔ Xavier:
   RUN:  Lanzar subagentes (agy, kimi, cursor-agent, opencode)
   POST: Almacenar resultados en Xavier
 
-Uso: XAVIER_TOKEN=mZHbmzjEKrBohyzkWtVkKemWdYytuFEP python3 wave-orchestrator.py
+Uso: XAVIER_TOKEN=<token> python3 wave-orchestrator.py
 """
 
 import json
@@ -22,7 +22,7 @@ from dataclasses import dataclass, field, asdict
 from typing import Optional
 
 XAVIER_URL = os.environ.get("XAVIER_URL", "http://localhost:8006")
-XAVIER_TOKEN = os.environ.get("XAVIER_TOKEN", "mZHbmzjEKrBohyzkWtVkKemWdYytuFEP")
+XAVIER_TOKEN = os.environ.get("XAVIER_TOKEN", "")
 
 # ─── Subagentes disponibles ────────────────────────────────────────
 SUBAGENTS = {}

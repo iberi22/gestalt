@@ -134,6 +134,14 @@ impl AgentWrapper {
     /// 5. Applies each edit to the underlying [`VirtualFS`].
     /// 6. Returns the list of edits (may be empty if nothing changed).
     pub async fn execute(&self) -> Result<Vec<BlockEdit>, String> {
+        self.execute_with_output().await.map(|(edits, _, _, _)| edits)
+    }
+
+    /// Run the agent and capture its diffs, exit status, stdout, and stderr.
+    ///
+    /// Extends [`execute`](Self::execute) to return the raw process output and status
+    /// for chaining and failure checking.
+    pub async fn execute_with_output(&self) -> Result<(Vec<BlockEdit>, std::process::ExitStatus, String, String), String> {
         let start = std::time::Instant::now();
         info!(
             agent_id = %self.agent_id,
@@ -200,7 +208,7 @@ impl AgentWrapper {
             "AgentWrapper completed",
         );
 
-        Ok(edits)
+        Ok((edits, output.status, stdout, stderr))
     }
 
     /// Apply a single [`BlockEdit`] to the [`VirtualFS`].

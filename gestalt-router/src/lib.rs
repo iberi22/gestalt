@@ -3,6 +3,7 @@ pub mod checkpoint;
 pub mod doctor;
 pub mod event_bus;
 pub mod integrate;
+pub mod otel;
 pub mod overlap;
 pub mod router;
 pub mod run;

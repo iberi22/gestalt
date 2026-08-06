@@ -10,10 +10,113 @@
 //! Failure policy: best-effort, fire-and-forget. The caller logs the error and
 //! the event remains durably in StateDb (replay-able via a cursor sweep).
 
+use std::sync::OnceLock;
+use regex::Regex;
+use gestalt_ws::WsEvent;
 use gestalt_core::application::agent::xavier::XavierClient;
 use serde_json::json;
 
 use crate::event_bus::BusEvent;
+
+/// Check if a given text contains sensitive patterns such as:
+/// XAVIER_TOKEN, password, token, secret, api_key, api-key, apikey, ghp_, or sk-.
+pub fn contains_secret(text: &str) -> bool {
+    static RE_SENSITIVE: OnceLock<Regex> = OnceLock::new();
+    let re = RE_SENSITIVE.get_or_init(|| {
+        Regex::new(r"(?i)XAVIER_TOKEN|password|token|secret|api[_-]?key|ghp_|sk-").unwrap()
+    });
+    re.is_match(text)
+}
+
+/// Redact sensitive data from a text, replacing keys' values and direct tokens with `[REDACTED]`.
+pub fn redact(text: &str) -> String {
+    // 1. Redact key-value pairs where key is case-insensitive match for keywords:
+    // XAVIER_TOKEN, password, token, secret, api_key, api-key, apikey
+    //
+    // Since Rust's regex crate does not support backreferences, we split the matching
+    // into three safe patterns: double-quoted values, single-quoted values, and unquoted values.
+
+    static RE_DOUBLE_QUOTED: OnceLock<Regex> = OnceLock::new();
+    let re_dq = RE_DOUBLE_QUOTED.get_or_init(|| {
+        Regex::new(r#"(?i)(XAVIER_TOKEN|password|token|secret|api[_-]?key)(\s*[:=]\s*)(")(.*?)(")"#).unwrap()
+    });
+
+    static RE_SINGLE_QUOTED: OnceLock<Regex> = OnceLock::new();
+    let re_sq = RE_SINGLE_QUOTED.get_or_init(|| {
+        Regex::new(r#"(?i)(XAVIER_TOKEN|password|token|secret|api[_-]?key)(\s*[:=]\s*)(')(.*?)(')"#).unwrap()
+    });
+
+    static RE_UNQUOTED: OnceLock<Regex> = OnceLock::new();
+    let re_unq = RE_UNQUOTED.get_or_init(|| {
+        Regex::new(r#"(?i)(XAVIER_TOKEN|password|token|secret|api[_-]?key)(\s*[:=]\s*)([^\s,"'\}]+)"#).unwrap()
+    });
+
+    let redacted_dq = re_dq.replace_all(text, "$1$2$3[REDACTED]$5");
+    let redacted_sq = re_sq.replace_all(&redacted_dq, "$1$2$3[REDACTED]$5");
+    let mut redacted = re_unq.replace_all(&redacted_sq, "$1$2[REDACTED]").into_owned();
+
+    // 2. Redact standalone tokens: ghp_... or sk-...
+    static RE_GHP: OnceLock<Regex> = OnceLock::new();
+    let re_ghp = RE_GHP.get_or_init(|| {
+        Regex::new(r"ghp_[a-zA-Z0-9]+").unwrap()
+    });
+
+    static RE_SK: OnceLock<Regex> = OnceLock::new();
+    let re_sk = RE_SK.get_or_init(|| {
+        Regex::new(r"sk-[a-zA-Z0-9_-]+").unwrap()
+    });
+
+    redacted = re_ghp.replace_all(&redacted, "[REDACTED]").into_owned();
+    redacted = re_sk.replace_all(&redacted, "[REDACTED]").into_owned();
+
+    redacted
+}
+
+/// Recursively redact any String value in JSON, and replace sensitive keys' values with `"[REDACTED]"`.
+pub fn redact_json(val: serde_json::Value) -> serde_json::Value {
+    match val {
+        serde_json::Value::String(s) => serde_json::Value::String(redact(&s)),
+        serde_json::Value::Array(arr) => {
+            serde_json::Value::Array(arr.into_iter().map(redact_json).collect())
+        }
+        serde_json::Value::Object(obj) => {
+            let mut new_obj = serde_json::Map::new();
+            for (k, v) in obj {
+                let is_key_sensitive = contains_secret(&k);
+                if is_key_sensitive {
+                    new_obj.insert(k, serde_json::Value::String("[REDACTED]".to_string()));
+                } else {
+                    new_obj.insert(k, redact_json(v));
+                }
+            }
+            serde_json::Value::Object(new_obj)
+        }
+        other => other,
+    }
+}
+
+/// Apply redaction filter to a WsEvent.
+pub fn redact_ws_event(event: WsEvent) -> WsEvent {
+    match event {
+        WsEvent::RunStarted { run_id, task, agents } => WsEvent::RunStarted {
+            run_id,
+            task: redact(&task),
+            agents,
+        },
+        WsEvent::RunFinished { run_id, summary } => WsEvent::RunFinished {
+            run_id,
+            summary: redact(&summary),
+        },
+        WsEvent::ConflictDetected { run_id, agent_a, agent_b, path, message } => WsEvent::ConflictDetected {
+            run_id,
+            agent_a,
+            agent_b,
+            path,
+            message: redact(&message),
+        },
+        other => other,
+    }
+}
 
 /// Forwards bus events to Xavier as `kind=execution` memories.
 #[derive(Debug, Clone)]
@@ -59,6 +162,7 @@ impl XavierEventSink {
             ev.run_id.as_deref().unwrap_or("?"),
             ev.summary
         );
+        let redacted_content = redact(&content);
 
         let metadata = json!({
             "agent": ev.agent,
@@ -67,7 +171,7 @@ impl XavierEventSink {
             "state": ev.state,
             "event_type": ev.event_type,
             "ts": ev.ts,
-            "trace": ev.metadata,
+            "trace": redact_json(ev.metadata.clone()),
         });
 
         // Unique path per event: prefix + timestamp (+ run_id when present).
@@ -80,7 +184,7 @@ impl XavierEventSink {
         let path = format!("{}/{}-{}", self.path_prefix, ts_slug, run_slug);
 
         self.client
-            .add(&content, &path, "execution", metadata)
+            .add(&redacted_content, &path, "execution", metadata)
             .await
             .map_err(|e| {
                 crate::run::RouterError::timeline_error(format!("Xavier sink failed: {}", e))

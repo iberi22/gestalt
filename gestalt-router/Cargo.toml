@@ -19,6 +19,7 @@ gestalt-state = { path = "../gestalt-state" }
 gestalt-ws = { path = "../gestalt-ws" }
 sha2 = "0.10"
 chrono = "0.4"
+regex = "1.12.3"
 
 [dev-dependencies]
 tokio-tungstenite = "0.23"

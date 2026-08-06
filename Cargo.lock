@@ -1927,6 +1927,7 @@ dependencies = [
  "gestalt-ws",
  "gestalt_core",
  "libc",
+ "regex",
  "serde",
  "serde_json",
  "sha2",

@@ -141,7 +141,8 @@ impl WsRouterBridge {
             },
         };
 
-        ws_server.broadcast(&ws_event).await;
+        let redacted_event = crate::xavier_sink::redact_ws_event(ws_event);
+        ws_server.broadcast(&redacted_event).await;
     }
 }
 

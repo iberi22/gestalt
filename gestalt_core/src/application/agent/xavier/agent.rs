@@ -64,6 +64,15 @@ impl XavierAgent {
         Ok(response.id)
     }
 
+    /// Archive a decision memory
+    pub async fn archive_decision(
+        &self,
+        decision_text: &str,
+        metadata: serde_json::Value,
+    ) -> anyhow::Result<String> {
+        self.client.archive_decision(decision_text, metadata).await
+    }
+
     /// Get the node ID
     pub fn node_id(&self) -> &str {
         &self.node_id

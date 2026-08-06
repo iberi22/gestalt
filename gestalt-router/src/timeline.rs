@@ -104,6 +104,11 @@ impl StateDbEventLog {
     pub fn new(db: Arc<StateDb>, run_id: Uuid) -> Self {
         Self { db, run_id }
     }
+
+    /// Reconstructs the run using the log's own run_id and db reference.
+    pub fn reconstruct(&self) -> Result<(Vec<Event>, AgentState), crate::run::RouterError> {
+        reconstruct_run(self.run_id, &self.db)
+    }
 }
 
 impl EventLog for StateDbEventLog {
@@ -182,4 +187,74 @@ fn extract_event_type(event: &Event) -> String {
         Event::ExcludedFile { .. } => "excluded_file",
     }
     .to_string()
+}
+
+/// Standalone helper to reconstruct a run's event sequence and compute the final state of its agent(s).
+pub fn reconstruct_run(
+    run_id: Uuid,
+    db: &StateDb,
+) -> Result<(Vec<Event>, AgentState), crate::run::RouterError> {
+    // 1. Fetch chronological timeline events using our new `timeline_by_run`
+    let raw_events = db
+        .timeline_by_run(&run_id.to_string())
+        .map_err(|e| crate::run::RouterError::timeline_error(e.to_string()))?;
+
+    // 2. Parse raw events into `Event` enums
+    let mut parsed_events = Vec::new();
+    for raw in raw_events {
+        if let Ok(evt) = serde_json::from_str::<Event>(&raw.payload) {
+            parsed_events.push(evt);
+        }
+    }
+
+    // 3. Reconstruct final AgentState of the run.
+    // We can track the state of each agent in a HashMap.
+    let mut agent_states = std::collections::HashMap::new();
+    for event in &parsed_events {
+        if let Event::AgentStateChanged { agent_id, to, .. } = event {
+            agent_states.insert(agent_id.clone(), to.clone());
+        }
+    }
+
+    // Determine aggregate final state:
+    // If there are no agent states recorded, default to AgentState::Pending.
+    // Otherwise, calculate an overall state:
+    // Priority: Crashed > Timeout > Quarantined > Running > Success > NoChanges > Pending
+    let final_state = if agent_states.is_empty() {
+        AgentState::Pending
+    } else if agent_states
+        .values()
+        .any(|s| matches!(s, AgentState::Crashed))
+    {
+        AgentState::Crashed
+    } else if agent_states
+        .values()
+        .any(|s| matches!(s, AgentState::Timeout))
+    {
+        AgentState::Timeout
+    } else if agent_states
+        .values()
+        .any(|s| matches!(s, AgentState::Quarantined))
+    {
+        AgentState::Quarantined
+    } else if agent_states
+        .values()
+        .any(|s| matches!(s, AgentState::Running))
+    {
+        AgentState::Running
+    } else if agent_states
+        .values()
+        .any(|s| matches!(s, AgentState::Success))
+    {
+        AgentState::Success
+    } else if agent_states
+        .values()
+        .any(|s| matches!(s, AgentState::NoChanges))
+    {
+        AgentState::NoChanges
+    } else {
+        AgentState::Pending
+    };
+
+    Ok((parsed_events, final_state))
 }

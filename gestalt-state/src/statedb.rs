@@ -526,6 +526,44 @@ impl StateDb {
 
         Ok(events)
     }
+
+    /// Fetch ALL timeline events for a given run, ordered chronologically (by sequence ASC).
+    pub fn timeline_by_run(&self, run_id: &str) -> Result<Vec<TimelineEvent>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn
+            .prepare(
+                "SELECT seq, run_id, agent_id, event_type, payload, created_at
+                 FROM timeline WHERE run_id = ?1
+                 ORDER BY seq ASC",
+            )
+            .context("Failed to prepare timeline_by_run query")?;
+
+        let events = stmt
+            .query_map(rusqlite::params![run_id], |row| {
+                let seq: i64 = row.get(0)?;
+                let created_at_str: String = row.get(5)?;
+                Ok(TimelineEvent {
+                    seq: Some(seq),
+                    run_id: row.get(1)?,
+                    agent_id: row.get(2)?,
+                    event_type: row.get(3)?,
+                    payload: row.get(4)?,
+                    created_at: created_at_str
+                        .parse::<DateTime<Utc>>()
+                        .unwrap_or_else(|_| Utc::now()),
+                })
+            })
+            .context("Failed to query timeline by run")?
+            .collect::<Result<Vec<_>, _>>()
+            .context("Failed to read timeline events by run")?;
+
+        Ok(events)
+    }
+}
+
+/// Standalone helper to fetch timeline events for a run, ordered chronologically (by sequence ASC).
+pub fn timeline_by_run(run_id: &str, db: &StateDb) -> Result<Vec<TimelineEvent>> {
+    db.timeline_by_run(run_id)
 }
 
 // ── Tests ──────────────────────────────────────────────────────────────

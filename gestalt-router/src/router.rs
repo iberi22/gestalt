@@ -188,9 +188,9 @@ impl Router {
     fn broadcast_ws_event(&self, event: WsEvent) {
         if let Some(ref ws) = self.ws_server {
             let ws = ws.clone();
-            let event = event.clone();
+            let redacted_event = crate::xavier_sink::redact_ws_event(event);
             tokio::spawn(async move {
-                ws.broadcast(&event).await;
+                ws.broadcast(&redacted_event).await;
             });
         }
     }

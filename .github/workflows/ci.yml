@@ -54,6 +54,9 @@ jobs:
           cargo test -p gestalt-state --all-targets
           cargo test -p gestalt-ws --all-targets
 
+      - name: Cargo Test (Search)
+        run: cargo test -p gestalt-search --all-targets
+
       - name: Cargo Check (Other packages)
         run: |
           cargo check \

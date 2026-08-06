@@ -80,11 +80,17 @@ pub fn discover_agents() -> Result<DiscoveryResults, String> {
 
 pub async fn run_daemon_loop() -> Result<(), String> {
     println!("[Daemon] Starting observation daemon loop (ticking every 5s)...");
+    let mut monitor = proc_monitor::ProcMonitor::new(Vec::new());
     loop {
         println!("[Daemon] Ticking process monitor...");
-        if let Err(e) = proc_monitor::monitor_processes() {
-            // It is expected to return "not implemented" for now
-            tracing::debug!("Process monitor tick warning: {}", e);
+        let events = monitor.poll();
+        for ev in &events {
+            tracing::debug!(
+                "[Daemon] Event: {} {} — {}",
+                ev.agent,
+                ev.event_type,
+                ev.summary
+            );
         }
         tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
     }

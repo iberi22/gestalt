@@ -243,6 +243,20 @@ impl XavierClient {
         Ok(resp.id)
     }
 
+    /// Archive an architectural decision record in Xavier.
+    ///
+    /// Stores the serialized content with kind=`decision`.
+    pub async fn archive_decision(
+        &self,
+        decision_text: &str,
+        metadata: serde_json::Value,
+    ) -> anyhow::Result<String> {
+        let decision_id = uuid::Uuid::new_v4().to_string();
+        let path = format!("gestalt/decision/{decision_id}");
+        let resp = self.add(decision_text, &path, "decision", metadata).await?;
+        Ok(resp.id)
+    }
+
     /// Index a plan document in Xavier as kind=plan
     pub async fn save_plan(&self, content: &str, path: &str) -> Result<String, String> {
         self.add_memory(content, path, "plan").await
@@ -318,6 +332,26 @@ impl XavierClient {
         let mode = data["mode"].as_str().unwrap_or("unknown");
         Ok(mode.to_string())
     }
+}
+
+/// Pure helper to build a decision payload matching Xavier's AddMemoryPayload schema.
+pub fn build_decision_payload(
+    text: &str,
+    metadata: serde_json::Value,
+    user_id: &str,
+) -> Result<serde_json::Value, String> {
+    if text.trim().is_empty() {
+        return Err("text is required".to_string());
+    }
+    if user_id.trim().is_empty() {
+        return Err("user_id is required".to_string());
+    }
+    Ok(serde_json::json!({
+        "text": text,
+        "user_id": user_id,
+        "kind": "decision",
+        "metadata": metadata,
+    }))
 }
 
 #[cfg(test)]

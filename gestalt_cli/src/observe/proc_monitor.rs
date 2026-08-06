@@ -1,7 +1,7 @@
-use std::collections::HashMap;
-use std::time::Instant;
 use gestalt_router::event_bus::BusEvent;
 use gestalt_router::run::AgentSpec;
+use std::collections::HashMap;
+use std::time::Instant;
 
 pub const KNOWN_AGENTS: &[&str] = &[
     "opencode", "codex", "claude", "kimi", "agy", "hermes", "gestalt", "orca", "jules",
@@ -34,7 +34,9 @@ pub fn match_agent<'a>(cmdline: &[&str], specs: &'a [AgentSpec]) -> Option<&'a s
     if let Some(agent_name) = matched_agent_name {
         // If we found a match, check if any of the specs has a matching agent id or command.
         for spec in specs {
-            if spec.id.to_lowercase().contains(agent_name) || spec.command.to_lowercase().contains(agent_name) {
+            if spec.id.to_lowercase().contains(agent_name)
+                || spec.command.to_lowercase().contains(agent_name)
+            {
                 return Some(&spec.id);
             }
         }
@@ -128,7 +130,8 @@ impl ProcMonitor {
         for (pid, (agent_name, cmdline)) in &active_pids {
             if !self.tracked.contains_key(pid) {
                 let start_time = Instant::now();
-                self.tracked.insert(*pid, (agent_name.clone(), start_time, cmdline.clone()));
+                self.tracked
+                    .insert(*pid, (agent_name.clone(), start_time, cmdline.clone()));
 
                 let summary = format!("Process started (PID {}): {}", pid, cmdline.join(" "));
                 let event = BusEvent::new(agent_name, "run_started", summary)
@@ -152,7 +155,11 @@ impl ProcMonitor {
         for (pid, agent_name, start_time, cmdline) in vanished {
             self.tracked.remove(&pid);
             let duration = start_time.elapsed();
-            let summary = format!("Process finished (PID {}). Duration: {}ms", pid, duration.as_millis());
+            let summary = format!(
+                "Process finished (PID {}). Duration: {}ms",
+                pid,
+                duration.as_millis()
+            );
             let event = BusEvent::new(agent_name, "run_finished", summary)
                 .with_state("Success")
                 .with_metadata(serde_json::json!({

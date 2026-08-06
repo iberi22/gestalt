@@ -1,8 +1,8 @@
 #[path = "../src/observe/proc_monitor.rs"]
 mod proc_monitor;
 
-use proc_monitor::{match_agent, ProcMonitor};
 use gestalt_router::run::AgentSpec;
+use proc_monitor::{match_agent, ProcMonitor};
 use std::fs::{create_dir_all, remove_dir_all, write};
 use std::thread::sleep;
 use std::time::Duration;
@@ -63,7 +63,10 @@ fn test_match_agent_with_specs() {
 
     let opencode_cmdline = vec!["node", "opencode-agent.js"];
     // Should match the specific AgentSpec from specs list
-    assert_eq!(match_agent(&opencode_cmdline, &specs), Some("my-opencode-spec"));
+    assert_eq!(
+        match_agent(&opencode_cmdline, &specs),
+        Some("my-opencode-spec")
+    );
 
     // Claude is not in specs, so it should fall back to static keyword
     let claude_cmdline = vec!["claude-executable", "do-stuff"];
@@ -73,7 +76,8 @@ fn test_match_agent_with_specs() {
 #[test]
 fn test_proc_monitor_lifecycle_events() {
     // Create a unique temporary directory for simulated /proc filesystem
-    let temp_dir = std::env::temp_dir().join(format!("simulated_proc_test_{}", uuid::Uuid::new_v4()));
+    let temp_dir =
+        std::env::temp_dir().join(format!("simulated_proc_test_{}", uuid::Uuid::new_v4()));
     create_dir_all(&temp_dir).unwrap();
 
     let specs: Vec<AgentSpec> = vec![];
@@ -119,7 +123,11 @@ fn test_proc_monitor_lifecycle_events() {
     let metadata = &events[0].metadata;
     assert!(metadata.is_object());
     let duration_ms = metadata.get("duration_ms").unwrap().as_u64().unwrap();
-    assert!(duration_ms >= 40, "Expected duration to be recorded, got {}ms", duration_ms);
+    assert!(
+        duration_ms >= 40,
+        "Expected duration to be recorded, got {}ms",
+        duration_ms
+    );
     let exit_code = metadata.get("exit_code").unwrap().as_u64().unwrap();
     assert_eq!(exit_code, 0);
 

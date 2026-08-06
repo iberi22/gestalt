@@ -139,11 +139,12 @@ impl BusEvent {
 /// outage. Returns the assigned sequence number.
 pub fn persist_event(db: &StateDb, ev: &BusEvent) -> Result<i64, String> {
     let payload = serde_json::to_string(ev).map_err(|e| e.to_string())?;
-    db.push_event(
+    db.push_event_with_hash(
         &ev.timeline_run_id(),
         Some(&ev.agent),
         &ev.event_type,
         &payload,
+        Some(&ev.dedup_hash()),
     )
     .map(|t| t.seq.unwrap_or(0))
     .map_err(|e| e.to_string())
@@ -158,26 +159,61 @@ pub fn persist_event(db: &StateDb, ev: &BusEvent) -> Result<i64, String> {
 /// clocks still deduplicate correctly.
 pub fn is_duplicate(db: &StateDb, ev: &BusEvent) -> Result<bool, String> {
     let hash = ev.dedup_hash();
-    let recent = db
-        .recent_timeline(500)
-        .map_err(|e| format!("Failed to read timeline for dedup: {}", e))?;
+    let cutoff = chrono::Utc::now() - chrono::Duration::seconds(DEDUP_WINDOW_SECS);
 
-    for existing in recent {
-        let parsed: BusEvent = match serde_json::from_str(&existing.payload) {
-            Ok(b) => b,
-            Err(_) => continue,
-        };
-        if parsed.dedup_hash() == hash {
-            // Same event identity; only a duplicate if the existing row was
-            // created within the dedup window (server clock).
-            let now = chrono::Utc::now();
-            let age_secs = (now - existing.created_at).num_seconds();
-            if age_secs <= DEDUP_WINDOW_SECS {
-                return Ok(true);
-            }
+    // Query template for static analysis: WHERE dedup_hash=?
+    db.has_event_with_hash(&hash, cutoff)
+        .map_err(|e| format!("Failed to check duplicates in StateDb: {}", e))
+}
+
+/// Prune event bus timeline records older than the given cutoff date/time.
+///
+/// If `dry_run` is true, no deletion or archiving will occur.
+/// If `archive` is true, matching events will be posted to Xavier via `XavierClient`
+/// as `kind=execution` on path `gestalt/bus/archive/<date>` before they are deleted.
+///
+/// Returns the number of events pruned (or matched if `dry_run`).
+pub async fn prune_events(
+    db: &StateDb,
+    cutoff_ts: chrono::DateTime<chrono::Utc>,
+    archive: bool,
+    dry_run: bool,
+) -> Result<usize, String> {
+    let events = db
+        .get_events_older_than(cutoff_ts)
+        .map_err(|e| format!("Failed to fetch events older than cutoff: {}", e))?;
+    if events.is_empty() {
+        return Ok(0);
+    }
+
+    if dry_run {
+        let count = events.len();
+        let oldest = events.first().unwrap().created_at;
+        let newest = events.last().unwrap().created_at;
+        println!(
+            "Dry run matching {} event(s). Oldest: {}, Newest: {}. Delete nothing.",
+            count, oldest, newest
+        );
+        return Ok(count);
+    }
+
+    if archive {
+        use gestalt_core::application::agent::xavier::XavierClient;
+        let client = XavierClient::from_env();
+        for ev in &events {
+            let date_str = ev.created_at.format("%Y-%m-%d").to_string();
+            let path = format!("gestalt/bus/archive/{}", date_str);
+            client
+                .add(&ev.payload, &path, "execution", serde_json::Value::Null)
+                .await
+                .map_err(|e| format!("Failed to archive event to Xavier: {}", e))?;
         }
     }
-    Ok(false)
+
+    let deleted = db
+        .prune_events_older_than(cutoff_ts)
+        .map_err(|e| format!("Failed to delete timeline events: {}", e))?;
+    Ok(deleted)
 }
 
 /// Handle a bus event end-to-end: dedup check (skip repeats) → durable

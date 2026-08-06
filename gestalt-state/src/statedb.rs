@@ -193,7 +193,8 @@ impl StateDb {
                 agent_id TEXT,
                 event_type TEXT NOT NULL,
                 payload TEXT NOT NULL DEFAULT '{}',
-                created_at TEXT NOT NULL
+                created_at TEXT NOT NULL,
+                dedup_hash TEXT
             );
 
             CREATE INDEX IF NOT EXISTS idx_timeline_run ON timeline(run_id);
@@ -201,6 +202,33 @@ impl StateDb {
             ",
         )
         .context("Failed to run migrations")?;
+
+        // Additive migration: check if dedup_hash column exists in timeline table
+        let has_column = {
+            let mut stmt = conn.prepare("PRAGMA table_info(timeline)")?;
+            let mut rows = stmt.query([])?;
+            let mut found = false;
+            while let Some(row) = rows.next()? {
+                let name: String = row.get(1)?;
+                if name == "dedup_hash" {
+                    found = true;
+                    break;
+                }
+            }
+            found
+        };
+
+        if !has_column {
+            conn.execute("ALTER TABLE timeline ADD COLUMN dedup_hash TEXT", [])
+                .context("Failed to add dedup_hash column")?;
+        }
+
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_timeline_dedup ON timeline(dedup_hash, created_at)",
+            [],
+        )
+        .context("Failed to create idx_timeline_dedup index")?;
+
         Ok(())
     }
 
@@ -437,13 +465,25 @@ impl StateDb {
         event_type: &str,
         payload: &str,
     ) -> Result<TimelineEvent> {
+        self.push_event_with_hash(run_id, agent_id, event_type, payload, None)
+    }
+
+    /// Push a new timeline event with an optional dedup hash and return it with the assigned seq number.
+    pub fn push_event_with_hash(
+        &self,
+        run_id: &str,
+        agent_id: Option<&str>,
+        event_type: &str,
+        payload: &str,
+        dedup_hash: Option<&str>,
+    ) -> Result<TimelineEvent> {
         self.execute_transaction(|tx| {
             let now = Utc::now().to_rfc3339();
 
             tx.execute(
-                "INSERT INTO timeline (run_id, agent_id, event_type, payload, created_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5)",
-                rusqlite::params![run_id, agent_id, event_type, payload, now],
+                "INSERT INTO timeline (run_id, agent_id, event_type, payload, created_at, dedup_hash)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                rusqlite::params![run_id, agent_id, event_type, payload, now, dedup_hash],
             )
             .context("Failed to insert timeline event")?;
 
@@ -456,7 +496,69 @@ impl StateDb {
                 event_type: event_type.to_string(),
                 payload: payload.to_string(),
                 created_at: now.parse::<DateTime<Utc>>().unwrap_or_else(|_| Utc::now()),
+                dedup_hash: dedup_hash.map(|s| s.to_string()),
             })
+        })
+    }
+
+    /// Check if a timeline event with the given `dedup_hash` exists since a cutoff time.
+    pub fn has_event_with_hash(&self, dedup_hash: &str, cutoff: DateTime<Utc>) -> Result<bool> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn
+            .prepare("SELECT 1 FROM timeline WHERE dedup_hash = ?1 AND created_at >= ?2 LIMIT 1")
+            .context("Failed to prepare duplicate check query")?;
+
+        let cutoff_str = cutoff.to_rfc3339();
+        let mut rows = stmt.query(rusqlite::params![dedup_hash, cutoff_str])?;
+        Ok(rows.next()?.is_some())
+    }
+
+    /// Fetch timeline events older than the specified cutoff timestamp, ordered ASC.
+    pub fn get_events_older_than(&self, cutoff: DateTime<Utc>) -> Result<Vec<TimelineEvent>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn
+            .prepare(
+                "SELECT seq, run_id, agent_id, event_type, payload, created_at, dedup_hash
+                 FROM timeline WHERE created_at < ?1
+                 ORDER BY created_at ASC",
+            )
+            .context("Failed to prepare get_events_older_than query")?;
+
+        let cutoff_str = cutoff.to_rfc3339();
+        let events = stmt
+            .query_map(rusqlite::params![cutoff_str], |row| {
+                let seq: i64 = row.get(0)?;
+                let created_at_str: String = row.get(5)?;
+                Ok(TimelineEvent {
+                    seq: Some(seq),
+                    run_id: row.get(1)?,
+                    agent_id: row.get(2)?,
+                    event_type: row.get(3)?,
+                    payload: row.get(4)?,
+                    created_at: created_at_str
+                        .parse::<DateTime<Utc>>()
+                        .unwrap_or_else(|_| Utc::now()),
+                    dedup_hash: row.get(6)?,
+                })
+            })
+            .context("Failed to query timeline")?
+            .collect::<Result<Vec<_>, _>>()
+            .context("Failed to read timeline events")?;
+
+        Ok(events)
+    }
+
+    /// Prune/delete timeline events older than the specified cutoff timestamp.
+    pub fn prune_events_older_than(&self, cutoff: DateTime<Utc>) -> Result<usize> {
+        self.execute_transaction(|tx| {
+            let cutoff_str = cutoff.to_rfc3339();
+            let rows = tx
+                .execute(
+                    "DELETE FROM timeline WHERE created_at < ?1",
+                    rusqlite::params![cutoff_str],
+                )
+                .context("Failed to prune timeline events")?;
+            Ok(rows)
         })
     }
 
@@ -465,7 +567,7 @@ impl StateDb {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn
             .prepare(
-                "SELECT seq, run_id, agent_id, event_type, payload, created_at
+                "SELECT seq, run_id, agent_id, event_type, payload, created_at, dedup_hash
                  FROM timeline WHERE run_id = ?1
                  ORDER BY seq ASC LIMIT ?2",
             )
@@ -484,6 +586,7 @@ impl StateDb {
                     created_at: created_at_str
                         .parse::<DateTime<Utc>>()
                         .unwrap_or_else(|_| Utc::now()),
+                    dedup_hash: row.get(6)?,
                 })
             })
             .context("Failed to query timeline")?
@@ -499,7 +602,7 @@ impl StateDb {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn
             .prepare(
-                "SELECT seq, run_id, agent_id, event_type, payload, created_at
+                "SELECT seq, run_id, agent_id, event_type, payload, created_at, dedup_hash
                  FROM timeline
                  ORDER BY seq DESC LIMIT ?1",
             )
@@ -518,6 +621,7 @@ impl StateDb {
                     created_at: created_at_str
                         .parse::<DateTime<Utc>>()
                         .unwrap_or_else(|_| Utc::now()),
+                    dedup_hash: row.get(6)?,
                 })
             })
             .context("Failed to query recent timeline")?
@@ -532,7 +636,7 @@ impl StateDb {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn
             .prepare(
-                "SELECT seq, run_id, agent_id, event_type, payload, created_at
+                "SELECT seq, run_id, agent_id, event_type, payload, created_at, dedup_hash
                  FROM timeline WHERE run_id = ?1
                  ORDER BY seq ASC",
             )
@@ -551,6 +655,7 @@ impl StateDb {
                     created_at: created_at_str
                         .parse::<DateTime<Utc>>()
                         .unwrap_or_else(|_| Utc::now()),
+                    dedup_hash: row.get(6)?,
                 })
             })
             .context("Failed to query timeline by run")?

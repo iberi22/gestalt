@@ -4,6 +4,7 @@ pub mod doctor;
 pub mod event_bus;
 pub mod integrate;
 pub mod overlap;
+pub mod otel;
 pub mod router;
 pub mod run;
 pub mod run_state;

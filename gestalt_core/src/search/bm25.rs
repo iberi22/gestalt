@@ -156,7 +156,12 @@ impl Bm25Index {
 
     /// Scores all documents in the index matching the parsed query terms,
     /// returning a ranked list of [`SearchResult`].
-    pub fn search(&self, query_terms: &[String], kind_filter: Option<&str>, limit: usize) -> Vec<SearchResult> {
+    pub fn search(
+        &self,
+        query_terms: &[String],
+        kind_filter: Option<&str>,
+        limit: usize,
+    ) -> Vec<SearchResult> {
         if self.documents.is_empty() || query_terms.is_empty() {
             return Vec::new();
         }
@@ -199,7 +204,8 @@ impl Bm25Index {
 
                     // BM25 scoring formula:
                     // tf * (k1 + 1) / (tf + k1 * (1 - b + b * (doc_len / avg_dl)))
-                    let denom = tf + self.k1 * (1.0 - self.b + self.b * (doc_len / self.avg_dl.max(1.0)));
+                    let denom =
+                        tf + self.k1 * (1.0 - self.b + self.b * (doc_len / self.avg_dl.max(1.0)));
                     let term_score = idf * (tf * (self.k1 + 1.0)) / denom;
                     score += term_score;
                 }
@@ -224,7 +230,11 @@ impl Bm25Index {
         }
 
         // Sort descending by score
-        scored_results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        scored_results.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         scored_results.truncate(limit);
         scored_results
     }
@@ -328,8 +338,18 @@ mod tests {
     fn test_bm25_relevance_ranking() {
         let mut index = Bm25Index::new();
         // Index documents with varying term frequencies
-        index.index_document("1", "doc1.md", "rust is systems programming language systems systems", "code");
-        index.index_document("2", "doc2.md", "python is systems programming language", "code");
+        index.index_document(
+            "1",
+            "doc1.md",
+            "rust is systems programming language systems systems",
+            "code",
+        );
+        index.index_document(
+            "2",
+            "doc2.md",
+            "python is systems programming language",
+            "code",
+        );
         index.index_document("3", "doc3.md", "java is enterprise language", "code");
 
         let query_terms = tokenize("systems");
@@ -347,7 +367,12 @@ mod tests {
     fn test_bm25_idf_effect() {
         let mut index = Bm25Index::new();
         // "common" is very common; "rare" is rare.
-        index.index_document("1", "doc1.md", "this contains a very rare and precious jewel", "text");
+        index.index_document(
+            "1",
+            "doc1.md",
+            "this contains a very rare and precious jewel",
+            "text",
+        );
         index.index_document("2", "doc2.md", "this is a very common sentence", "text");
         index.index_document("3", "doc3.md", "another very common thing indeed", "text");
 
@@ -392,8 +417,14 @@ mod tests {
     #[tokio::test]
     async fn test_local_bm25_search_engine_trait() {
         let engine = LocalBm25SearchEngine::new();
-        engine.index_document("1", "a.md", "rust is fast", "code").await.unwrap();
-        engine.index_document("2", "b.md", "python is easy", "code").await.unwrap();
+        engine
+            .index_document("1", "a.md", "rust is fast", "code")
+            .await
+            .unwrap();
+        engine
+            .index_document("2", "b.md", "python is easy", "code")
+            .await
+            .unwrap();
 
         assert_eq!(engine.doc_count().await.unwrap(), 2);
 

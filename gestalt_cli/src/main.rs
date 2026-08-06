@@ -865,9 +865,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     match args.command {
         Commands::Mcp { action } => match action {
-            McpAction::Serve { host, port, transport } => {
+            McpAction::Serve {
+                host,
+                port,
+                transport,
+            } => {
                 info!("Starting standalone MCP Server on {}:{}", host, port);
-                println!("🚀 Starting Standalone MCP Server on {}:{} ({})", host, port, transport);
+                println!(
+                    "🚀 Starting Standalone MCP Server on {}:{} ({})",
+                    host, port, transport
+                );
 
                 info!("Building gestalt_mcp...");
                 println!("🔨 Building gestalt_mcp...");
@@ -893,7 +900,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                 let status = child.wait().await?;
                 std::process::exit(status.code().unwrap_or(0));
-            }
+            },
         },
 
         Commands::Serve { host, port } => {

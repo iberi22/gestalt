@@ -5,8 +5,8 @@
 
 mod app_context;
 mod gestalt_tools;
-mod tools;
 mod server;
+mod tools;
 
 use std::sync::Arc;
 

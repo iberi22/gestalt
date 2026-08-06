@@ -71,7 +71,9 @@ impl ToolHandler for MemorySearchHandler {
         }
 
         let result = handle_memory_search(&self.ctx, query, limit).await;
-        Ok(ok_result(serde_json::to_string_pretty(&result).unwrap_or_default()))
+        Ok(ok_result(
+            serde_json::to_string_pretty(&result).unwrap_or_default(),
+        ))
     }
 }
 
@@ -93,21 +95,22 @@ impl ToolHandler for MemoryAddHandler {
             .get("content")
             .and_then(|v| v.as_str())
             .unwrap_or("");
-        let path = arguments
-            .get("path")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
+        let path = arguments.get("path").and_then(|v| v.as_str()).unwrap_or("");
         let kind = arguments
             .get("kind")
             .and_then(|v| v.as_str())
             .unwrap_or("execution");
 
         if content.is_empty() || path.is_empty() {
-            return Ok(err_result("Error: content and path are required".to_string()));
+            return Ok(err_result(
+                "Error: content and path are required".to_string(),
+            ));
         }
 
         let result = handle_memory_add(&self.ctx, content, path, kind).await;
-        Ok(ok_result(serde_json::to_string_pretty(&result).unwrap_or_default()))
+        Ok(ok_result(
+            serde_json::to_string_pretty(&result).unwrap_or_default(),
+        ))
     }
 }
 
@@ -131,7 +134,9 @@ impl ToolHandler for AgentStatusHandler {
             .unwrap_or("");
 
         let result = handle_agent_status(&self.ctx, agent_id).await;
-        Ok(ok_result(serde_json::to_string_pretty(&result).unwrap_or_default()))
+        Ok(ok_result(
+            serde_json::to_string_pretty(&result).unwrap_or_default(),
+        ))
     }
 }
 
@@ -159,7 +164,9 @@ impl ToolHandler for BeliefQueryHandler {
             .unwrap_or("");
 
         let result = handle_belief_query(&self.ctx, subject, predicate).await;
-        Ok(ok_result(serde_json::to_string_pretty(&result).unwrap_or_default()))
+        Ok(ok_result(
+            serde_json::to_string_pretty(&result).unwrap_or_default(),
+        ))
     }
 }
 
@@ -183,7 +190,12 @@ pub async fn handle_memory_search(_ctx: &GestaltAppContext, query: &str, limit: 
 }
 
 /// Add a memory/concept to Xavier.
-pub async fn handle_memory_add(_ctx: &GestaltAppContext, content: &str, path: &str, kind: &str) -> Value {
+pub async fn handle_memory_add(
+    _ctx: &GestaltAppContext,
+    content: &str,
+    path: &str,
+    kind: &str,
+) -> Value {
     json!({
         "success": true,
         "id": uuid::Uuid::new_v4().to_string(),
@@ -212,7 +224,11 @@ pub async fn handle_agent_status(_ctx: &GestaltAppContext, agent_id: &str) -> Va
 }
 
 /// Query the Gestalt belief graph.
-pub async fn handle_belief_query(_ctx: &GestaltAppContext, subject: &str, predicate: &str) -> Value {
+pub async fn handle_belief_query(
+    _ctx: &GestaltAppContext,
+    subject: &str,
+    predicate: &str,
+) -> Value {
     json!({
         "subject": subject,
         "predicate": predicate,
@@ -340,8 +356,15 @@ mod tests {
     #[tokio::test]
     async fn test_tool_routing_memory_search() {
         let (server, _) = build_test_server().await;
-        let args = Some([("query".to_string(), json!("agent integration"))].into_iter().collect());
-        let result = server.call_tool("memory_search", args).await.expect("call should succeed");
+        let args = Some(
+            [("query".to_string(), json!("agent integration"))]
+                .into_iter()
+                .collect(),
+        );
+        let result = server
+            .call_tool("memory_search", args)
+            .await
+            .expect("call should succeed");
         assert!(!result.is_error.unwrap_or(false));
         if let ContentBlock::Text { text, .. } = &result.content[0] {
             assert!(text.contains("agent integration"));
@@ -354,12 +377,19 @@ mod tests {
     #[tokio::test]
     async fn test_tool_routing_memory_add() {
         let (server, _) = build_test_server().await;
-        let args = Some([
-            ("content".to_string(), json!("Successfully initialized MCP")),
-            ("path".to_string(), json!("src/server.rs")),
-            ("kind".to_string(), json!("code")),
-        ].into_iter().collect());
-        let result = server.call_tool("memory_add", args).await.expect("call should succeed");
+        let args = Some(
+            [
+                ("content".to_string(), json!("Successfully initialized MCP")),
+                ("path".to_string(), json!("src/server.rs")),
+                ("kind".to_string(), json!("code")),
+            ]
+            .into_iter()
+            .collect(),
+        );
+        let result = server
+            .call_tool("memory_add", args)
+            .await
+            .expect("call should succeed");
         assert!(!result.is_error.unwrap_or(false));
         if let ContentBlock::Text { text, .. } = &result.content[0] {
             assert!(text.contains("Successfully initialized MCP"));
@@ -373,8 +403,15 @@ mod tests {
     #[tokio::test]
     async fn test_tool_routing_agent_status() {
         let (server, _) = build_test_server().await;
-        let args = Some([("agent_id".to_string(), json!("jules"))].into_iter().collect());
-        let result = server.call_tool("agent_status", args).await.expect("call should succeed");
+        let args = Some(
+            [("agent_id".to_string(), json!("jules"))]
+                .into_iter()
+                .collect(),
+        );
+        let result = server
+            .call_tool("agent_status", args)
+            .await
+            .expect("call should succeed");
         assert!(!result.is_error.unwrap_or(false));
         if let ContentBlock::Text { text, .. } = &result.content[0] {
             assert!(text.contains("jules"));
@@ -387,11 +424,18 @@ mod tests {
     #[tokio::test]
     async fn test_tool_routing_belief_query() {
         let (server, _) = build_test_server().await;
-        let args = Some([
-            ("subject".to_string(), json!("standalone_server")),
-            ("predicate".to_string(), json!("is")),
-        ].into_iter().collect());
-        let result = server.call_tool("belief_query", args).await.expect("call should succeed");
+        let args = Some(
+            [
+                ("subject".to_string(), json!("standalone_server")),
+                ("predicate".to_string(), json!("is")),
+            ]
+            .into_iter()
+            .collect(),
+        );
+        let result = server
+            .call_tool("belief_query", args)
+            .await
+            .expect("call should succeed");
         assert!(!result.is_error.unwrap_or(false));
         if let ContentBlock::Text { text, .. } = &result.content[0] {
             assert!(text.contains("standalone_server"));
@@ -408,7 +452,10 @@ mod tests {
         let (server, _) = build_test_server().await;
         // memory_search requires "query"
         let args = Some(HashMap::new());
-        let result = server.call_tool("memory_search", args).await.expect("call should succeed");
+        let result = server
+            .call_tool("memory_search", args)
+            .await
+            .expect("call should succeed");
         assert!(result.is_error.unwrap_or(false));
         if let ContentBlock::Text { text, .. } = &result.content[0] {
             assert!(text.contains("Error: query is required"));

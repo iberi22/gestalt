@@ -4,5 +4,5 @@
 
 pub mod app_context;
 pub mod gestalt_tools;
-pub mod tools;
 pub mod server;
+pub mod tools;

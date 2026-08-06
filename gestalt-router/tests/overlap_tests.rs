@@ -57,6 +57,57 @@ fn test_detect_overlap_disjoint() {
     assert!(result.shared_paths.is_empty());
 }
 
+#[tokio::test]
+async fn test_concurrent_writes_conflict() {
+    use gestalt_router::overlap::LiveConflictDetector;
+    use gestalt_state::memstate::MemState;
+
+    // 1. Create MemState and subscribe to it
+    let mem_state = MemState::new();
+
+    // 2. Spawn LiveConflictDetector in a background task
+    let detector = LiveConflictDetector::new(mem_state.clone(), None);
+    let handle = tokio::spawn(detector.run());
+
+    // 3. Set Agent A to Running and acquire a lock
+    mem_state.set_agent_state("run-1", "agent-a", "running");
+    let lock_a = mem_state.try_lock("file.txt", "agent-a", "run-1", 30);
+    assert!(lock_a, "Agent A should successfully acquire the lock");
+
+    // 4. Set Agent B to Running and attempt to acquire the same lock
+    mem_state.set_agent_state("run-1", "agent-b", "running");
+    let lock_b = mem_state.try_lock("file.txt", "agent-b", "run-1", 30);
+    assert!(!lock_b, "Agent B lock acquisition should fail (conflict)");
+
+    // 5. Verify that Agent B's state transitions deterministically to "crashed" on conflict
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+    let state_b = mem_state.get_agent_state("run-1", "agent-b");
+    assert_eq!(
+        state_b,
+        Some("crashed".to_string()),
+        "Agent B's state should transition to crashed on conflict"
+    );
+
+    // Agent A should still be running cleanly
+    let state_a = mem_state.get_agent_state("run-1", "agent-a");
+    assert_eq!(
+        state_a,
+        Some("running".to_string()),
+        "Agent A's state should remain running"
+    );
+
+    // 6. Dropping mem_state and waiting for the detector task to finish cleanly
+    drop(mem_state);
+
+    // Wait for the spawned detector task to exit cleanly (should not block/timeout!)
+    let detector_finished = tokio::time::timeout(std::time::Duration::from_secs(2), handle).await;
+    assert!(
+        detector_finished.is_ok(),
+        "LiveConflictDetector task should terminate cleanly after MemState is dropped"
+    );
+}
+
 #[test]
 fn test_find_overlaps_empty_branches() {
     let repo_path = create_temp_git_repo();

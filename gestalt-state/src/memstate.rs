@@ -73,7 +73,25 @@ impl MemState {
         Self::with_capacity(capacity)
     }
 
+    /// Create a clone of this `MemState` that shares the same concurrent maps
+    /// but uses a separate, dummy broadcast channel. This is useful for preventing
+    /// background tasks from keeping the main broadcast sender alive (which causes leaks).
+    pub fn without_sender(&self) -> Self {
+        let (dummy_tx, _) = broadcast::channel(1);
+        Self {
+            agent_states: self.agent_states.clone(),
+            active_locks: self.active_locks.clone(),
+            event_tx: dummy_tx,
+        }
+    }
+
     // ── Agent State ───────────────────────────────────────────────────
+
+    /// Set the state of an agent within a run without broadcasting a timeline event.
+    pub fn set_agent_state_silent(&self, run_id: &str, agent_id: &str, state: &str) {
+        let key = format!("{run_id}:{agent_id}");
+        self.agent_states.insert(key, state.to_string());
+    }
 
     /// Get the current state of an agent within a run.
     ///
@@ -159,6 +177,8 @@ impl MemState {
                     })
                     .to_string();
                     self.push_event(run_id, Some(agent_id), "lock_conflict", &payload);
+                    // Deterministic AgentState transition on conflict
+                    self.set_agent_state(run_id, agent_id, "crashed");
                 }
             }
         }

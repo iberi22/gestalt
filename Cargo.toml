@@ -9,6 +9,8 @@ members = [
     "gestalt-state",
     "gestalt-ws",
     "gestalt-search",
+    "gestalt-proto",
+    "gestalt-wasm",
 ]
 resolver = "2"
 

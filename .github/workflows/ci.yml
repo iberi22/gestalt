@@ -61,6 +61,29 @@ jobs:
             -p gestalt-merge \
             --all-targets
 
+  build-wasm:
+    name: Cargo Build (WASM)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: rust-checks
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "gestalt-rust"
+
+      - name: Build WASM package
+        run: |
+          rustup target add wasm32-unknown-unknown
+          cargo build -p gestalt-wasm --target wasm32-unknown-unknown
+
   build-binary:
     name: Build Binary
     runs-on: ubuntu-latest

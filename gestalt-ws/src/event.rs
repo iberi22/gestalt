@@ -1,5 +1,23 @@
 use serde::{Deserialize, Serialize};
 
+/// Current protocol schema version for WebSocket events.
+pub const CURRENT_VERSION: u32 = 1;
+
+fn default_version() -> u32 {
+    CURRENT_VERSION
+}
+
+/// Envelope wrapping standard WebSocket events with schema versioning.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct WsEnvelope {
+    /// The protocol schema version of the event.
+    #[serde(default = "default_version")]
+    pub version: u32,
+    /// The flattened WebSocket event.
+    #[serde(flatten)]
+    pub event: WsEvent,
+}
+
 /// Events that can be broadcast to WebSocket clients.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "type", content = "data", rename_all = "snake_case")]
@@ -105,5 +123,48 @@ mod tests {
         assert!(json.contains("\"run_id\""));
         assert!(json.contains("\"agent_id\""));
         assert!(json.contains("\"state\""));
+    }
+
+    #[test]
+    fn test_ws_envelope_roundtrip() {
+        let event = WsEvent::StateChanged {
+            run_id: "r1".into(),
+            agent_id: "a1".into(),
+            state: "running".into(),
+        };
+        let envelope = WsEnvelope {
+            version: CURRENT_VERSION,
+            event: event.clone(),
+        };
+
+        let json = serde_json::to_string(&envelope).unwrap();
+        // Check that version field is present at root level
+        assert!(json.contains("\"version\":1"));
+        assert!(json.contains("\"type\":\"state_changed\""));
+
+        let deser: WsEnvelope = serde_json::from_str(&json).unwrap();
+        assert_eq!(deser.version, CURRENT_VERSION);
+        assert_eq!(deser.event, event);
+    }
+
+    #[test]
+    fn test_ws_envelope_backward_compatibility() {
+        // Without version field, should default to CURRENT_VERSION
+        let raw_json =
+            r#"{"type":"state_changed","data":{"run_id":"r1","agent_id":"a1","state":"running"}}"#;
+        let deser: WsEnvelope = serde_json::from_str(raw_json).unwrap();
+        assert_eq!(deser.version, CURRENT_VERSION);
+        if let WsEvent::StateChanged {
+            run_id,
+            agent_id,
+            state,
+        } = deser.event
+        {
+            assert_eq!(run_id, "r1");
+            assert_eq!(agent_id, "a1");
+            assert_eq!(state, "running");
+        } else {
+            panic!("Expected StateChanged variant");
+        }
     }
 }

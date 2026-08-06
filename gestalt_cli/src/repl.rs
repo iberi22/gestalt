@@ -14,6 +14,86 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
+/// Custom tab completer for available commands
+#[derive(Clone, Debug)]
+pub struct GestaltCompleter {
+    commands: Vec<String>,
+}
+
+impl GestaltCompleter {
+    pub fn new() -> Self {
+        Self {
+            commands: vec![
+                "run".to_string(),
+                "status".to_string(),
+                "search".to_string(),
+                "doctor".to_string(),
+                "help".to_string(),
+                "exit".to_string(),
+                "quit".to_string(),
+                "clear".to_string(),
+                "history".to_string(),
+                "context".to_string(),
+                "set".to_string(),
+                "get".to_string(),
+            ],
+        }
+    }
+}
+
+impl Default for GestaltCompleter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl rustyline::completion::Completer for GestaltCompleter {
+    type Candidate = rustyline::completion::Pair;
+
+    fn complete(
+        &self,
+        line: &str,
+        pos: usize,
+        _ctx: &rustyline::Context<'_>,
+    ) -> rustyline::Result<(usize, Vec<Self::Candidate>)> {
+        if pos > line.len() || !line.is_char_boundary(pos) {
+            return Ok((pos, Vec::new()));
+        }
+        let slice = &line[..pos];
+        if slice.split_whitespace().count() > 1 && !slice.ends_with(char::is_whitespace) {
+            return Ok((pos, Vec::new()));
+        }
+
+        let start = slice.rfind(char::is_whitespace).map_or(0, |idx| idx + 1);
+        let word = &slice[start..pos];
+        let candidates: Vec<rustyline::completion::Pair> = self
+            .commands
+            .iter()
+            .filter(|cmd| cmd.starts_with(word))
+            .map(|cmd| rustyline::completion::Pair {
+                display: cmd.clone(),
+                replacement: cmd.clone(),
+            })
+            .collect();
+
+        Ok((start, candidates))
+    }
+}
+
+impl rustyline::hint::Hinter for GestaltCompleter {
+    type Hint = String;
+
+    fn hint(&self, _line: &str, _pos: usize, _ctx: &rustyline::Context<'_>) -> Option<Self::Hint> {
+        None
+    }
+}
+
+impl rustyline::highlight::Highlighter for GestaltCompleter {}
+
+impl rustyline::validate::Validator for GestaltCompleter {}
+
+impl rustyline::Helper for GestaltCompleter {}
+
 /// REPL errors
 #[derive(Debug, thiserror::Error)]
 pub enum ReplError {
@@ -132,7 +212,7 @@ impl<H: ReplHandler> ReplHandler for Arc<Mutex<H>> {
 
 /// Interactive REPL
 pub struct InteractiveRepl<H: ReplHandler> {
-    editor: Editor<(), FileHistory>,
+    editor: Editor<GestaltCompleter, FileHistory>,
     handler: Arc<Mutex<H>>,
     state: Arc<Mutex<ReplState>>,
     history_file: PathBuf,
@@ -150,12 +230,18 @@ impl<H: ReplHandler + Default> InteractiveRepl<H> {
         let config = Config::builder()
             .history_ignore_space(true)
             .completion_type(rustyline::CompletionType::List)
+            .max_history_size(1000)?
             .build();
-        let editor = Editor::<(), FileHistory>::with_config(config)?;
+        let mut editor = Editor::<GestaltCompleter, FileHistory>::with_config(config)?;
+        editor.set_helper(Some(GestaltCompleter::new()));
 
         let home = home::home_dir().unwrap_or(PathBuf::from("."));
-        let history_file = home.join(".gestalt_repl_history");
-        let state_file = home.join(".gestalt_repl_state.json");
+        let gestalt_dir = home.join(".gestalt");
+        if !gestalt_dir.exists() {
+            fs::create_dir_all(&gestalt_dir)?;
+        }
+        let history_file = gestalt_dir.join("history");
+        let state_file = gestalt_dir.join("repl_state.json");
 
         let state = ReplState::load_from_file(&state_file).unwrap_or_default();
 
@@ -168,15 +254,28 @@ impl<H: ReplHandler + Default> InteractiveRepl<H> {
         })
     }
 
-    /// Run the REPL
-    pub async fn run(&mut self) -> Result<(), ReplError> {
-        // Load history
+    /// Load command history
+    pub fn setup_history(&mut self) -> Result<(), ReplError> {
         if let Err(e) = self.editor.load_history(&self.history_file) {
-            // Ignore if file doesn't exist
             if self.history_file.exists() {
                 eprintln!("Warning: Could not load history: {}", e);
             }
         }
+        Ok(())
+    }
+
+    /// Save command history
+    pub fn save_history(&mut self) -> Result<(), ReplError> {
+        if let Err(e) = self.editor.save_history(&self.history_file) {
+            eprintln!("Warning: Could not save history: {}", e);
+        }
+        Ok(())
+    }
+
+    /// Run the REPL
+    pub async fn run(&mut self) -> Result<(), ReplError> {
+        // Load history
+        self.setup_history()?;
 
         println!("Gestalt Rust REPL v0.2.0");
         println!("Type 'help' for available commands.");
@@ -227,9 +326,7 @@ impl<H: ReplHandler + Default> InteractiveRepl<H> {
         }
 
         // Save history
-        if let Err(e) = self.editor.save_history(&self.history_file) {
-            eprintln!("Warning: Could not save history: {}", e);
-        }
+        self.save_history()?;
 
         // Save state
         let state = self.state.lock().await;
@@ -405,5 +502,40 @@ mod tests {
         let result = handler.handle_input("test").await?;
         assert_eq!(result, "Echo: test");
         Ok(())
+    }
+
+    #[test]
+    fn test_gestalt_completer() {
+        use rustyline::completion::Completer;
+
+        let completer = GestaltCompleter::new();
+        let config = Config::builder().build();
+        let history = FileHistory::with_config(&config);
+        let ctx = rustyline::Context::new(&history);
+
+        // Test prefix matching on empty or single word prefix
+        let (start, candidates) = completer.complete("he", 2, &ctx).unwrap();
+        assert_eq!(start, 0);
+        assert!(candidates.iter().any(|p| p.display == "help"));
+
+        // Test non-matching word
+        let (_, candidates) = completer.complete("xyz", 3, &ctx).unwrap();
+        assert!(candidates.is_empty());
+
+        // Test multi-byte non-ASCII characters (e.g. Spanish, German, emojis) - must not panic!
+        let input = "ñhe";
+        let pos = input.len();
+        let (start, candidates) = completer.complete(input, pos, &ctx).unwrap();
+        // Since there is no whitespace, start is 0
+        assert_eq!(start, 0);
+        assert!(candidates.is_empty()); // "ñhe" doesn't match any command prefix, but it shouldn't panic
+
+        // Test with leading space and a valid prefix
+        let input2 = " he";
+        let pos2 = input2.len();
+        let (start2, candidates2) = completer.complete(input2, pos2, &ctx).unwrap();
+        // It detects "he" starts after the space at byte index 1
+        assert_eq!(start2, 1);
+        assert!(candidates2.iter().any(|p| p.display == "help"));
     }
 }

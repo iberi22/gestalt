@@ -9,7 +9,7 @@ use tokio_tungstenite::accept_async;
 use tokio_tungstenite::tungstenite::Message;
 use tracing::{debug, error, info, warn};
 
-use crate::event::WsEvent;
+use crate::event::{WsEnvelope, WsEvent, CURRENT_VERSION};
 
 /// A lightweight WebSocket server that broadcasts timeline events
 /// to all connected clients.
@@ -66,25 +66,31 @@ impl WsServer {
 
     /// Broadcast a `WsEvent` to all connected WebSocket clients.
     ///
-    /// The event is serialised to JSON and sent to every client.
+    /// The event is wrapped in a `WsEnvelope` with the current schema version,
+    /// serialised to JSON, and sent to every client.
     /// If a client has disconnected, its receiver is silently dropped.
     /// This is fire-and-forget — errors are logged but not returned.
     pub async fn broadcast(&self, event: &WsEvent) {
-        match event.to_json() {
+        let envelope = WsEnvelope {
+            version: CURRENT_VERSION,
+            event: event.clone(),
+        };
+
+        match serde_json::to_string(&envelope) {
             Ok(json) => {
                 let count = self.broadcast_tx.send(json);
                 match count {
                     Ok(n) => {
-                        debug!("Broadcast WsEvent to {n} subscribers");
+                        debug!("Broadcast WsEvent (wrapped in WsEnvelope) to {n} subscribers");
                     },
                     Err(_) => {
                         // No receivers — normal when no clients are connected
-                        debug!("WsEvent broadcast: no receivers");
+                        debug!("WsEnvelope broadcast: no receivers");
                     },
                 }
             },
             Err(e) => {
-                error!("Failed to serialise WsEvent for broadcast: {e}");
+                error!("Failed to serialise WsEnvelope for broadcast: {e}");
             },
         }
     }
@@ -186,8 +192,9 @@ mod tests {
         server.broadcast(&event).await;
 
         let received: String = rx.recv().await.unwrap();
-        let deser: WsEvent = serde_json::from_str(&received).unwrap();
-        assert_eq!(deser, event);
+        let deser: WsEnvelope = serde_json::from_str(&received).unwrap();
+        assert_eq!(deser.event, event);
+        assert_eq!(deser.version, CURRENT_VERSION);
     }
 
     #[tokio::test]
@@ -217,9 +224,9 @@ mod tests {
         // Both subscribers should receive the event
         let received2: String = rx2.recv().await.unwrap();
         let received3: String = rx3.recv().await.unwrap();
-        let deser2: WsEvent = serde_json::from_str(&received2).unwrap();
-        let deser3: WsEvent = serde_json::from_str(&received3).unwrap();
-        assert_eq!(deser2, event);
-        assert_eq!(deser3, event);
+        let deser2: WsEnvelope = serde_json::from_str(&received2).unwrap();
+        let deser3: WsEnvelope = serde_json::from_str(&received3).unwrap();
+        assert_eq!(deser2.event, event);
+        assert_eq!(deser3.event, event);
     }
 }

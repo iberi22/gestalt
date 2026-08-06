@@ -171,14 +171,28 @@ impl gestalt_router::thinking::InsightSynthesizer for StructuralSynthesizer {
 fn structural_insight(executions: &[String]) -> String {
     let mut states = std::collections::HashMap::<String, usize>::new();
     let mut agents = std::collections::HashMap::<String, usize>::new();
+    let mut bus_events = 0usize;
     for exec in executions {
-        // Content format: "[event_type] agent run_id — summary"
-        let mut parts = exec.split_whitespace();
+        // Bus events have the canonical "[event_type] agent run_id — summary"
+        // shape (written by xavier_sink). Non-bus memories (session transcripts,
+        // documents) are skipped so the insight reflects real bus activity.
+        let trimmed = exec.trim();
+        if !trimmed.starts_with('[') {
+            continue;
+        }
+        bus_events += 1;
+        let mut parts = trimmed.split_whitespace();
         let head = parts.next().unwrap_or("unknown").trim_matches(['[', ']']);
         *states.entry(head.to_string()).or_insert(0) += 1;
         if let Some(agent) = parts.next() {
             *agents.entry(agent.to_string()).or_insert(0) += 1;
         }
+    }
+    if bus_events == 0 {
+        return format!(
+            "PATTERNS: 0 bus events in window ({} memories retrieved, none from the bus)\nBLOCKERS: no bus traffic — is `gestalt bus serve` running and are agents pushing?\nDECISIONS: n/a\nNEXT: push events via event.py or gestalt run",
+            executions.len()
+        );
     }
     let mut state_parts: Vec<String> = states
         .iter()
@@ -191,8 +205,8 @@ fn structural_insight(executions: &[String]) -> String {
         .collect();
     agent_parts.sort();
     format!(
-        "PATTERNS: {} total executions — by state [{}]; by agent [{}]\nBLOCKERS: none detected (deterministic analysis)\nDECISIONS: n/a\nNEXT: review recent executions for manual triage",
-        executions.len(),
+        "PATTERNS: {} bus executions — by state [{}]; by agent [{}]\nBLOCKERS: none detected (deterministic analysis)\nDECISIONS: n/a\nNEXT: review recent executions for manual triage",
+        bus_events,
         state_parts.join(", "),
         agent_parts.join(", ")
     )

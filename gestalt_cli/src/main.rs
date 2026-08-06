@@ -1923,11 +1923,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Arc::new(bus::StructuralSynthesizer);
             let loop_ = ThinkingLoop::new(xavier, synthesizer).with_window(window);
 
-            println!("🧠 Gestalt Thinking Loop (window={}m)", window);
-            println!("   Pulling recent executions from Xavier...");
+            // Open the local StateDb — authoritative source of bus events.
+            let db_path = home::home_dir()
+                .unwrap_or_else(|| PathBuf::from("."))
+                .join(".gestalt")
+                .join("state.db");
+            let db =
+                StateDb::open(&db_path).map_err(|e| format!("Failed to open StateDb: {}", e))?;
 
-            let executions = loop_.recent_executions(50).await?;
-            println!("   {} recent executions found", executions.len());
+            println!("🧠 Gestalt Thinking Loop (window={}m)", window);
+            println!("   Pulling recent bus events from StateDb timeline...");
+
+            let executions = loop_.recent_executions_from_db(&db, 100);
+            println!("   {} recent bus executions found", executions.len());
 
             if executions.len() < gestalt_router::thinking::MIN_EXECUTIONS {
                 println!(
@@ -1944,7 +1952,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
 
             println!("   Synthesizing deterministic insight (no LLM dependency)...");
-            match loop_.run(force).await? {
+            match loop_.run(&db, force).await? {
                 Some(insight) => {
                     println!("\n━━━ INSIGHT ━━━\n{}\n━━━━━━━━━━━━━", insight);
                     println!("✅ Insight indexed in Xavier as kind=insight");

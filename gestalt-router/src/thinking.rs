@@ -12,7 +12,9 @@
 //! The loop is idempotent (checks today's `kind=insight` before writing) and
 //! gated on minimum signal (≥3 executions) to avoid low-quality insights.
 
+use crate::event_bus::BusEvent;
 use gestalt_core::application::agent::xavier::XavierClient;
+use gestalt_state::StateDb;
 use serde_json::json;
 use std::sync::Arc;
 use tracing::info;
@@ -57,25 +59,29 @@ impl ThinkingLoop {
         self
     }
 
-    /// Pull recent `kind=execution` memories from Xavier.
+    /// Pull recent bus events from the local StateDb timeline (authoritative
+    /// source — the same store `bus serve` writes to).
     ///
-    /// The query targets the bus namespace (`gestalt/bus/executions` prefix
-    /// lives in the content/metadata of every streamed event), which the
-    /// snippet search matches reliably; `kind` is a metadata field, not a
-    /// textual token, so it cannot drive the query itself.
-    pub async fn recent_executions(&self, limit: usize) -> Result<Vec<String>, String> {
-        let resp = self
-            .xavier
-            .search("gestalt bus executions", limit, "snippet")
-            .await
-            .map_err(|e| format!("Xavier search failed: {}", e))?;
-
-        Ok(resp
-            .results
-            .into_iter()
-            .map(|r| r.text())
-            .filter(|c| !c.trim().is_empty())
-            .collect())
+    /// This is more reliable than querying Xavier's semantic search, whose
+    /// embeddings index may lag or exclude short bus lines. The StateDb
+    /// timeline is always available and contains every event verbatim.
+    pub fn recent_executions_from_db(&self, db: &StateDb, limit: usize) -> Vec<String> {
+        match db.recent_timeline(limit as i64) {
+            Ok(events) => events
+                .iter()
+                .filter_map(|e| serde_json::from_str::<BusEvent>(&e.payload).ok())
+                .map(|e| {
+                    format!(
+                        "[{}] {} {} — {}",
+                        e.event_type,
+                        e.agent,
+                        e.run_id.as_deref().unwrap_or("?"),
+                        e.summary
+                    )
+                })
+                .collect(),
+            Err(_) => Vec::new(),
+        }
     }
 
     /// Re-index a synthesized insight as `kind=insight` for future PRE context.
@@ -103,12 +109,12 @@ impl ThinkingLoop {
 
     /// Run one full thinking cycle.
     ///
-    /// 1. Pull recent executions (min-signal gate)
+    /// 1. Pull recent executions from the local StateDb timeline
     /// 2. Skip if today's insight already exists (idempotent) — unless forced
-    /// 3. Synthesize via local LLM
+    /// 3. Synthesize via the deterministic synthesizer
     /// 4. Re-index as kind=insight
-    pub async fn run(&self, force: bool) -> Result<Option<String>, String> {
-        let executions = self.recent_executions(50).await?;
+    pub async fn run(&self, db: &StateDb, force: bool) -> Result<Option<String>, String> {
+        let executions = self.recent_executions_from_db(db, 100);
         if executions.len() < MIN_EXECUTIONS {
             info!(
                 "Thinking loop: only {} executions (need ≥{}) — skipping",

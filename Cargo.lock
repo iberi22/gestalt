@@ -2004,6 +2004,7 @@ dependencies = [
  "gestalt_core",
  "home",
  "reqwest 0.12.28",
+ "rusqlite",
  "rustyline",
  "serde",
  "serde_json",

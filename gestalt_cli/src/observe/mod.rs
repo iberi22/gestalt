@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 pub mod artifact_ingest;
 pub mod inject;
 pub mod orca_bridge;

@@ -25,5 +25,6 @@ gestalt-router = { path = "../gestalt-router" }
 gestalt-state = { path = "../gestalt-state" }
 gestalt-search = { path = "../gestalt-search" }
 uuid = { version = "1.15", features = ["v4", "serde"] }
+rusqlite = { version = "0.33", features = ["bundled"] }
 axum = "0.8"
 tempfile = "3.24"

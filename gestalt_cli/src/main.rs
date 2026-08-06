@@ -484,6 +484,25 @@ enum BusAction {
         #[arg(long)]
         dry_run: bool,
     },
+
+    /// Prune/retention of old event bus events (90 days window + archive Xavier)
+    Prune {
+        /// Cutoff in days (default 90)
+        #[arg(long, default_value_t = 90)]
+        days: u64,
+
+        /// Archive pruned events to Xavier before deletion
+        #[arg(long)]
+        archive: bool,
+
+        /// Dry run simulation (report count + oldest/newest affected, delete nothing)
+        #[arg(long)]
+        dry_run: bool,
+
+        /// StateDb path (default ~/.gestalt/state.db)
+        #[arg(long)]
+        db: Option<String>,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -1915,6 +1934,37 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     skipped,
                     events.len()
                 );
+            },
+
+            BusAction::Prune { days, archive, dry_run, db } => {
+                let db_path = db
+                    .map(PathBuf::from)
+                    .unwrap_or_else(|| {
+                        home::home_dir()
+                            .unwrap_or_else(|| PathBuf::from("."))
+                            .join(".gestalt")
+                            .join("state.db")
+                    });
+
+                let db = StateDb::open(&db_path)
+                    .map_err(|e| format!("Failed to open StateDb: {}", e))?;
+
+                let cutoff_ts = chrono::Utc::now() - chrono::Duration::days(days as i64);
+
+                println!(
+                    "Pruning events older than {} days (cutoff: {})...",
+                    days, cutoff_ts
+                );
+
+                let count = gestalt_router::event_bus::prune_events(&db, cutoff_ts, archive, dry_run)
+                    .await
+                    .map_err(|e| format!("Pruning failed: {}", e))?;
+
+                if dry_run {
+                    println!("[dry-run] Matched {} event(s). Delete/archive skipped.", count);
+                } else {
+                    println!("✅ Successfully pruned {} event(s).", count);
+                }
             },
         },
 

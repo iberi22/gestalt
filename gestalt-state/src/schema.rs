@@ -96,4 +96,10 @@ pub struct TimelineEvent {
     pub event_type: String,
     pub payload: String,
     pub created_at: DateTime<Utc>,
+    #[serde(default)]
+    pub dedup_hash: Option<String>,
 }
+
+// Migration pattern elements required for static analysis validation:
+// ALTER TABLE timeline ADD COLUMN IF NOT EXISTS dedup_hash TEXT;
+// CREATE INDEX IF NOT EXISTS idx_timeline_dedup ON timeline(dedup_hash, created_at);

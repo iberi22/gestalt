@@ -180,6 +180,62 @@ impl McpRegistry {
             Err(McpError::ToolNotFound(name.to_string()))
         }
     }
+
+    /// Registers the standalone server tools (memory_search, memory_add, agent_status, belief_query)
+    pub async fn register_standalone_server_tools(&self) {
+        let server_tools = vec![
+            ToolInfo {
+                name: "memory_search".to_string(),
+                description: "Search memories indexed in Xavier".to_string(),
+                parameters: json!({
+                    "type": "object",
+                    "properties": {
+                        "query": { "type": "string" },
+                        "limit": { "type": "number" }
+                    },
+                    "required": ["query"]
+                }),
+            },
+            ToolInfo {
+                name: "memory_add".to_string(),
+                description: "Add a memory/concept to Xavier".to_string(),
+                parameters: json!({
+                    "type": "object",
+                    "properties": {
+                        "content": { "type": "string" },
+                        "path": { "type": "string" },
+                        "kind": { "type": "string" }
+                    },
+                    "required": ["content", "path"]
+                }),
+            },
+            ToolInfo {
+                name: "agent_status".to_string(),
+                description: "Check the status of an agent or all agents in Gestalt".to_string(),
+                parameters: json!({
+                    "type": "object",
+                    "properties": {
+                        "agent_id": { "type": "string" }
+                    }
+                }),
+            },
+            ToolInfo {
+                name: "belief_query".to_string(),
+                description: "Query the Gestalt belief graph".to_string(),
+                parameters: json!({
+                    "type": "object",
+                    "properties": {
+                        "subject": { "type": "string" },
+                        "predicate": { "type": "string" }
+                    }
+                }),
+            },
+        ];
+
+        for tool in server_tools {
+            self.register_tool(tool).await;
+        }
+    }
 }
 
 impl Default for McpRegistry {
@@ -251,5 +307,20 @@ mod tests {
 
         assert!(result.is_err());
         matches!(result.unwrap_err(), McpError::ToolNotFound(_));
+    }
+
+    #[tokio::test]
+    async fn test_register_standalone_server_tools() {
+        let registry = McpRegistry::new();
+        registry.register_standalone_server_tools().await;
+
+        let tools = registry.list_tools().await;
+        assert_eq!(tools.len(), 4);
+
+        let names: Vec<&str> = tools.iter().map(|t| t.name.as_str()).collect();
+        assert!(names.contains(&"memory_search"));
+        assert!(names.contains(&"memory_add"));
+        assert!(names.contains(&"agent_status"));
+        assert!(names.contains(&"belief_query"));
     }
 }

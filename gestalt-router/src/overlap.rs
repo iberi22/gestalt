@@ -195,6 +195,9 @@ impl LiveConflictDetector {
     pub async fn run(self) {
         let mut rx = self.state.subscribe();
         let ws = self.ws.clone();
+        // Clone MemState without the sender, so the original sender is not kept alive in the loop!
+        let state_without_sender = self.state.without_sender();
+        drop(self);
 
         loop {
             match rx.recv().await {
@@ -208,8 +211,15 @@ impl LiveConflictDetector {
                             if let Some(path) = payload.get("path").and_then(|v| v.as_str()) {
                                 if let Some(ref agent_id) = event.agent_id {
                                     if let Some(holder) =
-                                        Self::check_lock(&self.state, path, agent_id)
+                                        Self::check_lock(&state_without_sender, path, agent_id)
                                     {
+                                        // Deterministic AgentState transition on conflict
+                                        state_without_sender.set_agent_state_silent(
+                                            &event.run_id,
+                                            agent_id,
+                                            "crashed",
+                                        );
+
                                         Self::broadcast_conflict(
                                             &ws,
                                             &event.run_id,
@@ -240,6 +250,14 @@ impl LiveConflictDetector {
                                 .get("agent_b")
                                 .and_then(|v| v.as_str())
                                 .unwrap_or("?");
+
+                            // Deterministic AgentState transition on conflict
+                            state_without_sender.set_agent_state_silent(
+                                &event.run_id,
+                                agent_b,
+                                "crashed",
+                            );
+
                             Self::broadcast_conflict(
                                 &ws,
                                 &event.run_id,

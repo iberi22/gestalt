@@ -1307,3 +1307,77 @@ fn test_checkpoint_result_construction() {
     assert_eq!(deser.success, result.success);
     assert_eq!(deser.commit_sha, result.commit_sha);
 }
+
+#[test]
+fn test_reconstruct_run_helper() {
+    let tmp = TempDir::new("gestalt-reconstruct-test");
+    let db_path = tmp.path.join("test.db");
+    let db = Arc::new(StateDb::open(&db_path).unwrap());
+    let run_id = Uuid::new_v4();
+
+    let log = StateDbEventLog::new(db.clone(), run_id);
+
+    // Initial state: reconstructed run has no events and defaults to Pending
+    let (events, final_state) = gestalt_router::timeline::reconstruct_run(run_id, &db).unwrap();
+    assert!(events.is_empty());
+    assert_eq!(final_state, AgentState::Pending);
+
+    // Also test log method:
+    let (events_log, final_state_log) = log.reconstruct().unwrap();
+    assert!(events_log.is_empty());
+    assert_eq!(final_state_log, AgentState::Pending);
+
+    // Append some events
+    log.append(Event::RunStarted {
+        run_id,
+        task: "some task".into(),
+        agents: vec!["agent-a".into(), "agent-b".into()],
+        sha_base: "sha123".into(),
+    }).unwrap();
+
+    // Now append agent state changes
+    log.append(Event::AgentStateChanged {
+        run_id,
+        agent_id: "agent-a".into(),
+        from: AgentState::Pending,
+        to: AgentState::Running,
+    }).unwrap();
+
+    log.append(Event::AgentStateChanged {
+        run_id,
+        agent_id: "agent-b".into(),
+        from: AgentState::Pending,
+        to: AgentState::Running,
+    }).unwrap();
+
+    // Reconstruct at this point - both are Running, so aggregate is Running
+    let (events, final_state) = log.reconstruct().unwrap();
+    assert_eq!(events.len(), 3);
+    assert_eq!(final_state, AgentState::Running);
+
+    // Now agent-a succeeds
+    log.append(Event::AgentStateChanged {
+        run_id,
+        agent_id: "agent-a".into(),
+        from: AgentState::Running,
+        to: AgentState::Success,
+    }).unwrap();
+
+    // Reconstruct at this point - agent-a is Success, agent-b is Running. Aggregate should be Running.
+    let (events, final_state) = log.reconstruct().unwrap();
+    assert_eq!(events.len(), 4);
+    assert_eq!(final_state, AgentState::Running);
+
+    // Now agent-b crashes
+    log.append(Event::AgentStateChanged {
+        run_id,
+        agent_id: "agent-b".into(),
+        from: AgentState::Running,
+        to: AgentState::Crashed,
+    }).unwrap();
+
+    // Reconstruct - agent-a is Success, agent-b is Crashed. Aggregate should be Crashed.
+    let (events, final_state) = log.reconstruct().unwrap();
+    assert_eq!(events.len(), 5);
+    assert_eq!(final_state, AgentState::Crashed);
+}

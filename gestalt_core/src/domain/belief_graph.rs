@@ -57,7 +57,13 @@ impl BeliefGraph {
     }
 
     /// Add an edge to the graph.
-    pub fn add_edge(&mut self, from: impl Into<String>, to: impl Into<String>, weight: f64, relation: impl Into<String>) {
+    pub fn add_edge(
+        &mut self,
+        from: impl Into<String>,
+        to: impl Into<String>,
+        weight: f64,
+        relation: impl Into<String>,
+    ) {
         let edge = BeliefEdge {
             from: from.into(),
             to: to.into(),
@@ -169,7 +175,11 @@ impl From<BeliefEdge> for crate::domain::belief::BeliefEdge {
 
 impl From<crate::context::belief_graph::PersistedBeliefGraph> for BeliefGraph {
     fn from(p: crate::context::belief_graph::PersistedBeliefGraph) -> Self {
-        let nodes = p.nodes.into_iter().map(|(k, v)| (k, BeliefNode::from(v))).collect();
+        let nodes = p
+            .nodes
+            .into_iter()
+            .map(|(k, v)| (k, BeliefNode::from(v)))
+            .collect();
         let edges = p.edges.into_iter().map(BeliefEdge::from).collect();
         Self { nodes, edges }
     }
@@ -177,8 +187,16 @@ impl From<crate::context::belief_graph::PersistedBeliefGraph> for BeliefGraph {
 
 impl From<BeliefGraph> for crate::context::belief_graph::PersistedBeliefGraph {
     fn from(g: BeliefGraph) -> Self {
-        let nodes = g.nodes.into_iter().map(|(k, v)| (k, crate::domain::belief::BeliefNode::from(v))).collect();
-        let edges = g.edges.into_iter().map(crate::domain::belief::BeliefEdge::from).collect();
+        let nodes = g
+            .nodes
+            .into_iter()
+            .map(|(k, v)| (k, crate::domain::belief::BeliefNode::from(v)))
+            .collect();
+        let edges = g
+            .edges
+            .into_iter()
+            .map(crate::domain::belief::BeliefEdge::from)
+            .collect();
         Self { nodes, edges }
     }
 }

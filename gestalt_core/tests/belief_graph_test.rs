@@ -4,8 +4,8 @@
 // it("should support exporting JSON and performing import round-trips")
 // it("should seamlessly convert to and from context persisted graphs")
 
-use gestalt_core::domain::belief_graph::BeliefGraph;
 use gestalt_core::context::belief_graph::PersistedBeliefGraph;
+use gestalt_core::domain::belief_graph::BeliefGraph;
 
 #[test]
 fn test_domain_node_addition_and_clamping() {

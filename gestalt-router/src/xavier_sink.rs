@@ -10,11 +10,11 @@
 //! Failure policy: best-effort, fire-and-forget. The caller logs the error and
 //! the event remains durably in StateDb (replay-able via a cursor sweep).
 
-use std::sync::OnceLock;
-use regex::Regex;
-use gestalt_ws::WsEvent;
 use gestalt_core::application::agent::xavier::XavierClient;
+use gestalt_ws::WsEvent;
+use regex::Regex;
 use serde_json::json;
+use std::sync::OnceLock;
 
 use crate::event_bus::BusEvent;
 
@@ -38,33 +38,36 @@ pub fn redact(text: &str) -> String {
 
     static RE_DOUBLE_QUOTED: OnceLock<Regex> = OnceLock::new();
     let re_dq = RE_DOUBLE_QUOTED.get_or_init(|| {
-        Regex::new(r#"(?i)(XAVIER_TOKEN|password|token|secret|api[_-]?key)(\s*[:=]\s*)(")(.*?)(")"#).unwrap()
+        Regex::new(r#"(?i)(XAVIER_TOKEN|password|token|secret|api[_-]?key)(\s*[:=]\s*)(")(.*?)(")"#)
+            .unwrap()
     });
 
     static RE_SINGLE_QUOTED: OnceLock<Regex> = OnceLock::new();
     let re_sq = RE_SINGLE_QUOTED.get_or_init(|| {
-        Regex::new(r#"(?i)(XAVIER_TOKEN|password|token|secret|api[_-]?key)(\s*[:=]\s*)(')(.*?)(')"#).unwrap()
+        Regex::new(r#"(?i)(XAVIER_TOKEN|password|token|secret|api[_-]?key)(\s*[:=]\s*)(')(.*?)(')"#)
+            .unwrap()
     });
 
     static RE_UNQUOTED: OnceLock<Regex> = OnceLock::new();
     let re_unq = RE_UNQUOTED.get_or_init(|| {
-        Regex::new(r#"(?i)(XAVIER_TOKEN|password|token|secret|api[_-]?key)(\s*[:=]\s*)([^\s,"'\}]+)"#).unwrap()
+        Regex::new(
+            r#"(?i)(XAVIER_TOKEN|password|token|secret|api[_-]?key)(\s*[:=]\s*)([^\s,"'\}]+)"#,
+        )
+        .unwrap()
     });
 
     let redacted_dq = re_dq.replace_all(text, "$1$2$3[REDACTED]$5");
     let redacted_sq = re_sq.replace_all(&redacted_dq, "$1$2$3[REDACTED]$5");
-    let mut redacted = re_unq.replace_all(&redacted_sq, "$1$2[REDACTED]").into_owned();
+    let mut redacted = re_unq
+        .replace_all(&redacted_sq, "$1$2[REDACTED]")
+        .into_owned();
 
     // 2. Redact standalone tokens: ghp_... or sk-...
     static RE_GHP: OnceLock<Regex> = OnceLock::new();
-    let re_ghp = RE_GHP.get_or_init(|| {
-        Regex::new(r"ghp_[a-zA-Z0-9]+").unwrap()
-    });
+    let re_ghp = RE_GHP.get_or_init(|| Regex::new(r"ghp_[a-zA-Z0-9]+").unwrap());
 
     static RE_SK: OnceLock<Regex> = OnceLock::new();
-    let re_sk = RE_SK.get_or_init(|| {
-        Regex::new(r"sk-[a-zA-Z0-9_-]+").unwrap()
-    });
+    let re_sk = RE_SK.get_or_init(|| Regex::new(r"sk-[a-zA-Z0-9_-]+").unwrap());
 
     redacted = re_ghp.replace_all(&redacted, "[REDACTED]").into_owned();
     redacted = re_sk.replace_all(&redacted, "[REDACTED]").into_owned();
@@ -78,7 +81,7 @@ pub fn redact_json(val: serde_json::Value) -> serde_json::Value {
         serde_json::Value::String(s) => serde_json::Value::String(redact(&s)),
         serde_json::Value::Array(arr) => {
             serde_json::Value::Array(arr.into_iter().map(redact_json).collect())
-        }
+        },
         serde_json::Value::Object(obj) => {
             let mut new_obj = serde_json::Map::new();
             for (k, v) in obj {
@@ -90,7 +93,7 @@ pub fn redact_json(val: serde_json::Value) -> serde_json::Value {
                 }
             }
             serde_json::Value::Object(new_obj)
-        }
+        },
         other => other,
     }
 }
@@ -98,7 +101,11 @@ pub fn redact_json(val: serde_json::Value) -> serde_json::Value {
 /// Apply redaction filter to a WsEvent.
 pub fn redact_ws_event(event: WsEvent) -> WsEvent {
     match event {
-        WsEvent::RunStarted { run_id, task, agents } => WsEvent::RunStarted {
+        WsEvent::RunStarted {
+            run_id,
+            task,
+            agents,
+        } => WsEvent::RunStarted {
             run_id,
             task: redact(&task),
             agents,
@@ -107,7 +114,13 @@ pub fn redact_ws_event(event: WsEvent) -> WsEvent {
             run_id,
             summary: redact(&summary),
         },
-        WsEvent::ConflictDetected { run_id, agent_a, agent_b, path, message } => WsEvent::ConflictDetected {
+        WsEvent::ConflictDetected {
+            run_id,
+            agent_a,
+            agent_b,
+            path,
+            message,
+        } => WsEvent::ConflictDetected {
             run_id,
             agent_a,
             agent_b,

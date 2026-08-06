@@ -107,6 +107,58 @@ impl ThinkingLoop {
         Ok(!resp.results.is_empty())
     }
 
+    /// Get the timestamp of the last insight from Xavier by searching for
+    /// "gestalt/thinking/" path prefix.
+    pub async fn last_insight_time(&self) -> Option<chrono::DateTime<chrono::Utc>> {
+        let resp = self
+            .xavier
+            .search("gestalt/thinking/", 100, "snippet")
+            .await
+            .ok()?;
+
+        let mut latest_date: Option<chrono::DateTime<chrono::Utc>> = None;
+
+        for res in resp.results {
+            if res.path.starts_with("gestalt/thinking/") {
+                if let Some(date_str) = res.path.strip_prefix("gestalt/thinking/") {
+                    if let Ok(naive_date) = chrono::NaiveDate::parse_from_str(date_str.trim(), "%Y-%m-%d") {
+                        if let Some(naive_datetime) = naive_date.and_hms_opt(0, 0, 0) {
+                            let datetime = naive_datetime.and_utc();
+                            if latest_date.is_none() || Some(datetime) > latest_date {
+                                latest_date = Some(datetime);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        latest_date
+    }
+
+    /// Count the number of pending executions in StateDb since the last index/insight.
+    pub async fn pending_executions_since_last_insight(&self, db: &StateDb) -> usize {
+        let last_time = self.last_insight_time().await;
+
+        let events = match db.recent_timeline(1000) {
+            Ok(evs) => evs,
+            Err(_) => return 0,
+        };
+
+        events
+            .iter()
+            .filter(|e| {
+                let is_execution = e.event_type == "run_finished" || e.event_type == "run_started";
+                let is_newer = last_time.map_or(true, |t| e.created_at > t);
+                is_execution && is_newer
+            })
+            .count()
+    }
+
+    /// Determine whether the thinking loop should run.
+    pub async fn should_run(&self, db: &StateDb, min_executions: usize) -> bool {
+        self.pending_executions_since_last_insight(db).await >= min_executions
+    }
+
     /// Run one full thinking cycle.
     ///
     /// 1. Pull recent executions from the local StateDb timeline

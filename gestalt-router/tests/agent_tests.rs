@@ -17,6 +17,7 @@ fn test_agent_spec_construction() {
         args: vec!["hello".to_string()],
         allowed_paths: None,
         env: None,
+        capabilities: Vec::new(),
     };
     assert_eq!(spec.id, "test-agent");
     assert_eq!(spec.command, "echo");
@@ -32,6 +33,7 @@ fn test_agent_spec_with_env() {
         args: vec![],
         allowed_paths: Some(vec!["/tmp".to_string()]),
         env: Some(env),
+        capabilities: Vec::new(),
     };
     assert!(spec.env.is_some());
     assert_eq!(spec.env.as_ref().unwrap().len(), 1);
@@ -222,6 +224,7 @@ fn test_multi_agent_specs() {
             args: vec!["hello".to_string()],
             allowed_paths: None,
             env: None,
+            capabilities: Vec::new(),
         })
         .collect();
     assert_eq!(agents.len(), 3);
@@ -237,6 +240,7 @@ async fn test_subprocess_runner_success() {
         args: vec!["hello world".to_string()],
         allowed_paths: None,
         env: None,
+        capabilities: Vec::new(),
     };
     let temp_dir = TempDir::new();
     let result = runner
@@ -258,6 +262,7 @@ async fn test_subprocess_runner_timeout() {
         args: vec!["10".to_string()],
         allowed_paths: None,
         env: None,
+        capabilities: Vec::new(),
     };
     let temp_dir = TempDir::new();
     let result = runner
@@ -287,6 +292,7 @@ async fn test_subprocess_runner_env_sanitization() {
         args: vec!["-c".to_string(), "env".to_string()],
         allowed_paths: None,
         env: Some(env),
+        capabilities: Vec::new(),
     };
     let temp_dir = TempDir::new();
     let result = runner

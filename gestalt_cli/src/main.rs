@@ -8,6 +8,7 @@ mod chain;
 mod config;
 mod observe;
 mod repl;
+pub mod task_api;
 
 use crate::config::CliConfig;
 use crate::repl::{EchoHandler, InteractiveRepl};
@@ -1534,6 +1535,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         args,
                         allowed_paths: None,
                         env: None,
+                        capabilities: Vec::new(),
                     }
                 })
                 .collect();
@@ -2016,7 +2018,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         Commands::Bus { action } => match action {
             BusAction::Serve { host, port, db } => {
-                bus::serve(&host, port, db.as_deref()).await?;
+                task_api::serve(&host, port, db.as_deref()).await?;
             },
             BusAction::Push {
                 agent,

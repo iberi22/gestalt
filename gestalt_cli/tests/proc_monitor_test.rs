@@ -44,6 +44,7 @@ fn test_match_agent_with_specs() {
             args: vec![],
             allowed_paths: None,
             env: None,
+            capabilities: Vec::new(),
         },
         AgentSpec {
             id: "my-opencode-spec".to_string(),
@@ -51,6 +52,7 @@ fn test_match_agent_with_specs() {
             args: vec![],
             allowed_paths: None,
             env: None,
+            capabilities: Vec::new(),
         },
     ];
 

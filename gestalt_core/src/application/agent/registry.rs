@@ -38,13 +38,16 @@ pub struct AgentEntry {
     /// Nombre único (ej: "kimi", "agy", "hermes")
     pub name: String,
     /// Proveedor (ej: "openrouter", "local", "openclaw")
+    #[serde(default)]
     pub provider: String,
     /// Modelo específico
+    #[serde(default)]
     pub model: String,
     /// Tipo de agente
     #[serde(rename = "type")]
     pub agent_type: AgentType,
     /// Capacidades que posee
+    #[serde(default)]
     pub capabilities: Vec<String>,
     /// Rate limits por minuto
     #[serde(default)]

@@ -4,6 +4,7 @@
 
 mod agent_wrapper;
 mod bus;
+mod chain;
 mod config;
 mod observe;
 mod repl;
@@ -436,6 +437,30 @@ enum Commands {
         /// Run discovery once and exit
         #[arg(long)]
         once: bool,
+    },
+
+    /// Run a chain of agents sequentially in dependency order
+    Chain {
+        #[command(subcommand)]
+        action: ChainAction,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+enum ChainAction {
+    /// Run a chain specification
+    Run {
+        /// Path to the TOML specification file
+        #[arg(long)]
+        spec: String,
+
+        /// Optional project name
+        #[arg(long)]
+        project: Option<String>,
+
+        /// Continue executing subsequent steps even if a step fails
+        #[arg(long)]
+        continue_on_error: bool,
     },
 }
 
@@ -2333,6 +2358,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             } else {
                 observe::run_daemon_loop().await?;
+            }
+        },
+
+        Commands::Chain { action } => match action {
+            ChainAction::Run {
+                spec,
+                project,
+                continue_on_error,
+            } => {
+                info!("Starting chain run for spec: {}", spec);
+                println!("⛓️  Running agent pipeline chain...");
+                if let Err(e) = chain::run_chain(&spec, project, continue_on_error).await {
+                    error!("Chain run failed: {}", e);
+                    eprintln!("❌ Chain run failed: {}", e);
+                    std::process::exit(1);
+                }
+                println!("✅ Chain run completed successfully.");
             }
         },
     }

@@ -39,3 +39,99 @@ fn test_status_offline() {
     // But we know it should return an error.
     assert!(!combined.is_empty());
 }
+
+#[tokio::test]
+async fn test_thinking_list_and_approve_with_stub_xavier() {
+    use axum::{routing::{get, post}, Json, Router};
+
+    let app = Router::new()
+        .route("/health", get(|| async { Json(serde_json::json!({"status": "ok"})) }))
+        .route("/v1/memories/search", post(|Json(_body): Json<serde_json::Value>| async move {
+            Json(serde_json::json!({
+                "count": 1,
+                "results": [
+                    {
+                        "id": "insight-123",
+                        "path": "gestalt/thinking/2026-08-05",
+                        "content": "This is a synthesized pattern of 5 execution runs.",
+                        "snippet": "This is a synthesized pattern",
+                        "score": 0.95,
+                        "metadata": {
+                            "kind": "insight"
+                        }
+                    }
+                ]
+            }))
+        }))
+        .route("/v1/memories", post(|Json(_body): Json<serde_json::Value>| async move {
+            Json(serde_json::json!({
+                "id": "decision-456",
+                "status": "ok"
+            }))
+        }));
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    let cli_bin = env!("CARGO_BIN_EXE_gestalt_cli");
+
+    // 1. Test 'thinking list'
+    let output_list = tokio::process::Command::new(cli_bin)
+        .envs([
+            ("XAVIER_URL", format!("http://{}", addr)),
+            ("XAVIER_TOKEN", "test-token".to_string()),
+        ])
+        .args(["thinking", "list", "--recent", "--limit", "3"])
+        .output()
+        .await
+        .expect("Failed to execute command");
+
+    let stdout_list = String::from_utf8_lossy(&output_list.stdout);
+    let stderr_list = String::from_utf8_lossy(&output_list.stderr);
+    assert!(
+        output_list.status.success(),
+        "Command failed with status: {:?}\nstdout: {}\nstderr: {}",
+        output_list.status,
+        stdout_list,
+        stderr_list
+    );
+    assert!(stdout_list.contains("insight-123"));
+    assert!(stdout_list.contains("2026-08-05"));
+    assert!(stdout_list.contains("This is a synthesized pattern"));
+
+    // 2. Test 'thinking approve --dry-run'
+    let output_approve_dry = tokio::process::Command::new(cli_bin)
+        .envs([
+            ("XAVIER_URL", format!("http://{}", addr)),
+            ("XAVIER_TOKEN", "test-token".to_string()),
+        ])
+        .args(["thinking", "approve", "--id", "insight-123", "--dry-run"])
+        .output()
+        .await
+        .expect("Failed to execute command");
+
+    assert!(output_approve_dry.status.success());
+    let stdout_approve_dry = String::from_utf8_lossy(&output_approve_dry.stdout);
+    assert!(stdout_approve_dry.contains("[dry-run]"));
+    assert!(stdout_approve_dry.contains("insight-123"));
+    assert!(stdout_approve_dry.contains("gestalt/decisions/2026-08-05"));
+
+    // 3. Test 'thinking approve' real run
+    let output_approve_real = tokio::process::Command::new(cli_bin)
+        .envs([
+            ("XAVIER_URL", format!("http://{}", addr)),
+            ("XAVIER_TOKEN", "test-token".to_string()),
+        ])
+        .args(["thinking", "approve", "--id", "insight-123"])
+        .output()
+        .await
+        .expect("Failed to execute command");
+
+    assert!(output_approve_real.status.success());
+    let stdout_approve_real = String::from_utf8_lossy(&output_approve_real.stdout);
+    assert!(stdout_approve_real.contains("Decision promoted successfully!"));
+    assert!(stdout_approve_real.contains("decision-456"));
+}

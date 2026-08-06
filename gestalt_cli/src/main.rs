@@ -410,6 +410,9 @@ enum Commands {
 
     /// Xavier Thinking Loop: synthesize insights from recent executions
     Thinking {
+        #[command(subcommand)]
+        action: Option<ThinkingAction>,
+
         /// Force a run even if today's insight already exists
         #[arg(long)]
         force: bool,
@@ -481,6 +484,34 @@ enum BusAction {
         after_seq: Option<i64>,
 
         /// Dry run: report what would be re-sunk without writing
+        #[arg(long)]
+        dry_run: bool,
+    },
+}
+
+#[derive(Subcommand, Debug, Clone)]
+pub enum ThinkingAction {
+    /// List recent insights from Xavier
+    List {
+        /// Only list recent insights
+        #[arg(long)]
+        recent: bool,
+
+        /// Max number of insights to retrieve
+        #[arg(long, default_value_t = 5)]
+        limit: usize,
+    },
+    /// Approve an insight and promote it to a decision
+    Approve {
+        /// The ID of the insight to approve
+        #[arg(long)]
+        id: String,
+
+        /// Custom decision path under gestalt/decisions/<slug>
+        #[arg(long)]
+        path: Option<String>,
+
+        /// Dry run: show what would be done without writing
         #[arg(long)]
         dry_run: bool,
     },
@@ -1918,54 +1949,169 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             },
         },
 
-        Commands::Thinking { force, window } => {
+        Commands::Thinking { action, force, window } => {
             use gestalt_router::thinking::ThinkingLoop;
 
             let xavier = Arc::new(XavierClient::from_env());
-            if !xavier.is_available().await {
-                eprintln!("❌ Xavier not reachable at :8006 — thinking loop needs Xavier");
-                std::process::exit(1);
-            }
 
-            let synthesizer: Arc<dyn gestalt_router::thinking::InsightSynthesizer> =
-                Arc::new(bus::StructuralSynthesizer);
-            let loop_ = ThinkingLoop::new(xavier, synthesizer).with_window(window);
+            if let Some(act) = action {
+                match act {
+                    ThinkingAction::List { recent: _, limit } => {
+                        if !xavier.is_available().await {
+                            eprintln!("❌ Xavier not reachable at :8006 — list subcommand needs Xavier");
+                            std::process::exit(1);
+                        }
+                        println!("🔍 Listing recent insights from Xavier...");
+                        let search_limit = (limit * 3).max(50);
+                        match xavier.search("gestalt/thinking/", search_limit, "hybrid").await {
+                            Ok(resp) => {
+                                let mut filtered = Vec::new();
+                                for r in resp.results {
+                                    if r.path.starts_with("gestalt/thinking/") {
+                                        filtered.push(r);
+                                    }
+                                }
+                                filtered.truncate(limit);
 
-            // Open the local StateDb — authoritative source of bus events.
-            let db_path = home::home_dir()
-                .unwrap_or_else(|| PathBuf::from("."))
-                .join(".gestalt")
-                .join("state.db");
-            let db =
-                StateDb::open(&db_path).map_err(|e| format!("Failed to open StateDb: {}", e))?;
+                                println!("Found {} recent insights:", filtered.len());
+                                for r in filtered {
+                                    let date = r.path.strip_prefix("gestalt/thinking/").unwrap_or(&r.path);
+                                    println!("ID: {}", r.id);
+                                    println!("Date: {}", date);
+                                    println!("Snippet: {}", r.text().trim());
+                                    println!("----------------------------------------");
+                                }
+                            }
+                            Err(e) => {
+                                eprintln!("❌ Failed to search Xavier: {}", e);
+                                std::process::exit(1);
+                            }
+                        }
+                    }
+                    ThinkingAction::Approve { id, path, dry_run } => {
+                        if !xavier.is_available().await {
+                            eprintln!("❌ Xavier not reachable at :8006 — approve subcommand needs Xavier");
+                            std::process::exit(1);
+                        }
+                        println!("🔍 Searching for insight ID: {}...", id);
+                        let mut found_memory = None;
 
-            println!("🧠 Gestalt Thinking Loop (window={}m)", window);
-            println!("   Pulling recent bus events from StateDb timeline...");
+                        if let Ok(resp) = xavier.search(&id, 10, "hybrid").await {
+                            for r in resp.results {
+                                if r.id == id {
+                                    found_memory = Some(r);
+                                    break;
+                                }
+                            }
+                        }
 
-            let executions = loop_.recent_executions_from_db(&db, 100);
-            println!("   {} recent bus executions found", executions.len());
+                        if found_memory.is_none() {
+                            if let Ok(resp) = xavier.search("gestalt/thinking/", 100, "hybrid").await {
+                                for r in resp.results {
+                                    if r.id == id {
+                                        found_memory = Some(r);
+                                        break;
+                                    }
+                                }
+                            }
+                        }
 
-            if executions.len() < gestalt_router::thinking::MIN_EXECUTIONS {
-                println!(
-                    "   ℹ️  Only {} executions (need ≥{}) — not enough signal to think yet. Push more events with `gestalt bus push`.",
-                    executions.len(),
-                    gestalt_router::thinking::MIN_EXECUTIONS
-                );
-                std::process::exit(0);
-            }
+                        let r = match found_memory {
+                            Some(m) => m,
+                            None => {
+                                eprintln!("❌ Insight memory with ID {} not found in Xavier.", id);
+                                std::process::exit(1);
+                            }
+                        };
 
-            if !force && loop_.has_today_insight().await? {
-                println!("   ℹ️  Today's insight already exists (use --force to re-run)");
-                std::process::exit(0);
-            }
+                        let content = r.text();
+                        let slug = if let Some(ref p) = path {
+                            if p.starts_with("gestalt/decisions/") {
+                                p.clone()
+                            } else {
+                                format!("gestalt/decisions/{}", p)
+                            }
+                        } else {
+                            let date_part = r.path.strip_prefix("gestalt/thinking/").unwrap_or(&r.id);
+                            let sanitized: String = date_part
+                                .chars()
+                                .map(|c| if c.is_ascii_alphanumeric() { c.to_ascii_lowercase() } else { '-' })
+                                .collect();
+                            format!("gestalt/decisions/{}", sanitized)
+                        };
 
-            println!("   Synthesizing deterministic insight (no LLM dependency)...");
-            match loop_.run(&db, force).await? {
-                Some(insight) => {
-                    println!("\n━━━ INSIGHT ━━━\n{}\n━━━━━━━━━━━━━", insight);
-                    println!("✅ Insight indexed in Xavier as kind=insight");
-                },
-                None => println!("   No insight produced this cycle"),
+                        let metadata = serde_json::json!({
+                            "approved_by": "human",
+                            "source_insight": id,
+                        });
+
+                        if dry_run {
+                            println!("[dry-run] Would promote insight {} to decision at path {} with kind=decision", id, slug);
+                            println!("[dry-run] Content: {}", content);
+                            println!("[dry-run] Metadata: {}", serde_json::to_string_pretty(&metadata).unwrap());
+                        } else {
+                            println!("🚀 Promoting insight to kind=decision at path {}...", slug);
+                            match xavier.add(&content, &slug, "decision", metadata).await {
+                                Ok(resp) => {
+                                    println!("✅ Decision promoted successfully!");
+                                    println!("   Memory ID: {}", resp.id);
+                                    println!("   Status: {}", resp.status);
+                                    println!("   Path: {}", slug);
+                                }
+                                Err(e) => {
+                                    eprintln!("❌ Failed to promote decision in Xavier: {}", e);
+                                    std::process::exit(1);
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                if !xavier.is_available().await {
+                    eprintln!("❌ Xavier not reachable at :8006 — thinking loop needs Xavier");
+                    std::process::exit(1);
+                }
+
+                let synthesizer: Arc<dyn gestalt_router::thinking::InsightSynthesizer> =
+                    Arc::new(bus::StructuralSynthesizer);
+                let loop_ = ThinkingLoop::new(xavier, synthesizer).with_window(window);
+
+                // Open the local StateDb — authoritative source of bus events.
+                let db_path = home::home_dir()
+                    .unwrap_or_else(|| PathBuf::from("."))
+                    .join(".gestalt")
+                    .join("state.db");
+                let db =
+                    StateDb::open(&db_path).map_err(|e| format!("Failed to open StateDb: {}", e))?;
+
+                println!("🧠 Gestalt Thinking Loop (window={}m)", window);
+                println!("   Pulling recent bus events from StateDb timeline...");
+
+                let executions = loop_.recent_executions_from_db(&db, 100);
+                println!("   {} recent bus executions found", executions.len());
+
+                if executions.len() < gestalt_router::thinking::MIN_EXECUTIONS {
+                    println!(
+                        "   ℹ️  Only {} executions (need ≥{}) — not enough signal to think yet. Push more events with `gestalt bus push`.",
+                        executions.len(),
+                        gestalt_router::thinking::MIN_EXECUTIONS
+                    );
+                    std::process::exit(0);
+                }
+
+                if !force && loop_.has_today_insight().await? {
+                    println!("   ℹ️  Today's insight already exists (use --force to re-run)");
+                    std::process::exit(0);
+                }
+
+                println!("   Synthesizing deterministic insight (no LLM dependency)...");
+                match loop_.run(&db, force).await? {
+                    Some(insight) => {
+                        println!("\n━━━ INSIGHT ━━━\n{}\n━━━━━━━━━━━━━", insight);
+                        println!("✅ Insight indexed in Xavier as kind=insight");
+                    },
+                    None => println!("   No insight produced this cycle"),
+                }
             }
         },
 

@@ -10,8 +10,8 @@ use gestalt_router::integrate::{
     integrate_branches, AgentIntegrationSpec, IntegrateResult, MergeResult,
 };
 use gestalt_router::overlap::{
-    detect_overlap, find_overlaps, get_modified_files, ConflictInfo as OverlapConflictInfo,
-    ConflictKind as OverlapConflictKind, MergeTestResult, OverlapInfo, OverlapResult,
+    detect_overlap, find_overlaps, get_modified_files, ConflictKind as OverlapConflictKind,
+    MergeTestResult, OverlapInfo, OverlapResult,
 };
 use gestalt_router::run::{
     AgentResult, AgentSpec, AgentStatus, ConflictInfo, ConflictKind, RouterError, RouterErrorKind,
@@ -777,8 +777,8 @@ fn test_mergeresult_variants() {
     }
 }
 
-#[test]
-fn test_integrate_branches_no_conflicts() {
+#[tokio::test]
+async fn test_integrate_branches_no_conflicts() {
     let tmp = TempDir::new("gestalt-integrate-clean");
     let dir = &tmp.path;
     let base_sha = setup_git_repo(dir);
@@ -801,7 +801,9 @@ fn test_integrate_branches_no_conflicts() {
         ("agent_b".to_string(), "branch_agent_b".to_string()),
     ];
 
-    let result = integrate_branches(dir, &base_sha, "integration/main", &branches).unwrap();
+    let result = integrate_branches(dir, &base_sha, "integration/main", &branches)
+        .await
+        .unwrap();
     assert!(!result.merge_sha.is_empty(), "expected a merge SHA");
     assert_eq!(result.merged_branches.len(), 2);
     assert!(
@@ -1152,12 +1154,11 @@ fn test_overlap_result_construction() {
 
 #[test]
 fn test_overlap_conflict_info_and_kind() {
-    let info = OverlapConflictInfo {
-        path: PathBuf::from("src/main.rs"),
-        kind: OverlapConflictKind::BothModified,
+    let info = ConflictInfo {
+        agent_id: String::new(),
+        path: "src/main.rs".to_string(),
     };
-    assert!(info.path.to_string_lossy().ends_with("main.rs"));
-    assert_eq!(info.kind, OverlapConflictKind::BothModified);
+    assert!(info.path.ends_with("main.rs"));
 
     // All ConflictKind variants in overlap module
     let kinds = vec![
@@ -1186,20 +1187,20 @@ fn test_merge_test_result_clean() {
 #[test]
 fn test_merge_test_result_conflicts() {
     let conflicts = vec![
-        OverlapConflictInfo {
-            path: PathBuf::from("f1.txt"),
-            kind: OverlapConflictKind::BothModified,
+        ConflictInfo {
+            agent_id: String::new(),
+            path: "f1.txt".to_string(),
         },
-        OverlapConflictInfo {
-            path: PathBuf::from("f2.txt"),
-            kind: OverlapConflictKind::Content,
+        ConflictInfo {
+            agent_id: String::new(),
+            path: "f2.txt".to_string(),
         },
     ];
     let result = MergeTestResult::Conflicts(conflicts);
     match &result {
         MergeTestResult::Conflicts(list) => {
             assert_eq!(list.len(), 2);
-            assert_eq!(list[0].path, PathBuf::from("f1.txt"));
+            assert_eq!(list[0].path, "f1.txt");
         },
         _ => panic!("expected Conflicts variant"),
     }

@@ -117,7 +117,7 @@ pub type TestHookFn = Box<dyn FnMut(&mut Vec<(String, String)>)>;
 pub struct CleanSlateRetry;
 
 /// Integration implementation with clean-slate retry mechanism.
-pub fn integrate_branches(
+pub async fn integrate_branches(
     repo_dir: &Path,
     base_sha: &str,
     integration_branch: &str,
@@ -146,7 +146,7 @@ pub fn integrate_branches(
                 {
                     let err = ClassifiedMergeError::Conflict("Merge conflict detected".to_string());
                     if err.is_retryable(&policy) {
-                        std::thread::sleep(policy.backoff);
+                        tokio::time::sleep(policy.backoff).await;
                         continue;
                     }
                 }
@@ -155,7 +155,7 @@ pub fn integrate_branches(
             Err(e) => {
                 let classified = classify_router_error(&e);
                 if classified.is_retryable(&policy) && attempts < policy.max_attempts {
-                    std::thread::sleep(policy.backoff);
+                    tokio::time::sleep(policy.backoff).await;
                     continue;
                 }
                 return Err(e);
@@ -428,8 +428,8 @@ mod tests {
             .unwrap();
     }
 
-    #[test]
-    fn test_conflict_error_clean_slate_retry_succeeds() {
+    #[tokio::test]
+    async fn test_conflict_error_clean_slate_retry_succeeds() {
         let temp = TempDir::new();
         let repo_path = temp.path.clone();
         init_git_repo(&repo_path);
@@ -571,7 +571,9 @@ mod tests {
             ("agent_b".to_string(), sha_b),
         ];
 
-        let result = integrate_branches(&repo_path, &base_sha, "integration", &branches).unwrap();
+        let result = integrate_branches(&repo_path, &base_sha, "integration", &branches)
+            .await
+            .unwrap();
 
         // Verify that it successfully completed on retry (no conflicts, got a valid merge sha)
         assert!(

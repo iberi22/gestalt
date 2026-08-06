@@ -271,8 +271,8 @@ fn test_run_report_with_agents_and_conflicts() {
     assert!(report.success);
 }
 
-#[test]
-fn test_integrate_branches_success_and_conflict() {
+#[tokio::test]
+async fn test_integrate_branches_success_and_conflict() {
     // 1. Initialize git repo
     let dir = init_test_repo();
     let repo_path = dir.path().to_path_buf();
@@ -355,7 +355,9 @@ fn test_integrate_branches_success_and_conflict() {
         ("agent_b".to_string(), sha_b.clone()),
     ];
 
-    let result = integrate_branches(&repo_path, &base_sha, "integration", &branches).unwrap();
+    let result = integrate_branches(&repo_path, &base_sha, "integration", &branches)
+        .await
+        .unwrap();
     assert!(
         !result.merge_sha.is_empty(),
         "Should produce a merge SHA, but got: {:?}",
@@ -444,6 +446,7 @@ fn test_integrate_branches_success_and_conflict() {
         "integration_conflict",
         &binary_branches,
     )
+    .await
     .unwrap();
     assert!(
         result_conflict.merge_sha.is_empty(),

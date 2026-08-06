@@ -11,6 +11,8 @@ pub struct AgentSpec {
     pub args: Vec<String>,
     pub allowed_paths: Option<Vec<String>>,
     pub env: Option<HashMap<String, String>>,
+    #[serde(default)]
+    pub capabilities: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

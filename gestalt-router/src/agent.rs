@@ -592,6 +592,7 @@ mod tests {
                 ],
                 allowed_paths: None,
                 env: None,
+                capabilities: Vec::new(),
             };
 
             let result = runner

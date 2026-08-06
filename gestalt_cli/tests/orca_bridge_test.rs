@@ -60,7 +60,8 @@ fn test_last_status_json_fallback() {
     ]"#;
     fs::write(&status_path, content).unwrap();
 
-    let events = orca_bridge::read_last_status(&status_path).expect("Failed to read last-status.json");
+    let events =
+        orca_bridge::read_last_status(&status_path).expect("Failed to read last-status.json");
     assert_eq!(events.len(), 2);
 
     let ev1 = &events[0];
@@ -116,7 +117,11 @@ async fn test_poll_unreachable_server_with_fallback() {
             "message": "Out of memory"
         }
     ]"#;
-    fs::write(agent_hooks_dir.join("last-status.json"), last_status_content).unwrap();
+    fs::write(
+        agent_hooks_dir.join("last-status.json"),
+        last_status_content,
+    )
+    .unwrap();
 
     std::env::set_var("HOME", temp_dir.path());
 

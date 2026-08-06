@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "xavier-memory": {
+      "command": "/home/belal/.local/bin/xavier",
+      "args": ["mcp"],
+      "env": {},
+      "disabled": false
+    },
+    "gestalt-mcp": {
+      "command": "/home/belal/.local/bin/gestalt-mcp",
+      "args": ["--transport", "stdio"],
+      "env": {},
+      "disabled": false
+    }
+  }
+}

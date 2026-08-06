@@ -54,7 +54,10 @@ pub fn read_orca_endpoint(path: &Path) -> Result<OrcaEndpointConfig, String> {
             let mut v = val.trim().to_string();
 
             // Strip surrounding double or single quotes
-            if ((v.starts_with('"') && v.ends_with('"')) || (v.starts_with('\'') && v.ends_with('\''))) && v.len() >= 2 {
+            if ((v.starts_with('"') && v.ends_with('"'))
+                || (v.starts_with('\'') && v.ends_with('\'')))
+                && v.len() >= 2
+            {
                 v = v[1..v.len() - 1].to_string();
             }
 
@@ -65,16 +68,17 @@ pub fn read_orca_endpoint(path: &Path) -> Result<OrcaEndpointConfig, String> {
                     } else {
                         return Err(format!("Invalid port value: {}", v));
                     }
-                }
+                },
                 "ORCA_AGENT_HOOK_TOKEN" | "TOKEN" => {
                     token = Some(v);
-                }
-                _ => {}
+                },
+                _ => {},
             }
         }
     }
 
-    let port = port.ok_or_else(|| "ORCA_AGENT_HOOK_PORT not found in endpoint config".to_string())?;
+    let port =
+        port.ok_or_else(|| "ORCA_AGENT_HOOK_PORT not found in endpoint config".to_string())?;
     let token = token.unwrap_or_default();
 
     Ok(OrcaEndpointConfig { port, token })
@@ -99,7 +103,8 @@ pub fn to_bus_event(status: &OrcaAgentStatus) -> BusEvent {
 
     let event_type = match normalized_state.as_deref() {
         Some("Running") => "run_started".to_string(),
-        Some("Success") | Some("Crashed") | Some("Timeout") | Some("NoChanges") | Some("Quarantined") => "run_finished".to_string(),
+        Some("Success") | Some("Crashed") | Some("Timeout") | Some("NoChanges")
+        | Some("Quarantined") => "run_finished".to_string(),
         _ => "agent_state".to_string(),
     };
 
@@ -161,7 +166,7 @@ pub async fn poll_orca() -> Result<Vec<BusEvent>, String> {
         Err(e) => {
             tracing::warn!("Could not read Orca endpoint config: {}. Falling back.", e);
             return read_last_status(&fallback_path);
-        }
+        },
     };
 
     // Construct URL and attempt polling
@@ -174,7 +179,7 @@ pub async fn poll_orca() -> Result<Vec<BusEvent>, String> {
         Err(e) => {
             tracing::warn!("Failed to build reqwest client: {}. Falling back.", e);
             return read_last_status(&fallback_path);
-        }
+        },
     };
 
     let mut request = client.get(&url);
@@ -189,21 +194,24 @@ pub async fn poll_orca() -> Result<Vec<BusEvent>, String> {
                     Ok(entries) => {
                         let events = entries.iter().map(to_bus_event).collect();
                         Ok(events)
-                    }
+                    },
                     Err(e) => {
                         tracing::warn!("Failed to parse Orca response JSON: {}. Falling back.", e);
                         read_last_status(&fallback_path)
-                    }
+                    },
                 }
             } else {
-                tracing::warn!("Orca endpoint returned failure status {}. Falling back.", response.status());
+                tracing::warn!(
+                    "Orca endpoint returned failure status {}. Falling back.",
+                    response.status()
+                );
                 read_last_status(&fallback_path)
             }
-        }
+        },
         Err(e) => {
             tracing::warn!("Orca endpoint unreachable: {}. Falling back.", e);
             read_last_status(&fallback_path)
-        }
+        },
     }
 }
 

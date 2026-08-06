@@ -1,4 +1,4 @@
-use gestalt_core::application::agent::xavier::{XavierClient, build_decision_payload};
+use gestalt_core::application::agent::xavier::{build_decision_payload, XavierClient};
 
 #[test]
 fn test_build_decision_payload_success() {
@@ -43,7 +43,13 @@ async fn test_archive_decision_compiles() {
     // This test ensures archive_decision is fully implemented and compiles.
     // We don't have a live server, so calling it should fail on request/connection,
     // but the symbols are correctly resolved and compile.
-    let client = XavierClient::new("http://localhost:12345".to_string(), "test-token".to_string()).unwrap();
-    let res = client.archive_decision("Decide to use Rust", serde_json::json!({})).await;
+    let client = XavierClient::new(
+        "http://localhost:12345".to_string(),
+        "test-token".to_string(),
+    )
+    .unwrap();
+    let res = client
+        .archive_decision("Decide to use Rust", serde_json::json!({}))
+        .await;
     assert!(res.is_err()); // Connection refused/failed
 }

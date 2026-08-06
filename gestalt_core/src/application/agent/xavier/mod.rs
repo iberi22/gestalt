@@ -34,4 +34,4 @@ mod agent;
 mod client;
 
 pub use agent::XavierAgent;
-pub use client::{XavierClient, build_decision_payload};
+pub use client::{build_decision_payload, XavierClient};

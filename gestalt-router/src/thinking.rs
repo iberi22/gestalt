@@ -121,7 +121,9 @@ impl ThinkingLoop {
         for res in resp.results {
             if res.path.starts_with("gestalt/thinking/") {
                 if let Some(date_str) = res.path.strip_prefix("gestalt/thinking/") {
-                    if let Ok(naive_date) = chrono::NaiveDate::parse_from_str(date_str.trim(), "%Y-%m-%d") {
+                    if let Ok(naive_date) =
+                        chrono::NaiveDate::parse_from_str(date_str.trim(), "%Y-%m-%d")
+                    {
                         if let Some(naive_datetime) = naive_date.and_hms_opt(0, 0, 0) {
                             let datetime = naive_datetime.and_utc();
                             if latest_date.is_none() || Some(datetime) > latest_date {

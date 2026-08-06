@@ -7,12 +7,12 @@
 //! it("should run with 5 executions")
 //! it("should filter out executions before the last insight date")
 
-use gestalt_router::thinking::{ThinkingLoop, MIN_EXECUTIONS};
 use gestalt_core::application::agent::xavier::XavierClient;
+use gestalt_router::thinking::{ThinkingLoop, MIN_EXECUTIONS};
 use gestalt_state::StateDb;
 use std::sync::Arc;
-use tokio::net::TcpListener;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpListener;
 
 struct TempDb {
     db: StateDb,
@@ -21,7 +21,8 @@ struct TempDb {
 
 impl TempDb {
     fn new() -> Self {
-        let path = std::env::temp_dir().join(format!("gestalt_thinking_test_{}.db", uuid::Uuid::new_v4()));
+        let path =
+            std::env::temp_dir().join(format!("gestalt_thinking_test_{}.db", uuid::Uuid::new_v4()));
         if path.exists() {
             let _ = std::fs::remove_file(&path);
         }
@@ -86,7 +87,9 @@ async fn test_should_run_thresholds_offline() {
     let db = &temp_db.db;
 
     // Create a client pointing to an offline port
-    let xavier = Arc::new(XavierClient::new("http://127.0.0.1:54321".to_string(), "token".to_string()).unwrap());
+    let xavier = Arc::new(
+        XavierClient::new("http://127.0.0.1:54321".to_string(), "token".to_string()).unwrap(),
+    );
     struct DummySynthesizer;
     #[async_trait::async_trait]
     impl gestalt_router::thinking::InsightSynthesizer for DummySynthesizer {
@@ -101,21 +104,26 @@ async fn test_should_run_thresholds_offline() {
     assert!(!loop_.should_run(db, MIN_EXECUTIONS).await);
 
     // Seed 2 executions
-    db.push_event("run-1", Some("agent"), "run_started", "{}").unwrap();
-    db.push_event("run-1", Some("agent"), "run_finished", "{}").unwrap();
+    db.push_event("run-1", Some("agent"), "run_started", "{}")
+        .unwrap();
+    db.push_event("run-1", Some("agent"), "run_finished", "{}")
+        .unwrap();
 
     assert_eq!(loop_.pending_executions_since_last_insight(db).await, 2);
     assert!(!loop_.should_run(db, MIN_EXECUTIONS).await);
 
     // Seed 1 more execution (total 3)
-    db.push_event("run-2", Some("agent"), "run_started", "{}").unwrap();
+    db.push_event("run-2", Some("agent"), "run_started", "{}")
+        .unwrap();
 
     assert_eq!(loop_.pending_executions_since_last_insight(db).await, 3);
     assert!(loop_.should_run(db, MIN_EXECUTIONS).await);
 
     // Seed 2 more executions (total 5)
-    db.push_event("run-2", Some("agent"), "run_finished", "{}").unwrap();
-    db.push_event("run-3", Some("agent"), "run_started", "{}").unwrap();
+    db.push_event("run-2", Some("agent"), "run_finished", "{}")
+        .unwrap();
+    db.push_event("run-3", Some("agent"), "run_started", "{}")
+        .unwrap();
 
     assert_eq!(loop_.pending_executions_since_last_insight(db).await, 5);
     assert!(loop_.should_run(db, MIN_EXECUTIONS).await);
@@ -134,7 +142,9 @@ async fn test_should_run_past_and_future_insight_gating() {
         // Spawn mock Xavier server
         let (port, _server_handle) = spawn_mock_xavier("2020-01-01").await;
 
-        let xavier = Arc::new(XavierClient::new(format!("http://127.0.0.1:{}", port), "token".to_string()).unwrap());
+        let xavier = Arc::new(
+            XavierClient::new(format!("http://127.0.0.1:{}", port), "token".to_string()).unwrap(),
+        );
         struct DummySynthesizer;
         #[async_trait::async_trait]
         impl gestalt_router::thinking::InsightSynthesizer for DummySynthesizer {
@@ -145,9 +155,12 @@ async fn test_should_run_past_and_future_insight_gating() {
         let loop_ = ThinkingLoop::new(xavier, Arc::new(DummySynthesizer));
 
         // Push 3 execution events
-        db.push_event("run-1", Some("agent"), "run_started", "{}").unwrap();
-        db.push_event("run-1", Some("agent"), "run_finished", "{}").unwrap();
-        db.push_event("run-2", Some("agent"), "run_started", "{}").unwrap();
+        db.push_event("run-1", Some("agent"), "run_started", "{}")
+            .unwrap();
+        db.push_event("run-1", Some("agent"), "run_finished", "{}")
+            .unwrap();
+        db.push_event("run-2", Some("agent"), "run_started", "{}")
+            .unwrap();
 
         // Since last insight is in 2020, today's executions are counted
         let last_time = loop_.last_insight_time().await;
@@ -167,7 +180,9 @@ async fn test_should_run_past_and_future_insight_gating() {
         // Spawn mock Xavier server
         let (port, _server_handle) = spawn_mock_xavier("2035-12-31").await;
 
-        let xavier = Arc::new(XavierClient::new(format!("http://127.0.0.1:{}", port), "token".to_string()).unwrap());
+        let xavier = Arc::new(
+            XavierClient::new(format!("http://127.0.0.1:{}", port), "token".to_string()).unwrap(),
+        );
         struct DummySynthesizer;
         #[async_trait::async_trait]
         impl gestalt_router::thinking::InsightSynthesizer for DummySynthesizer {
@@ -178,9 +193,12 @@ async fn test_should_run_past_and_future_insight_gating() {
         let loop_ = ThinkingLoop::new(xavier, Arc::new(DummySynthesizer));
 
         // Push 3 execution events
-        db.push_event("run-1", Some("agent"), "run_started", "{}").unwrap();
-        db.push_event("run-1", Some("agent"), "run_finished", "{}").unwrap();
-        db.push_event("run-2", Some("agent"), "run_started", "{}").unwrap();
+        db.push_event("run-1", Some("agent"), "run_started", "{}")
+            .unwrap();
+        db.push_event("run-1", Some("agent"), "run_finished", "{}")
+            .unwrap();
+        db.push_event("run-2", Some("agent"), "run_started", "{}")
+            .unwrap();
 
         let last_time = loop_.last_insight_time().await;
         println!("Test 2 - last_insight_time: {:?}", last_time);

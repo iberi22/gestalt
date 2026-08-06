@@ -1940,15 +1940,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 );
             },
 
-            BusAction::Prune { days, archive, dry_run, db } => {
-                let db_path = db
-                    .map(PathBuf::from)
-                    .unwrap_or_else(|| {
-                        home::home_dir()
-                            .unwrap_or_else(|| PathBuf::from("."))
-                            .join(".gestalt")
-                            .join("state.db")
-                    });
+            BusAction::Prune {
+                days,
+                archive,
+                dry_run,
+                db,
+            } => {
+                let db_path = db.map(PathBuf::from).unwrap_or_else(|| {
+                    home::home_dir()
+                        .unwrap_or_else(|| PathBuf::from("."))
+                        .join(".gestalt")
+                        .join("state.db")
+                });
 
                 let db = StateDb::open(&db_path)
                     .map_err(|e| format!("Failed to open StateDb: {}", e))?;
@@ -1960,19 +1963,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     days, cutoff_ts
                 );
 
-                let count = gestalt_router::event_bus::prune_events(&db, cutoff_ts, archive, dry_run)
-                    .await
-                    .map_err(|e| format!("Pruning failed: {}", e))?;
+                let count =
+                    gestalt_router::event_bus::prune_events(&db, cutoff_ts, archive, dry_run)
+                        .await
+                        .map_err(|e| format!("Pruning failed: {}", e))?;
 
                 if dry_run {
-                    println!("[dry-run] Matched {} event(s). Delete/archive skipped.", count);
+                    println!(
+                        "[dry-run] Matched {} event(s). Delete/archive skipped.",
+                        count
+                    );
                 } else {
                     println!("✅ Successfully pruned {} event(s).", count);
                 }
             },
         },
 
-        Commands::Thinking { force, window, gated } => {
+        Commands::Thinking {
+            force,
+            window,
+            gated,
+        } => {
             use gestalt_router::thinking::ThinkingLoop;
 
             let xavier = Arc::new(XavierClient::from_env());
@@ -1996,8 +2007,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("🧠 Gestalt Thinking Loop (window={}m)", window);
 
             if gated && !force {
-                println!("   Checking gated run policy (MIN_EXECUTIONS={})...", gestalt_router::thinking::MIN_EXECUTIONS);
-                if !loop_.should_run(&db, gestalt_router::thinking::MIN_EXECUTIONS).await {
+                println!(
+                    "   Checking gated run policy (MIN_EXECUTIONS={})...",
+                    gestalt_router::thinking::MIN_EXECUTIONS
+                );
+                if !loop_
+                    .should_run(&db, gestalt_router::thinking::MIN_EXECUTIONS)
+                    .await
+                {
                     let pending = loop_.pending_executions_since_last_insight(&db).await;
                     println!(
                         "   ℹ️  Gated run: only {} new executions (need ≥{}) since last insight. Refusing to run (never empty ticks).",

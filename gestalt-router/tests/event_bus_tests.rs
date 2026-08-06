@@ -12,14 +12,11 @@ use tokio::net::TcpListener;
 
 #[tokio::test]
 async fn test_event_bus_scale_dedup() {
-    let db_path = std::env::temp_dir().join(format!(
-        "gestalt-scale-test-{}.db",
-        uuid::Uuid::new_v4()
-    ));
+    let db_path =
+        std::env::temp_dir().join(format!("gestalt-scale-test-{}.db", uuid::Uuid::new_v4()));
     let db = StateDb::open(&db_path).unwrap();
 
-    let ev = BusEvent::new("hermes", "run_started", "scale test run")
-        .with_run_id("run-scale-001");
+    let ev = BusEvent::new("hermes", "run_started", "scale test run").with_run_id("run-scale-001");
 
     // Insert 5000 identical events. The first should persist, all others should be duplicates.
     let start_time = std::time::Instant::now();
@@ -40,17 +37,19 @@ async fn test_event_bus_scale_dedup() {
     println!("Deduplicated 5000 checks in {:?}", elapsed);
     assert_eq!(dup_count, 5000);
     // Deduplication of 5000 lookups should be extremely fast with O(1) index
-    assert!(elapsed.as_millis() < 3000, "Scale test should be fast, elapsed: {:?}", elapsed);
+    assert!(
+        elapsed.as_millis() < 3000,
+        "Scale test should be fast, elapsed: {:?}",
+        elapsed
+    );
 
     let _ = std::fs::remove_file(&db_path);
 }
 
 #[tokio::test]
 async fn test_event_bus_prune_lifecycle() {
-    let db_path = std::env::temp_dir().join(format!(
-        "gestalt-prune-test-{}.db",
-        uuid::Uuid::new_v4()
-    ));
+    let db_path =
+        std::env::temp_dir().join(format!("gestalt-prune-test-{}.db", uuid::Uuid::new_v4()));
     let db = StateDb::open(&db_path).unwrap();
 
     let ev1 = BusEvent::new("hermes", "run_started", "test event 1").with_run_id("run-1");
@@ -85,10 +84,8 @@ async fn test_event_bus_prune_lifecycle() {
 
 #[tokio::test]
 async fn test_event_bus_prune_with_archive() {
-    let db_path = std::env::temp_dir().join(format!(
-        "gestalt-archive-test-{}.db",
-        uuid::Uuid::new_v4()
-    ));
+    let db_path =
+        std::env::temp_dir().join(format!("gestalt-archive-test-{}.db", uuid::Uuid::new_v4()));
     let db = StateDb::open(&db_path).unwrap();
 
     let ev = BusEvent::new("hermes", "run_started", "archive me").with_run_id("run-archive");

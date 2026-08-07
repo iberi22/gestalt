@@ -215,6 +215,194 @@ impl AgentWrapper {
         Ok((edits, output.status, stdout, stderr))
     }
 
+    /// Run the agent command with full PRE -> RUN -> POST lifecycle and bus tracking.
+    pub async fn execute_with_trace(
+        &self,
+        task: &str,
+        project: Option<&str>,
+        timeout_secs: Option<u64>,
+    ) -> Result<(Vec<BlockEdit>, std::process::ExitStatus, String, String), String> {
+        let start = std::time::Instant::now();
+        let proj = project.unwrap_or("default");
+
+        // 1. PRE: XavierClient::search(task) → build XAVIER_CONTEXT env
+        let xavier = gestalt_core::application::agent::xavier::XavierClient::from_env();
+        let search_results = xavier.search_context(task, 5).await;
+        let xavier_context = serde_json::to_string(&search_results).unwrap_or_else(|_| "[]".to_string());
+
+        // 2. Open StateDb
+        let db_path = home::home_dir()
+            .unwrap_or_else(|| std::path::PathBuf::from("."))
+            .join(".gestalt")
+            .join("state.db");
+
+        // Ensure parent directories exist
+        if let Some(parent) = db_path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+
+        let db = std::sync::Arc::new(
+            gestalt_state::statedb::StateDb::open(&db_path)
+                .map_err(|e| format!("Failed to open StateDb: {}", e))?,
+        );
+
+        // 3. Emit run_started BusEvent
+        let start_summary = format!("Agent '{}' execution started for task: {}", self.agent_id, task);
+        let start_ev = gestalt_router::event_bus::BusEvent::new(&self.agent_id, "run_started", &start_summary)
+            .with_run_id(&self.run_id)
+            .with_project(proj)
+            .with_state("Running")
+            .with_metadata(serde_json::json!({
+                "task": task,
+                "command": self.command,
+                "requested_by": std::env::var("GESTALT_REQUESTED_BY").unwrap_or_else(|_| "cli".into()),
+            }));
+
+        let sink = std::env::var("XAVIER_TOKEN")
+            .ok()
+            .filter(|t| !t.is_empty())
+            .map(|_| gestalt_router::xavier_sink::XavierEventSink::from_env());
+
+        if let Err(e) = gestalt_router::event_bus::handle_event(&db, &start_ev, sink.as_ref()).await {
+            warn!("Failed to emit run_started event: {}", e);
+        }
+
+        // 4. Launch the command with XAVIER_CONTEXT injected
+        let (program, args) = split_command(&self.command);
+        if program.is_empty() {
+            return Err("Empty command".to_string());
+        }
+
+        let timeout_dur = std::time::Duration::from_secs(timeout_secs.unwrap_or(300));
+
+        // Spawning using tokio process command to handle timeouts asynchronously
+        let mut cmd = tokio::process::Command::new(&program);
+        cmd.args(&args);
+        cmd.env("XAVIER_CONTEXT", &xavier_context);
+
+        cmd.stdout(std::process::Stdio::piped());
+        cmd.stderr(std::process::Stdio::piped());
+
+        let mut child = cmd.spawn().map_err(|e| format!("Failed to spawn command '{}': {}", self.command, e))?;
+
+        let mut stdout_bytes = Vec::new();
+        let mut stderr_bytes = Vec::new();
+
+        let mut stdout_pipe = child.stdout.take().unwrap();
+        let mut stderr_pipe = child.stderr.take().unwrap();
+
+        let read_stdout = tokio::io::AsyncReadExt::read_to_end(&mut stdout_pipe, &mut stdout_bytes);
+        let read_stderr = tokio::io::AsyncReadExt::read_to_end(&mut stderr_pipe, &mut stderr_bytes);
+        let wait_child = child.wait();
+
+        let timeout_fut = tokio::time::sleep(timeout_dur);
+
+        let run_res = tokio::select! {
+            res = async {
+                tokio::try_join!(read_stdout, read_stderr, wait_child)
+            } => {
+                match res {
+                    Ok((_, _, exit_status)) => {
+                        let stdout_str = String::from_utf8_lossy(&stdout_bytes).into_owned();
+                        let stderr_str = String::from_utf8_lossy(&stderr_bytes).into_owned();
+                        Ok((exit_status, stdout_str, stderr_str))
+                    }
+                    Err(e) => Err(format!("Error reading process streams: {}", e)),
+                }
+            }
+            _ = timeout_fut => {
+                let _ = child.kill().await;
+                Err("Timeout reached during execution".to_string())
+            }
+        };
+
+        let elapsed = start.elapsed();
+        let duration_ms = elapsed.as_millis() as u64;
+
+        let (status, stdout_str, stderr_str, state_str, exit_code) = match run_res {
+            Ok((exit_status, stdout, stderr)) => {
+                let state = if exit_status.success() { "Success" } else { "Crashed" };
+                (exit_status, stdout, stderr, state, exit_status.code())
+            }
+            Err(e) => {
+                // Timeout or error: obtain a non-zero exit status dynamically
+                let dummy_status = if e.contains("Timeout") {
+                    let mut dcmd = std::process::Command::new("false");
+                    let dstatus = dcmd.status().unwrap_or_else(|_| std::process::ExitStatus::default());
+                    (dstatus, String::new(), e.clone(), "Timeout", None)
+                } else {
+                    let mut dcmd = std::process::Command::new("false");
+                    let dstatus = dcmd.status().unwrap_or_else(|_| std::process::ExitStatus::default());
+                    (dstatus, String::new(), e.clone(), "Crashed", None)
+                };
+                dummy_status
+            }
+        };
+
+        // Emit run_finished BusEvent
+        let finish_summary = format!("Agent '{}' finished with state '{}' in {}ms", self.agent_id, state_str, duration_ms);
+        let finish_ev = gestalt_router::event_bus::BusEvent::new(&self.agent_id, "run_finished", &finish_summary)
+            .with_run_id(&self.run_id)
+            .with_project(proj)
+            .with_state(state_str)
+            .with_metadata(serde_json::json!({
+                "duration_ms": duration_ms,
+                "exit_code": exit_code,
+                "task": task,
+            }));
+
+        if let Err(e) = gestalt_router::event_bus::handle_event(&db, &finish_ev, sink.as_ref()).await {
+            warn!("Failed to emit run_finished event: {}", e);
+        }
+
+        // Parse unified diffs from stdout + stderr and apply to VFS
+        let edits = parse_unified_diffs(&stdout_str, &stderr_str);
+        for edit in &edits {
+            let payload = serde_json::to_string(edit).unwrap_or_else(|_| format!("{:?}", edit));
+            self.push_event("block_edit", &payload);
+
+            if let Err(e) = self.apply_edit_to_vfs(edit).await {
+                error!(
+                    path = %edit.path(),
+                    error = %e,
+                    agent_id = %self.agent_id,
+                    "Failed to apply BlockEdit to VFS",
+                );
+                return Err(format!(
+                    "Failed to apply BlockEdit for '{}': {}",
+                    edit.path(),
+                    e
+                ));
+            }
+        }
+
+        // POST: XavierClient::archive_run (kind=run_result) with the run summary
+        let run_summary_data = serde_json::json!({
+            "run_id": self.run_id,
+            "agent_id": self.agent_id,
+            "task": task,
+            "project": proj,
+            "command": self.command,
+            "state": state_str,
+            "duration_ms": duration_ms,
+            "exit_code": exit_code,
+            "edits_count": edits.len(),
+            "stdout": stdout_str,
+            "stderr": stderr_str,
+        });
+
+        let archive_content = serde_json::to_string_pretty(&run_summary_data).unwrap_or_else(|_| "{}".to_string());
+        if let Err(e) = xavier.archive_run(&archive_content, &self.run_id, serde_json::json!({
+            "run_id": self.run_id,
+            "state": state_str,
+            "duration_ms": duration_ms,
+        })).await {
+            warn!("Failed to archive run to Xavier: {}", e);
+        }
+
+        Ok((edits, status, stdout_str, stderr_str))
+    }
+
     /// Apply a single [`BlockEdit`] to the [`VirtualFS`].
     async fn apply_edit_to_vfs(&self, edit: &BlockEdit) -> Result<String, String> {
         match edit {

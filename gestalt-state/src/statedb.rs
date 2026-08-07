@@ -505,7 +505,10 @@ impl StateDb {
     ) -> Result<TimelineEvent> {
         let project = serde_json::from_str::<serde_json::Value>(payload)
             .ok()
-            .and_then(|v| v.get("project").and_then(|p| p.as_str().map(|s| s.to_string())));
+            .and_then(|v| {
+                v.get("project")
+                    .and_then(|p| p.as_str().map(|s| s.to_string()))
+            });
 
         self.execute_transaction(|tx| {
             let now = Utc::now().to_rfc3339();
@@ -742,7 +745,9 @@ impl StateDb {
         }
         params.push(&limit);
 
-        let mut stmt = conn.prepare(&query).context("Failed to prepare query_timeline statement")?;
+        let mut stmt = conn
+            .prepare(&query)
+            .context("Failed to prepare query_timeline statement")?;
         let mut events = stmt
             .query_map(&*params, |row| {
                 let seq: i64 = row.get(0)?;
@@ -902,25 +907,59 @@ mod tests {
         db.create_run("run-001", "{}").unwrap();
 
         // Push events with different fields
-        db.push_event_with_hash("run-001", Some("agent-1"), "event-a", r#"{"project": "proj-1"}"#, None).unwrap();
-        db.push_event_with_hash("run-001", Some("agent-1"), "event-b", r#"{"project": "proj-2"}"#, None).unwrap();
-        db.push_event_with_hash("run-001", Some("agent-2"), "event-a", r#"{"project": "proj-1"}"#, None).unwrap();
-        db.push_event_with_hash("run-001", Some("agent-2"), "event-b", r#"{"project": "proj-2"}"#, None).unwrap();
+        db.push_event_with_hash(
+            "run-001",
+            Some("agent-1"),
+            "event-a",
+            r#"{"project": "proj-1"}"#,
+            None,
+        )
+        .unwrap();
+        db.push_event_with_hash(
+            "run-001",
+            Some("agent-1"),
+            "event-b",
+            r#"{"project": "proj-2"}"#,
+            None,
+        )
+        .unwrap();
+        db.push_event_with_hash(
+            "run-001",
+            Some("agent-2"),
+            "event-a",
+            r#"{"project": "proj-1"}"#,
+            None,
+        )
+        .unwrap();
+        db.push_event_with_hash(
+            "run-001",
+            Some("agent-2"),
+            "event-b",
+            r#"{"project": "proj-2"}"#,
+            None,
+        )
+        .unwrap();
 
         // 1. Filter by project
-        let results = db.query_timeline(None, None, Some("proj-1"), None, 10).unwrap();
+        let results = db
+            .query_timeline(None, None, Some("proj-1"), None, 10)
+            .unwrap();
         assert_eq!(results.len(), 2);
         assert_eq!(results[0].event_type, "event-a");
         assert_eq!(results[1].event_type, "event-a");
 
         // 2. Filter by agent
-        let results = db.query_timeline(Some("agent-1"), None, None, None, 10).unwrap();
+        let results = db
+            .query_timeline(Some("agent-1"), None, None, None, 10)
+            .unwrap();
         assert_eq!(results.len(), 2);
         assert_eq!(results[0].project, Some("proj-1".to_string()));
         assert_eq!(results[1].project, Some("proj-2".to_string()));
 
         // 3. Filter by event_type
-        let results = db.query_timeline(None, Some("event-b"), None, None, 10).unwrap();
+        let results = db
+            .query_timeline(None, Some("event-b"), None, None, 10)
+            .unwrap();
         assert_eq!(results.len(), 2);
         assert_eq!(results[0].project, Some("proj-2".to_string()));
         assert_eq!(results[1].project, Some("proj-2".to_string()));
@@ -932,7 +971,9 @@ mod tests {
         let last_seq = first_page[1].seq.unwrap();
 
         // Next page using after_seq (ascending)
-        let second_page = db.query_timeline(None, None, None, Some(last_seq), 2).unwrap();
+        let second_page = db
+            .query_timeline(None, None, None, Some(last_seq), 2)
+            .unwrap();
         // Since we got the most recent 2 events in first_page (3 and 4), seq > 4 should be empty.
         // Wait, let's verify exact IDs. The events are:
         // seq 1: agent-1, event-a, proj-1

@@ -4,10 +4,14 @@
 //! [`gestalt_ws::WsServer`], forwarding timeline events to all
 //! connected WebSocket clients.
 
+pub use gestalt_ws;
+
 use gestalt_state::memstate::MemState;
 use gestalt_state::TimelineEvent;
 use gestalt_ws::WsEvent;
 use gestalt_ws::WsServer;
+use std::sync::Arc;
+
 /// Bridges Router state changes to a WebSocket server.
 ///
 /// Subscribes to [`MemState`] state-change broadcasts and forwards
@@ -23,7 +27,9 @@ pub struct WsRouterBridge {
 impl WsRouterBridge {
     /// Create a new bridge wrapping a `WsServer`.
     pub fn new(ws_server: WsServer) -> Self {
-        Self { ws_server }
+        let bridge = Self { ws_server };
+        gestalt_ws::register_adapter(Arc::new(bridge.clone()));
+        bridge
     }
 
     /// Get a reference to the inner WsServer.
@@ -143,6 +149,40 @@ impl WsRouterBridge {
 
         let redacted_event = crate::xavier_sink::redact_ws_event(ws_event);
         ws_server.broadcast(&redacted_event).await;
+    }
+}
+
+impl gestalt_ws::EventStream for WsRouterBridge {
+    fn publish(&self, ev: &gestalt_ws::BusEvent) {
+        self.ws_server.broadcast_bus(ev);
+    }
+
+    fn subscribe(&self, filter: Option<String>) -> gestalt_ws::BoxStream<'static, gestalt_ws::BusEvent> {
+        use gestalt_ws::StreamExt;
+        let rx = self.ws_server.broadcast_bus_tx.subscribe();
+
+        let s = gestalt_ws::futures_util::stream::unfold(rx, |mut rx| async move {
+            loop {
+                match rx.recv().await {
+                    Ok(ev) => return Some((ev, rx)),
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => return None,
+                }
+            }
+        });
+
+        if let Some(f) = filter {
+            s.filter(move |ev| {
+                let f_clone = f.clone();
+                let ev_type = ev.event_type.clone();
+                let ev_agent = ev.agent.clone();
+                async move {
+                    ev_type == f_clone || ev_agent == f_clone
+                }
+            }).boxed()
+        } else {
+            s.boxed()
+        }
     }
 }
 

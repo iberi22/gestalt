@@ -62,6 +62,7 @@ fn test_full_pipeline_agent_spec_construction() {
             map.insert("PATH".to_string(), "/usr/bin".to_string());
             map
         }),
+        capabilities: vec![],
     };
     assert_eq!(agent.id, "test-agent");
     assert_eq!(agent.command, "echo");
@@ -75,6 +76,7 @@ fn test_run_spec_construction() {
         args: vec!["hello".to_string()],
         allowed_paths: None,
         env: None,
+        capabilities: vec![],
     };
     let spec = RunSpec {
         base_ref: "main".to_string(),
@@ -100,6 +102,7 @@ fn test_multi_agent_specs() {
             args: vec![format!("hello {}", i)],
             allowed_paths: None,
             env: None,
+            capabilities: vec![],
         })
         .collect();
     assert_eq!(agents.len(), 3);

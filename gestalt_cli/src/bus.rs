@@ -49,6 +49,19 @@ async fn handle_event_http(
         .await
         .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e))?;
 
+    // WS publish hook: publish the BusEvent to the WS stream
+    let ev_ws = gestalt_router::ws::gestalt_ws::BusEvent {
+        agent: ev.agent.clone(),
+        event_type: ev.event_type.clone(),
+        run_id: ev.run_id.clone(),
+        project: ev.project.clone(),
+        state: ev.state.clone(),
+        summary: ev.summary.clone(),
+        metadata: ev.metadata.clone(),
+        ts: ev.ts.clone(),
+    };
+    gestalt_router::ws::gestalt_ws::publish_to_all_adapters(&ev_ws);
+
     match result {
         Some(seq) => Ok(Json(serde_json::json!({
             "status": "ok",

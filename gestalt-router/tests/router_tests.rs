@@ -96,6 +96,7 @@ fn test_agent_spec_serialization_roundtrip() {
             ("PATH".into(), "/usr/bin".into()),
             ("HOME".into(), "/home/user".into()),
         ])),
+        capabilities: vec![],
     };
 
     let json = serde_json::to_string(&spec).unwrap();
@@ -124,6 +125,7 @@ fn test_agent_spec_optional_fields_roundtrip() {
         args: vec![],
         allowed_paths: None,
         env: None,
+        capabilities: vec![],
     };
 
     let json = serde_json::to_string(&spec).unwrap();
@@ -143,6 +145,7 @@ fn test_run_spec_with_all_fields() {
             args: vec!["hi".into()],
             allowed_paths: None,
             env: None,
+            capabilities: vec![],
         },
         AgentSpec {
             id: "a2".into(),
@@ -150,6 +153,7 @@ fn test_run_spec_with_all_fields() {
             args: vec!["/dev/null".into()],
             allowed_paths: None,
             env: None,
+            capabilities: vec![],
         },
     ];
 

@@ -165,6 +165,7 @@ impl LocalSearchEngine for TantivySearchEngine {
 
         // Commit to make it visible to searchers
         writer.commit()?;
+        self.reader.reload()?;
 
         debug!(
             "Indexed document id={} kind={} path={}",
@@ -253,6 +254,7 @@ impl LocalSearchEngine for TantivySearchEngine {
         let term = tantivy::Term::from_field_text(self.fields.id, doc_id);
         writer.delete_term(term);
         writer.commit()?;
+        self.reader.reload()?;
 
         debug!("Deleted document id={}", doc_id);
         Ok(())
@@ -266,6 +268,7 @@ impl LocalSearchEngine for TantivySearchEngine {
         // Actually, we can use a wildcard by matching all documents
         writer.delete_all_documents()?;
         writer.commit()?;
+        self.reader.reload()?;
 
         info!("Cleared all documents from Tantivy index");
         Ok(())
@@ -371,5 +374,61 @@ mod tests {
             .await
             .unwrap();
         assert!(engine.doc_count().await.unwrap() >= 1);
+    }
+
+    #[tokio::test]
+    async fn test_regression_index_search_filter_delete() {
+        let dir = tempdir().unwrap();
+        let engine = TantivySearchEngine::new(dir.path().join("regression_test"), 1).unwrap();
+
+        // 1. Assert doc_count is initially 0
+        assert_eq!(engine.doc_count().await.unwrap(), 0);
+
+        // 2. Index ≥ 2 docs
+        engine
+            .index_document(
+                "doc_1",
+                "folder/doc1.md",
+                "Machine learning and artificial intelligence are revolutionizing search engines",
+                "ai_topic",
+            )
+            .await
+            .unwrap();
+
+        engine
+            .index_document(
+                "doc_2",
+                "folder/doc2.md",
+                "Traditional search engines rely heavily on keyword indexing and lexical match",
+                "search_topic",
+            )
+            .await
+            .unwrap();
+
+        // 3. Assert count is 2
+        assert_eq!(engine.doc_count().await.unwrap(), 2);
+
+        // 4. Search and verify matches
+        let search_results = engine.search("search engines", 10).await.unwrap();
+        assert_eq!(search_results.len(), 2);
+
+        // 5. Filter by kind and assert
+        let ai_filtered = engine
+            .search_filtered("search engines", Some("ai_topic"), 10)
+            .await
+            .unwrap();
+        assert_eq!(ai_filtered.len(), 1);
+        assert_eq!(ai_filtered[0].id, "doc_1");
+
+        // 6. Delete one doc
+        engine.delete_document("doc_1").await.unwrap();
+
+        // 7. Assert doc_count drops to 1
+        assert_eq!(engine.doc_count().await.unwrap(), 1);
+
+        // 8. Search again and verify only doc_2 remains
+        let post_delete_search = engine.search("search engines", 10).await.unwrap();
+        assert_eq!(post_delete_search.len(), 1);
+        assert_eq!(post_delete_search[0].id, "doc_2");
     }
 }

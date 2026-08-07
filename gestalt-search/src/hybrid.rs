@@ -304,15 +304,17 @@ mod tests {
     use crate::TantivySearchEngine;
     use tempfile::tempdir;
 
-    fn create_local_engine() -> Arc<dyn LocalSearchEngine> {
+    fn create_local_engine() -> (Arc<dyn LocalSearchEngine>, tempfile::TempDir) {
         let dir = tempdir().unwrap();
-        let engine = TantivySearchEngine::new(dir.path().join("hybrid_test"), 1).unwrap();
-        Arc::new(engine)
+        let path = dir.path().join("hybrid_test");
+        std::fs::create_dir_all(&path).unwrap();
+        let engine = TantivySearchEngine::new(path, 1).unwrap();
+        (Arc::new(engine), dir)
     }
 
     #[tokio::test]
     async fn test_local_mode() {
-        let local = create_local_engine();
+        let (local, _dir) = create_local_engine();
         let hybrid = HybridSearchEngine::new(local.clone(), None, SearchMode::Local, 1.0, 1.0);
 
         local
@@ -326,7 +328,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_remote_fallback_empty_local() {
-        let local = create_local_engine();
+        let (local, _dir) = create_local_engine();
         let hybrid = HybridSearchEngine::new(local.clone(), None, SearchMode::Hybrid, 1.0, 1.0);
 
         // No documents in local, but no remote either — should return empty
@@ -336,7 +338,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_local_has_results_no_fallback() {
-        let local = create_local_engine();
+        let (local, _dir) = create_local_engine();
         let hybrid = HybridSearchEngine::new(local.clone(), None, SearchMode::Hybrid, 1.0, 1.0);
 
         local

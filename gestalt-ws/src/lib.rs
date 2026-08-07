@@ -24,18 +24,18 @@
 //! | `"lock_acquired"`      | `LockAcquired`        |
 //! | `"lock_released"`      | `LockReleased`        |
 
+pub use futures_util;
+pub use futures_util::stream::BoxStream;
+pub use futures_util::{SinkExt, StreamExt};
+use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use std::sync::Arc;
-pub use futures_util::{SinkExt, StreamExt};
-pub use futures_util::stream::BoxStream;
-pub use futures_util;
 use tokio::net::TcpListener;
 use tokio::sync::broadcast;
 use tokio::task::JoinHandle;
 use tokio_tungstenite::accept_async;
 use tokio_tungstenite::tungstenite::Message;
 use tracing::{debug, error, info, warn};
-use serde::{Deserialize, Serialize};
 
 /// Current protocol schema version for WebSocket events.
 pub const CURRENT_VERSION: u32 = 1;
@@ -141,7 +141,9 @@ pub trait EventStream {
     fn subscribe(&self, filter: Option<String>) -> BoxStream<'static, BusEvent>;
 }
 
-static ACTIVE_ADAPTERS: std::sync::OnceLock<std::sync::RwLock<Vec<Arc<dyn EventStream + Send + Sync>>>> = std::sync::OnceLock::new();
+static ACTIVE_ADAPTERS: std::sync::OnceLock<
+    std::sync::RwLock<Vec<Arc<dyn EventStream + Send + Sync>>>,
+> = std::sync::OnceLock::new();
 
 /// Register an active WebSocket adapter instance.
 pub fn register_adapter(adapter: Arc<dyn EventStream + Send + Sync>) {

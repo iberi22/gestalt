@@ -157,7 +157,10 @@ impl gestalt_ws::EventStream for WsRouterBridge {
         self.ws_server.broadcast_bus(ev);
     }
 
-    fn subscribe(&self, filter: Option<String>) -> gestalt_ws::BoxStream<'static, gestalt_ws::BusEvent> {
+    fn subscribe(
+        &self,
+        filter: Option<String>,
+    ) -> gestalt_ws::BoxStream<'static, gestalt_ws::BusEvent> {
         use gestalt_ws::StreamExt;
         let rx = self.ws_server.broadcast_bus_tx.subscribe();
 
@@ -176,10 +179,9 @@ impl gestalt_ws::EventStream for WsRouterBridge {
                 let f_clone = f.clone();
                 let ev_type = ev.event_type.clone();
                 let ev_agent = ev.agent.clone();
-                async move {
-                    ev_type == f_clone || ev_agent == f_clone
-                }
-            }).boxed()
+                async move { ev_type == f_clone || ev_agent == f_clone }
+            })
+            .boxed()
         } else {
             s.boxed()
         }

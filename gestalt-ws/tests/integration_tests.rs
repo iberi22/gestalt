@@ -2,12 +2,12 @@
 //!
 //! Verifies WebSocket publishing, subscription, and filtering under the unified EventStream interface.
 
+use futures_util::StreamExt;
+use gestalt_ws::{publish_to_all_adapters, BusEvent, EventStream, WsServer};
 use std::net::SocketAddr;
 use std::time::Duration;
-use futures_util::StreamExt;
 use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::Message;
-use gestalt_ws::{BusEvent, EventStream, WsServer, publish_to_all_adapters};
 
 /// Find a free ephemeral TCP port on localhost for test isolation.
 fn free_addr() -> SocketAddr {
@@ -18,7 +18,9 @@ fn free_addr() -> SocketAddr {
 }
 
 /// Helper to connect a WebSocket client to the local test server.
-async fn connect_ws(addr: SocketAddr) -> impl StreamExt<Item = Result<Message, tokio_tungstenite::tungstenite::Error>> + Unpin {
+async fn connect_ws(
+    addr: SocketAddr,
+) -> impl StreamExt<Item = Result<Message, tokio_tungstenite::tungstenite::Error>> + Unpin {
     let (ws, _) = connect_async(format!("ws://{addr}")).await.unwrap();
     ws
 }
@@ -64,10 +66,9 @@ impl EventStream for MockEventStream {
                 let f_clone = f.clone();
                 let ev_type = ev.event_type.clone();
                 let ev_agent = ev.agent.clone();
-                async move {
-                    ev_type == f_clone || ev_agent == f_clone
-                }
-            }).boxed()
+                async move { ev_type == f_clone || ev_agent == f_clone }
+            })
+            .boxed()
         } else {
             s.boxed()
         }
@@ -81,7 +82,9 @@ async fn test_ws_publish_receive_bus_event() {
     let mut client = connect_ws(addr).await;
 
     // Register our mock event stream (which wraps WsServer) in ACTIVE_ADAPTERS
-    let adapter = std::sync::Arc::new(MockEventStream { server: server.clone() });
+    let adapter = std::sync::Arc::new(MockEventStream {
+        server: server.clone(),
+    });
     gestalt_ws::register_adapter(adapter);
 
     let event = BusEvent {

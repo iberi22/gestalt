@@ -469,6 +469,35 @@ enum Commands {
         #[command(subcommand)]
         action: ChainAction,
     },
+
+    /// Agent commands: real launcher (PRE Xavier context -> run -> bus events -> POST archive)
+    Agent {
+        #[command(subcommand)]
+        action: AgentAction,
+    },
+}
+
+// Commands::AgentExec or AgentAction represents the CLI structure for thin agent orchestration.
+#[derive(Subcommand, Debug, Clone)]
+pub enum AgentAction {
+    /// Execute an external agent with context search and bus event trace
+    Exec {
+        /// Command to execute
+        #[arg(long)]
+        agent: String,
+
+        /// Task description
+        #[arg(long)]
+        task: String,
+
+        /// Project name
+        #[arg(long)]
+        project: Option<String>,
+
+        /// Execution timeout in seconds
+        #[arg(long)]
+        timeout: Option<u64>,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -2441,6 +2470,57 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 println!("✅ Chain run completed successfully.");
             },
+        },
+
+        Commands::Agent { action } => match action {
+            AgentAction::Exec {
+                agent,
+                task,
+                project,
+                timeout,
+            } => {
+                // Determine a safe agent id by taking the first word of the command
+                let agent_id = agent
+                    .split_whitespace()
+                    .next()
+                    .unwrap_or("agent-exec")
+                    .to_string();
+                let run_id = ulid::Ulid::new().to_string();
+                let vfs = std::sync::Arc::new(agent_wrapper::InMemoryVfs::new());
+
+                let wrapper = agent_wrapper::AgentWrapper::new(
+                    vfs,
+                    agent_id,
+                    run_id,
+                    agent.clone(),
+                );
+
+                println!("🚀 Launching thin agent launcher...");
+                println!("   Command: {}", agent);
+                println!("   Task:    {}", task);
+                if let Some(ref proj) = project {
+                    println!("   Project: {}", proj);
+                }
+
+                match wrapper.execute_with_trace(&task, project.as_deref(), timeout).await {
+                    Ok((edits, status, stdout, stderr)) => {
+                        println!();
+                        println!("━━━ Run Summary ━━━");
+                        println!("Status:      {}", status);
+                        println!("VFS Edits:   {}", edits.len());
+                        println!("Stdout len:  {}", stdout.len());
+                        println!("Stderr len:  {}", stderr.len());
+                        println!("━━━━━━━━━━━━━━━━━━━");
+                        if !status.success() {
+                            std::process::exit(status.code().unwrap_or(1));
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("❌ Launcher execution failed: {}", e);
+                        std::process::exit(1);
+                    }
+                }
+            }
         },
     }
 

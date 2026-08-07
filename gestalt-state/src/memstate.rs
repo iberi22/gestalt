@@ -116,6 +116,7 @@ impl MemState {
             payload: serde_json::json!({ "state": state }).to_string(),
             created_at: chrono::Utc::now(),
             dedup_hash: None,
+            project: None,
         };
 
         let _ = self.event_tx.send(event);
@@ -222,6 +223,7 @@ impl MemState {
                     payload,
                     created_at: chrono::Utc::now(),
                     dedup_hash: None,
+                    project: None,
                 });
             }
         }
@@ -291,6 +293,7 @@ impl MemState {
             payload: payload.to_string(),
             created_at: chrono::Utc::now(),
             dedup_hash: None,
+            project: None,
         };
 
         let subscriber_count = self.event_tx.receiver_count();

@@ -98,6 +98,8 @@ pub struct TimelineEvent {
     pub created_at: DateTime<Utc>,
     #[serde(default)]
     pub dedup_hash: Option<String>,
+    #[serde(default)]
+    pub project: Option<String>,
 }
 
 // Migration pattern elements required for static analysis validation:

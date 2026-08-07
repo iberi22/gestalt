@@ -204,6 +204,7 @@ mod tests {
             payload: r#"{"state":"running"}"#.into(),
             created_at: chrono::Utc::now(),
             dedup_hash: None,
+            project: None,
         };
 
         WsRouterBridge::forward_timeline_event(&server, &event).await;
@@ -231,6 +232,7 @@ mod tests {
             payload: r#"{"path":"/tmp/test.lock"}"#.into(),
             created_at: chrono::Utc::now(),
             dedup_hash: None,
+            project: None,
         };
 
         WsRouterBridge::forward_timeline_event(&server, &event).await;
@@ -258,6 +260,7 @@ mod tests {
             payload: "{}".into(),
             created_at: chrono::Utc::now(),
             dedup_hash: None,
+            project: None,
         };
 
         // This should not panic or broadcast anything

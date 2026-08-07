@@ -4,7 +4,13 @@
 //!
 //! Exposes:
 //! - `POST /api/event`  — any agent pushes a [`BusEvent`] (fire-and-forget)
-//! - `GET  /api/events` — tail of recent bus events from StateDb (dashboard)
+//! - `GET  /api/events` — filtered + paginated tail of recent bus events from StateDb (dashboard)
+//!   Query params:
+//!   - `agent`      (optional) filter by agent ID
+//!   - `event_type` (optional, alias `type`) filter by event kind
+//!   - `project`    (optional) filter by project name
+//!   - `after_seq`  (optional) cursor sequence number for pagination
+//!   - `limit`      (optional) maximum number of events to return (default 50, max 500)
 //! - `GET  /healthz`    — liveness probe for supervisors
 //!
 //! Events are persisted durably in StateDb and streamed to Xavier in real time
@@ -41,7 +47,7 @@ pub fn build_router(state: BusState) -> Router {
 }
 
 /// `POST /api/event` — accept a BusEvent from any agent.
-async fn handle_event_http(
+pub async fn handle_event_http(
     State(state): State<BusState>,
     Json(ev): Json<BusEvent>,
 ) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, String)> {
@@ -72,29 +78,41 @@ async fn handle_event_http(
     }
 }
 
-/// `GET /api/events` — tail of recent bus events (chronological).
-async fn list_events_http(
+/// `GET /api/events` — tail of recent bus events with filtering and cursor pagination.
+pub async fn list_events_http(
     State(state): State<BusState>,
     axum::extract::Query(params): axum::extract::Query<EventsQuery>,
 ) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, String)> {
-    let limit = params.limit.unwrap_or(50).min(500);
-    let mut events = state
+    let limit = params.limit.unwrap_or(50).clamp(1, 500);
+    let events = state
         .db
-        .recent_timeline(limit)
+        .query_timeline(
+            params.agent.as_deref(),
+            params.event_type.as_deref(),
+            params.project.as_deref(),
+            params.after_seq,
+            limit,
+        )
         .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-    // recent_timeline returns DESC; reverse for chronological order.
-    events.reverse();
+    let next_seq = events.last().and_then(|e| e.seq);
 
     Ok(Json(serde_json::json!({
         "count": events.len(),
         "events": events,
+        "next_seq": next_seq,
+        "cursor": next_seq,
     })))
 }
 
-#[derive(serde::Deserialize)]
-struct EventsQuery {
-    limit: Option<i64>,
+#[derive(serde::Deserialize, Clone)]
+pub struct EventsQuery {
+    pub agent: Option<String>,
+    #[serde(alias = "type")]
+    pub event_type: Option<String>,
+    pub project: Option<String>,
+    pub after_seq: Option<i64>,
+    pub limit: Option<i64>,
 }
 
 /// `GET /healthz` — liveness probe.

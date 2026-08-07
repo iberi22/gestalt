@@ -229,6 +229,32 @@ impl StateDb {
         )
         .context("Failed to create idx_timeline_dedup index")?;
 
+        // Additive migration: check if project column exists in timeline table
+        let has_project_column = {
+            let mut stmt = conn.prepare("PRAGMA table_info(timeline)")?;
+            let mut rows = stmt.query([])?;
+            let mut found = false;
+            while let Some(row) = rows.next()? {
+                let name: String = row.get(1)?;
+                if name == "project" {
+                    found = true;
+                    break;
+                }
+            }
+            found
+        };
+
+        if !has_project_column {
+            conn.execute("ALTER TABLE timeline ADD COLUMN project TEXT", [])
+                .context("Failed to add project column")?;
+        }
+
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_timeline_project ON timeline(project)",
+            [],
+        )
+        .context("Failed to create idx_timeline_project index")?;
+
         Ok(())
     }
 
@@ -477,13 +503,17 @@ impl StateDb {
         payload: &str,
         dedup_hash: Option<&str>,
     ) -> Result<TimelineEvent> {
+        let project = serde_json::from_str::<serde_json::Value>(payload)
+            .ok()
+            .and_then(|v| v.get("project").and_then(|p| p.as_str().map(|s| s.to_string())));
+
         self.execute_transaction(|tx| {
             let now = Utc::now().to_rfc3339();
 
             tx.execute(
-                "INSERT INTO timeline (run_id, agent_id, event_type, payload, created_at, dedup_hash)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-                rusqlite::params![run_id, agent_id, event_type, payload, now, dedup_hash],
+                "INSERT INTO timeline (run_id, agent_id, event_type, payload, created_at, dedup_hash, project)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                rusqlite::params![run_id, agent_id, event_type, payload, now, dedup_hash, project],
             )
             .context("Failed to insert timeline event")?;
 
@@ -497,6 +527,7 @@ impl StateDb {
                 payload: payload.to_string(),
                 created_at: now.parse::<DateTime<Utc>>().unwrap_or_else(|_| Utc::now()),
                 dedup_hash: dedup_hash.map(|s| s.to_string()),
+                project: project.clone(),
             })
         })
     }
@@ -518,7 +549,7 @@ impl StateDb {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn
             .prepare(
-                "SELECT seq, run_id, agent_id, event_type, payload, created_at, dedup_hash
+                "SELECT seq, run_id, agent_id, event_type, payload, created_at, dedup_hash, project
                  FROM timeline WHERE created_at < ?1
                  ORDER BY created_at ASC",
             )
@@ -539,6 +570,7 @@ impl StateDb {
                         .parse::<DateTime<Utc>>()
                         .unwrap_or_else(|_| Utc::now()),
                     dedup_hash: row.get(6)?,
+                    project: row.get(7)?,
                 })
             })
             .context("Failed to query timeline")?
@@ -567,7 +599,7 @@ impl StateDb {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn
             .prepare(
-                "SELECT seq, run_id, agent_id, event_type, payload, created_at, dedup_hash
+                "SELECT seq, run_id, agent_id, event_type, payload, created_at, dedup_hash, project
                  FROM timeline WHERE run_id = ?1
                  ORDER BY seq ASC LIMIT ?2",
             )
@@ -587,6 +619,7 @@ impl StateDb {
                         .parse::<DateTime<Utc>>()
                         .unwrap_or_else(|_| Utc::now()),
                     dedup_hash: row.get(6)?,
+                    project: row.get(7)?,
                 })
             })
             .context("Failed to query timeline")?
@@ -602,7 +635,7 @@ impl StateDb {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn
             .prepare(
-                "SELECT seq, run_id, agent_id, event_type, payload, created_at, dedup_hash
+                "SELECT seq, run_id, agent_id, event_type, payload, created_at, dedup_hash, project
                  FROM timeline
                  ORDER BY seq DESC LIMIT ?1",
             )
@@ -622,6 +655,7 @@ impl StateDb {
                         .parse::<DateTime<Utc>>()
                         .unwrap_or_else(|_| Utc::now()),
                     dedup_hash: row.get(6)?,
+                    project: row.get(7)?,
                 })
             })
             .context("Failed to query recent timeline")?
@@ -636,7 +670,7 @@ impl StateDb {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn
             .prepare(
-                "SELECT seq, run_id, agent_id, event_type, payload, created_at, dedup_hash
+                "SELECT seq, run_id, agent_id, event_type, payload, created_at, dedup_hash, project
                  FROM timeline WHERE run_id = ?1
                  ORDER BY seq ASC",
             )
@@ -656,11 +690,84 @@ impl StateDb {
                         .parse::<DateTime<Utc>>()
                         .unwrap_or_else(|_| Utc::now()),
                     dedup_hash: row.get(6)?,
+                    project: row.get(7)?,
                 })
             })
             .context("Failed to query timeline by run")?
             .collect::<Result<Vec<_>, _>>()
             .context("Failed to read timeline events by run")?;
+
+        Ok(events)
+    }
+
+    /// Query timeline events with filters and cursor-based pagination.
+    pub fn query_timeline(
+        &self,
+        agent: Option<&str>,
+        event_type: Option<&str>,
+        project: Option<&str>,
+        after_seq: Option<i64>,
+        limit: i64,
+    ) -> Result<Vec<TimelineEvent>> {
+        let conn = self.conn.lock().unwrap();
+        let mut query = "SELECT seq, run_id, agent_id, event_type, payload, created_at, dedup_hash, project FROM timeline WHERE 1=1".to_string();
+
+        let agent_owned = agent.map(|s| s.to_string());
+        let event_type_owned = event_type.map(|s| s.to_string());
+        let project_owned = project.map(|s| s.to_string());
+
+        let mut params: Vec<&dyn rusqlite::ToSql> = Vec::new();
+
+        if let Some(ref a) = agent_owned {
+            query.push_str(" AND agent_id = ?");
+            params.push(a);
+        }
+        if let Some(ref et) = event_type_owned {
+            query.push_str(" AND event_type = ?");
+            params.push(et);
+        }
+        if let Some(ref p) = project_owned {
+            query.push_str(" AND project = ?");
+            params.push(p);
+        }
+        if let Some(ref after) = after_seq {
+            query.push_str(" AND seq > ?");
+            params.push(after);
+        }
+
+        if after_seq.is_some() {
+            query.push_str(" ORDER BY seq ASC LIMIT ?");
+        } else {
+            query.push_str(" ORDER BY seq DESC LIMIT ?");
+        }
+        params.push(&limit);
+
+        let mut stmt = conn.prepare(&query).context("Failed to prepare query_timeline statement")?;
+        let mut events = stmt
+            .query_map(&*params, |row| {
+                let seq: i64 = row.get(0)?;
+                let created_at_str: String = row.get(5)?;
+                Ok(TimelineEvent {
+                    seq: Some(seq),
+                    run_id: row.get(1)?,
+                    agent_id: row.get(2)?,
+                    event_type: row.get(3)?,
+                    payload: row.get(4)?,
+                    created_at: created_at_str
+                        .parse::<DateTime<Utc>>()
+                        .unwrap_or_else(|_| Utc::now()),
+                    dedup_hash: row.get(6)?,
+                    project: row.get(7)?,
+                })
+            })
+            .context("Failed to query timeline events with filters")?
+            .collect::<Result<Vec<_>, _>>()
+            .context("Failed to read timeline events with filters")?;
+
+        // If we fetched the tail (after_seq was None), they are in DESC order; reverse them to chronological order.
+        if after_seq.is_none() {
+            events.reverse();
+        }
 
         Ok(events)
     }
@@ -786,6 +893,64 @@ mod tests {
         // First event should be the oldest (ASC order)
         assert_eq!(timeline[0].event_type, "started");
         assert_eq!(timeline[1].event_type, "completed");
+    }
+
+    #[test]
+    fn test_query_timeline_with_filters() {
+        let db = setup_db();
+
+        db.create_run("run-001", "{}").unwrap();
+
+        // Push events with different fields
+        db.push_event_with_hash("run-001", Some("agent-1"), "event-a", r#"{"project": "proj-1"}"#, None).unwrap();
+        db.push_event_with_hash("run-001", Some("agent-1"), "event-b", r#"{"project": "proj-2"}"#, None).unwrap();
+        db.push_event_with_hash("run-001", Some("agent-2"), "event-a", r#"{"project": "proj-1"}"#, None).unwrap();
+        db.push_event_with_hash("run-001", Some("agent-2"), "event-b", r#"{"project": "proj-2"}"#, None).unwrap();
+
+        // 1. Filter by project
+        let results = db.query_timeline(None, None, Some("proj-1"), None, 10).unwrap();
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0].event_type, "event-a");
+        assert_eq!(results[1].event_type, "event-a");
+
+        // 2. Filter by agent
+        let results = db.query_timeline(Some("agent-1"), None, None, None, 10).unwrap();
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0].project, Some("proj-1".to_string()));
+        assert_eq!(results[1].project, Some("proj-2".to_string()));
+
+        // 3. Filter by event_type
+        let results = db.query_timeline(None, Some("event-b"), None, None, 10).unwrap();
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0].project, Some("proj-2".to_string()));
+        assert_eq!(results[1].project, Some("proj-2".to_string()));
+
+        // 4. Cursor pagination (after_seq)
+        // Fetch with limit 2 (descending because after_seq is None)
+        let first_page = db.query_timeline(None, None, None, None, 2).unwrap();
+        assert_eq!(first_page.len(), 2);
+        let last_seq = first_page[1].seq.unwrap();
+
+        // Next page using after_seq (ascending)
+        let second_page = db.query_timeline(None, None, None, Some(last_seq), 2).unwrap();
+        // Since we got the most recent 2 events in first_page (3 and 4), seq > 4 should be empty.
+        // Wait, let's verify exact IDs. The events are:
+        // seq 1: agent-1, event-a, proj-1
+        // seq 2: agent-1, event-b, proj-2
+        // seq 3: agent-2, event-a, proj-1
+        // seq 4: agent-2, event-b, proj-2
+        // If we query with after_seq = None, ORDER BY seq DESC LIMIT 2:
+        // returns seq 4 and 3. Reverser yields seq 3, then 4.
+        // first_page[0] is seq 3, first_page[1] is seq 4.
+        // last_seq is 4.
+        // query with after_seq = 4 -> seq > 4 LIMIT 2 -> empty.
+        assert!(second_page.is_empty());
+
+        // Let's paginate starting from the beginning (seq > 1)
+        let page_from_beginning = db.query_timeline(None, None, None, Some(1), 2).unwrap();
+        assert_eq!(page_from_beginning.len(), 2);
+        assert_eq!(page_from_beginning[0].seq, Some(2));
+        assert_eq!(page_from_beginning[1].seq, Some(3));
     }
 
     #[test]

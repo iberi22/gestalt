@@ -228,7 +228,8 @@ impl AgentWrapper {
         // 1. PRE: XavierClient::search(task) → build XAVIER_CONTEXT env
         let xavier = gestalt_core::application::agent::xavier::XavierClient::from_env();
         let search_results = xavier.search_context(task, 5).await;
-        let xavier_context = serde_json::to_string(&search_results).unwrap_or_else(|_| "[]".to_string());
+        let xavier_context =
+            serde_json::to_string(&search_results).unwrap_or_else(|_| "[]".to_string());
 
         // 2. Open StateDb
         let db_path = home::home_dir()
@@ -247,23 +248,31 @@ impl AgentWrapper {
         );
 
         // 3. Emit run_started BusEvent
-        let start_summary = format!("Agent '{}' execution started for task: {}", self.agent_id, task);
-        let start_ev = gestalt_router::event_bus::BusEvent::new(&self.agent_id, "run_started", &start_summary)
-            .with_run_id(&self.run_id)
-            .with_project(proj)
-            .with_state("Running")
-            .with_metadata(serde_json::json!({
-                "task": task,
-                "command": self.command,
-                "requested_by": std::env::var("GESTALT_REQUESTED_BY").unwrap_or_else(|_| "cli".into()),
-            }));
+        let start_summary = format!(
+            "Agent '{}' execution started for task: {}",
+            self.agent_id, task
+        );
+        let start_ev = gestalt_router::event_bus::BusEvent::new(
+            &self.agent_id,
+            "run_started",
+            &start_summary,
+        )
+        .with_run_id(&self.run_id)
+        .with_project(proj)
+        .with_state("Running")
+        .with_metadata(serde_json::json!({
+            "task": task,
+            "command": self.command,
+            "requested_by": std::env::var("GESTALT_REQUESTED_BY").unwrap_or_else(|_| "cli".into()),
+        }));
 
         let sink = std::env::var("XAVIER_TOKEN")
             .ok()
             .filter(|t| !t.is_empty())
             .map(|_| gestalt_router::xavier_sink::XavierEventSink::from_env());
 
-        if let Err(e) = gestalt_router::event_bus::handle_event(&db, &start_ev, sink.as_ref()).await {
+        if let Err(e) = gestalt_router::event_bus::handle_event(&db, &start_ev, sink.as_ref()).await
+        {
             warn!("Failed to emit run_started event: {}", e);
         }
 
@@ -283,7 +292,9 @@ impl AgentWrapper {
         cmd.stdout(std::process::Stdio::piped());
         cmd.stderr(std::process::Stdio::piped());
 
-        let mut child = cmd.spawn().map_err(|e| format!("Failed to spawn command '{}': {}", self.command, e))?;
+        let mut child = cmd
+            .spawn()
+            .map_err(|e| format!("Failed to spawn command '{}': {}", self.command, e))?;
 
         let mut stdout_bytes = Vec::new();
         let mut stderr_bytes = Vec::new();
@@ -321,37 +332,54 @@ impl AgentWrapper {
 
         let (status, stdout_str, stderr_str, state_str, exit_code) = match run_res {
             Ok((exit_status, stdout, stderr)) => {
-                let state = if exit_status.success() { "Success" } else { "Crashed" };
+                let state = if exit_status.success() {
+                    "Success"
+                } else {
+                    "Crashed"
+                };
                 (exit_status, stdout, stderr, state, exit_status.code())
-            }
+            },
             Err(e) => {
                 // Timeout or error: obtain a non-zero exit status dynamically
                 let dummy_status = if e.contains("Timeout") {
                     let mut dcmd = std::process::Command::new("false");
-                    let dstatus = dcmd.status().unwrap_or_else(|_| std::process::ExitStatus::default());
+                    let dstatus = dcmd
+                        .status()
+                        .unwrap_or_else(|_| std::process::ExitStatus::default());
                     (dstatus, String::new(), e.clone(), "Timeout", None)
                 } else {
                     let mut dcmd = std::process::Command::new("false");
-                    let dstatus = dcmd.status().unwrap_or_else(|_| std::process::ExitStatus::default());
+                    let dstatus = dcmd
+                        .status()
+                        .unwrap_or_else(|_| std::process::ExitStatus::default());
                     (dstatus, String::new(), e.clone(), "Crashed", None)
                 };
                 dummy_status
-            }
+            },
         };
 
         // Emit run_finished BusEvent
-        let finish_summary = format!("Agent '{}' finished with state '{}' in {}ms", self.agent_id, state_str, duration_ms);
-        let finish_ev = gestalt_router::event_bus::BusEvent::new(&self.agent_id, "run_finished", &finish_summary)
-            .with_run_id(&self.run_id)
-            .with_project(proj)
-            .with_state(state_str)
-            .with_metadata(serde_json::json!({
-                "duration_ms": duration_ms,
-                "exit_code": exit_code,
-                "task": task,
-            }));
+        let finish_summary = format!(
+            "Agent '{}' finished with state '{}' in {}ms",
+            self.agent_id, state_str, duration_ms
+        );
+        let finish_ev = gestalt_router::event_bus::BusEvent::new(
+            &self.agent_id,
+            "run_finished",
+            &finish_summary,
+        )
+        .with_run_id(&self.run_id)
+        .with_project(proj)
+        .with_state(state_str)
+        .with_metadata(serde_json::json!({
+            "duration_ms": duration_ms,
+            "exit_code": exit_code,
+            "task": task,
+        }));
 
-        if let Err(e) = gestalt_router::event_bus::handle_event(&db, &finish_ev, sink.as_ref()).await {
+        if let Err(e) =
+            gestalt_router::event_bus::handle_event(&db, &finish_ev, sink.as_ref()).await
+        {
             warn!("Failed to emit run_finished event: {}", e);
         }
 
@@ -391,12 +419,20 @@ impl AgentWrapper {
             "stderr": stderr_str,
         });
 
-        let archive_content = serde_json::to_string_pretty(&run_summary_data).unwrap_or_else(|_| "{}".to_string());
-        if let Err(e) = xavier.archive_run(&archive_content, &self.run_id, serde_json::json!({
-            "run_id": self.run_id,
-            "state": state_str,
-            "duration_ms": duration_ms,
-        })).await {
+        let archive_content =
+            serde_json::to_string_pretty(&run_summary_data).unwrap_or_else(|_| "{}".to_string());
+        if let Err(e) = xavier
+            .archive_run(
+                &archive_content,
+                &self.run_id,
+                serde_json::json!({
+                    "run_id": self.run_id,
+                    "state": state_str,
+                    "duration_ms": duration_ms,
+                }),
+            )
+            .await
+        {
             warn!("Failed to archive run to Xavier: {}", e);
         }
 

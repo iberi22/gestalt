@@ -2488,12 +2488,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let run_id = ulid::Ulid::new().to_string();
                 let vfs = std::sync::Arc::new(agent_wrapper::InMemoryVfs::new());
 
-                let wrapper = agent_wrapper::AgentWrapper::new(
-                    vfs,
-                    agent_id,
-                    run_id,
-                    agent.clone(),
-                );
+                let wrapper =
+                    agent_wrapper::AgentWrapper::new(vfs, agent_id, run_id, agent.clone());
 
                 println!("🚀 Launching thin agent launcher...");
                 println!("   Command: {}", agent);
@@ -2502,7 +2498,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     println!("   Project: {}", proj);
                 }
 
-                match wrapper.execute_with_trace(&task, project.as_deref(), timeout).await {
+                match wrapper
+                    .execute_with_trace(&task, project.as_deref(), timeout)
+                    .await
+                {
                     Ok((edits, status, stdout, stderr)) => {
                         println!();
                         println!("━━━ Run Summary ━━━");
@@ -2514,13 +2513,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         if !status.success() {
                             std::process::exit(status.code().unwrap_or(1));
                         }
-                    }
+                    },
                     Err(e) => {
                         eprintln!("❌ Launcher execution failed: {}", e);
                         std::process::exit(1);
-                    }
+                    },
                 }
-            }
+            },
         },
     }
 

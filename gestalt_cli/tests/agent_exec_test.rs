@@ -8,12 +8,12 @@
 #[path = "../src/agent_wrapper.rs"]
 mod agent_wrapper;
 
+use agent_wrapper::{AgentWrapper, InMemoryVfs};
+use axum::{routing::post, Json, Router};
+use gestalt_state::statedb::StateDb;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::time::Duration;
-use axum::{routing::post, Json, Router};
-use agent_wrapper::{AgentWrapper, InMemoryVfs};
-use gestalt_state::statedb::StateDb;
 
 static ENV_MUTEX: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
 
@@ -41,26 +41,35 @@ async fn test_agent_exec_trace_lifecycle() {
 
     // Build the mock router
     let app = Router::new()
-        .route("/api/event", post(move |Json(payload): Json<serde_json::Value>| {
-            events_clone.lock().unwrap().push(payload);
-            async { Json(serde_json::json!({ "status": "ok", "seq": 42 })) }
-        }))
-        .route("/v1/memories/search", post(|Json(_payload): Json<serde_json::Value>| async {
-            Json(serde_json::json!({
-                "count": 1,
-                "results": [
-                    {
-                        "id": "mem-1",
-                        "path": "test/path",
-                        "snippet": "prior context snippet"
-                    }
-                ]
-            }))
-        }))
-        .route("/v1/memories", post(move |Json(payload): Json<serde_json::Value>| {
-            archives_clone.lock().unwrap().push(payload);
-            async { Json(serde_json::json!({ "status": "ok", "id": "archived-1" })) }
-        }));
+        .route(
+            "/api/event",
+            post(move |Json(payload): Json<serde_json::Value>| {
+                events_clone.lock().unwrap().push(payload);
+                async { Json(serde_json::json!({ "status": "ok", "seq": 42 })) }
+            }),
+        )
+        .route(
+            "/v1/memories/search",
+            post(|Json(_payload): Json<serde_json::Value>| async {
+                Json(serde_json::json!({
+                    "count": 1,
+                    "results": [
+                        {
+                            "id": "mem-1",
+                            "path": "test/path",
+                            "snippet": "prior context snippet"
+                        }
+                    ]
+                }))
+            }),
+        )
+        .route(
+            "/v1/memories",
+            post(move |Json(payload): Json<serde_json::Value>| {
+                archives_clone.lock().unwrap().push(payload);
+                async { Json(serde_json::json!({ "status": "ok", "id": "archived-1" })) }
+            }),
+        );
 
     // Start mock server on a random port
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -87,12 +96,22 @@ async fn test_agent_exec_trace_lifecycle() {
     let wrapper = AgentWrapper::new(vfs, agent_id, run_id, command);
 
     // Run execution with tracing
-    let result = wrapper.execute_with_trace("fix bug in lib", Some("test-project"), Some(5)).await;
-    assert!(result.is_ok(), "execute_with_trace failed: {:?}", result.err());
+    let result = wrapper
+        .execute_with_trace("fix bug in lib", Some("test-project"), Some(5))
+        .await;
+    assert!(
+        result.is_ok(),
+        "execute_with_trace failed: {:?}",
+        result.err()
+    );
 
     let (_edits, status, stdout, _stderr) = result.unwrap();
     assert!(status.success());
-    assert!(stdout.contains("prior context snippet"), "Expected injected XAVIER_CONTEXT in stdout, but got: {}", stdout);
+    assert!(
+        stdout.contains("prior context snippet"),
+        "Expected injected XAVIER_CONTEXT in stdout, but got: {}",
+        stdout
+    );
 
     // Give a split second for any background tokio spawns to complete
     tokio::time::sleep(Duration::from_millis(150)).await;
@@ -101,21 +120,34 @@ async fn test_agent_exec_trace_lifecycle() {
     let db_path = temp_home.join(".gestalt").join("state.db");
     let db = StateDb::open(&db_path).unwrap();
     let events_in_db = db.recent_timeline(10).unwrap();
-    assert!(!events_in_db.is_empty(), "Events should be persisted in StateDb");
+    assert!(
+        !events_in_db.is_empty(),
+        "Events should be persisted in StateDb"
+    );
 
     // Check if run_started and run_finished events were logged
-    let start_logged = events_in_db.iter().any(|e| e.payload.contains("run_started"));
-    let finish_logged = events_in_db.iter().any(|e| e.payload.contains("run_finished"));
+    let start_logged = events_in_db
+        .iter()
+        .any(|e| e.payload.contains("run_started"));
+    let finish_logged = events_in_db
+        .iter()
+        .any(|e| e.payload.contains("run_finished"));
     assert!(start_logged, "run_started not found in StateDb");
     assert!(finish_logged, "run_finished not found in StateDb");
 
     // Verify archives received
     let archives = received_archives.lock().unwrap();
-    assert!(!archives.is_empty(), "Mock server should receive run archive");
-    let has_run_result = archives.iter().any(|arch| {
-        arch.get("kind").and_then(|k| k.as_str()) == Some("run_result")
-    });
-    assert!(has_run_result, "Mock server did not receive run_result archive");
+    assert!(
+        !archives.is_empty(),
+        "Mock server should receive run archive"
+    );
+    let has_run_result = archives
+        .iter()
+        .any(|arch| arch.get("kind").and_then(|k| k.as_str()) == Some("run_result"));
+    assert!(
+        has_run_result,
+        "Mock server did not receive run_result archive"
+    );
 
     // Clean up environment and files
     if let Some(h) = old_home {

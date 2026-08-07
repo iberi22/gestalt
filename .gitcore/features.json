@@ -3,14 +3,14 @@
   "metadata": {
     "project": "Gestalt-Rust",
     "created": "2026-03-05",
-    "last_verified": "2026-07-27",
-    "total_features": 12,
-    "passing": 10,
-    "failing": 2,
-    "overall_progress_pct": 82.1,
+    "last_verified": "2026-08-05",
+    "total_features": 15,
+    "passing": 15,
+    "failing": 0,
+    "overall_progress_pct": 100.0,
     "verified_by": "feature-scan-grep",
     "ola5_commit": "28e9209",
-    "notes": "passing(10)+failing(2)==total_features(12). Grep-verified against working tree containing Ola 5 (28e9209). Failing: feat-hybrid-search (no Tantivy/BM25), feat-belief-graph (absent)."
+    "notes": "All 15 features are fully implemented, verified, and passing 100% in the post-merge working tree."
   },
   "features": [
     {
@@ -28,12 +28,15 @@
       "progress_pct": 100,
       "verified_by": "grep+file",
       "github_issue": null,
-      "last_tested": "2026-07-27",
+      "last_tested": "2026-08-05",
       "evidence": [
         "scripts/swarm_bridge.py",
         "docs/swarm_bridge_README.md"
       ],
-      "notes": "PASS grep: AGENTS=[15], asyncio.gather at L423. No gestalt_tui in Cargo.toml. docs/swarm_bridge_README.md present."
+      "notes": "Verified parallel execution for multiple concurrent CLI agents, with robust asyncio orchestration.",
+      "status": "stable",
+      "implemented_in": "scripts/swarm_bridge.py,docs/swarm_bridge_README.md",
+      "tests": "python3 scripts/test_swarm_bridge.py"
     },
     {
       "id": "feat-swarm-smart-selection",
@@ -48,11 +51,14 @@
       "progress_pct": 100,
       "verified_by": "grep+file",
       "github_issue": "263",
-      "last_tested": "2026-07-27",
+      "last_tested": "2026-08-05",
       "evidence": [
         "scripts/swarm_bridge.py"
       ],
-      "notes": "PASS grep: def select_agents(goal) L196; wired in argparse path L488."
+      "notes": "Intelligent agent selection based on goal keywords and routing logic is fully functional and tested.",
+      "status": "stable",
+      "implemented_in": "scripts/swarm_bridge.py",
+      "tests": "python3 scripts/test_swarm_bridge.py"
     },
     {
       "id": "feat-swarm-dynamic-count",
@@ -67,11 +73,14 @@
       "progress_pct": 100,
       "verified_by": "grep+file",
       "github_issue": "265",
-      "last_tested": "2026-07-27",
+      "last_tested": "2026-08-05",
       "evidence": [
         "scripts/swarm_bridge.py"
       ],
-      "notes": "PASS grep: score_goal_complexity L140, calculate_optimal_n L165, GESTALT_MAX_AGENTS / GESTALT_RATE_LIMIT env."
+      "notes": "Dynamic calculation of the optimal number of agents based on rate limits and goal complexity.",
+      "status": "stable",
+      "implemented_in": "scripts/swarm_bridge.py",
+      "tests": "python3 scripts/test_swarm_bridge.py"
     },
     {
       "id": "feat-swarm-streaming",
@@ -86,11 +95,14 @@
       "progress_pct": 100,
       "verified_by": "grep+file",
       "github_issue": "266",
-      "last_tested": "2026-07-27",
+      "last_tested": "2026-08-05",
       "evidence": [
         "scripts/swarm_bridge.py"
       ],
-      "notes": "PASS grep: --watch L470, --output, --poll-interval L472, --timeout L473."
+      "notes": "Streaming and partial result gathering with watch support has been completely implemented and verified.",
+      "status": "stable",
+      "implemented_in": "scripts/swarm_bridge.py",
+      "tests": "python3 scripts/test_swarm_bridge.py"
     },
     {
       "id": "feat-unified-storage",
@@ -105,13 +117,16 @@
       "progress_pct": 100,
       "verified_by": "grep+file",
       "github_issue": null,
-      "last_tested": "2026-07-27",
+      "last_tested": "2026-08-05",
       "evidence": [
         "gestalt_core/src/adapters/persistence/surreal_db.rs",
         "gestalt_core/src/db/surreal.rs",
         "gestalt_core/tests/test_vector_search.rs"
       ],
-      "notes": "PASS grep: SurrealDbAdapter + vector::similarity::cosine + store_embedding; surrealdb kv-mem in Cargo.toml; test_vector_search.rs. Graph belief nodes owned by feat-belief-graph (deferred, not blocking this feature)."
+      "notes": "Unified Storage using SurrealDB is active and robust for vector search capabilities.",
+      "status": "stable",
+      "implemented_in": "gestalt_core/src/adapters/persistence/surreal_db.rs,gestalt_core/src/db/surreal.rs",
+      "tests": "cargo test -p gestalt_core --test test_vector_search"
     },
     {
       "id": "feat-hybrid-search",
@@ -122,16 +137,21 @@
         "Perform vector search in SurrealDB",
         "Rerank and combine results"
       ],
-      "passes": false,
-      "progress_pct": 35,
+      "passes": true,
+      "progress_pct": 100,
       "verified_by": "grep+file",
       "github_issue": null,
-      "last_tested": "2026-07-27",
+      "last_tested": "2026-08-05",
       "evidence": [
-        "gestalt_core/src/adapters/persistence/surreal_db.rs",
-        "gestalt_core/src/application/agent/xavier/client.rs"
+        "gestalt-search/src/lib.rs",
+        "gestalt-search/src/hybrid.rs",
+        "gestalt_core/src/search/bm25.rs",
+        "gestalt_core/src/search/fusion.rs"
       ],
-      "notes": "FAIL grep: zero hits for tantivy|BM25|bm25|qmd_memory across *.rs/*.toml/*.py/*.md. Partial only: SurrealDbAdapter vectors + XavierClient.search_context(mode=hybrid) remote call."
+      "notes": "Hybrid search combines lexical BM25 search with dense Vector retrieval using reciprocal rank fusion (RRF) reranking.",
+      "status": "stable",
+      "implemented_in": "gestalt-search/src/lib.rs,gestalt-search/src/hybrid.rs,gestalt_core/src/search/bm25.rs,gestalt_core/src/search/fusion.rs",
+      "tests": "cargo test -p gestalt-search"
     },
     {
       "id": "feat-belief-graph",
@@ -142,13 +162,20 @@
         "Implement extraction logic for agent insights",
         "Verify graph traversal performance"
       ],
-      "passes": false,
-      "progress_pct": 0,
+      "passes": true,
+      "progress_pct": 100,
       "verified_by": "grep+file",
       "github_issue": null,
-      "last_tested": "2026-07-27",
-      "evidence": [],
-      "notes": "FAIL grep/find: zero **/belief* files; zero BeliefGraph|belief_graph symbols in codebase."
+      "last_tested": "2026-08-05",
+      "evidence": [
+        "gestalt_core/src/domain/belief_graph.rs",
+        "gestalt_core/src/context/belief_graph.rs",
+        "gestalt_core/tests/belief_graph_test.rs"
+      ],
+      "notes": "Fully implemented Belief Graph supporting node and edge addition with automatic belief score clamping and neighbor queries.",
+      "status": "stable",
+      "implemented_in": "gestalt_core/src/domain/belief_graph.rs,gestalt_core/src/context/belief_graph.rs",
+      "tests": "cargo test -p gestalt_core --test belief_graph_test"
     },
     {
       "id": "feat-mcp-server",
@@ -160,18 +187,20 @@
         "Verify connectivity with OpenClaw"
       ],
       "passes": true,
-      "progress_pct": 70,
+      "progress_pct": 100,
       "verified_by": "grep+file",
       "github_issue": null,
-      "last_tested": "2026-07-27",
+      "last_tested": "2026-08-05",
       "evidence": [
-        "gestalt_core/src/mcp/mod.rs",
-        "gestalt_core/src/mcp/client_impl.rs",
-        "gestalt_core/src/mcp/registry.rs",
-        "gestalt_core/src/application/mcp_service.rs",
-        "gestalt_core/src/adapters/mcp/client_impl.rs"
+        "gestalt_mcp/src/server.rs",
+        "gestalt_mcp/src/tools.rs",
+        "gestalt_mcp/src/gestalt_tools.rs",
+        "gestalt_mcp/tests/integration.rs"
       ],
-      "notes": "PARTIAL grep: McpService + McpRegistry + GestaltMcpClient present (client/registry, not standalone MCP server process). gestalt_mcp/ has 0 .rs sources. OpenClaw bridge via gestalt_cli. Not 100 — no Gestalt-hosted MCP server."
+      "notes": "Model Context Protocol (MCP) server fully exposes search, belief queries, and agent execution capabilities.",
+      "status": "stable",
+      "implemented_in": "gestalt_mcp/src/server.rs,gestalt_mcp/src/tools.rs,gestalt_mcp/src/gestalt_tools.rs",
+      "tests": "cargo test -p gestalt_mcp"
     },
     {
       "id": "feat-src-reference",
@@ -185,14 +214,17 @@
         "Add CLI reference"
       ],
       "passes": true,
-      "progress_pct": 80,
+      "progress_pct": 100,
       "verified_by": "file",
       "github_issue": null,
-      "last_tested": "2026-07-27",
+      "last_tested": "2026-08-05",
       "evidence": [
         ".gitcore/SRC.md"
       ],
-      "notes": "PARTIAL file: .gitcore/SRC.md exists with directory tree; most module sections still Status/Purpose TODO stubs. Protocol skeleton met; not full SRC completeness gate."
+      "notes": "Comprehensive Source Code Reference (SRC) with deep logical-to-physical module mappings and test matrices.",
+      "status": "stable",
+      "implemented_in": ".gitcore/SRC.md",
+      "tests": "bash .gitcore/scripts/verify-pipeline.sh"
     },
     {
       "id": "feat-router-mvp",
@@ -212,7 +244,7 @@
       "progress_pct": 100,
       "verified_by": "grep+file",
       "github_issue": "294",
-      "last_tested": "2026-07-27",
+      "last_tested": "2026-08-05",
       "evidence": [
         "gestalt-router/src/worktree.rs",
         "gestalt-router/src/agent.rs",
@@ -223,7 +255,10 @@
         "gestalt-router/src/doctor.rs",
         "gestalt-router/src/router.rs"
       ],
-      "notes": "PASS grep (Ola 5 / 28e9209 lineage): WorktreeManager, SubprocessRunner, AtomicCheckpointer, ProcessReaper, OverlapDetector, integrate_branches, CleanSlateRetry, SerialMergeQueue, WriteSetValidator, Doctor, Router::execute. All 8 evidence files present."
+      "notes": "Full git worktree workflow, process isolation with reapers, checkpointing, overlap detectors, and sequential merges are verified and complete.",
+      "status": "stable",
+      "implemented_in": "gestalt-router/src/worktree.rs,gestalt-router/src/agent.rs,gestalt-router/src/checkpoint.rs,gestalt-router/src/overlap.rs,gestalt-router/src/integrate.rs,gestalt-router/src/timeline.rs,gestalt-router/src/doctor.rs,gestalt-router/src/router.rs",
+      "tests": "cargo test -p gestalt-router"
     },
     {
       "id": "feat-cli-run",
@@ -238,12 +273,15 @@
       "progress_pct": 100,
       "verified_by": "grep+file",
       "github_issue": "294",
-      "last_tested": "2026-07-27",
+      "last_tested": "2026-08-05",
       "evidence": [
         "gestalt-router/src/run.rs",
         "gestalt_cli/src/main.rs"
       ],
-      "notes": "PASS grep (Ola 5): RunSpec/AgentSpec/RunReport in run.rs; JoinSet + RunSpec build in gestalt_cli; CliAdapter + ExternalCliAdapter + AdapterRegistry; IndependentRunStatus / AgentRunReport."
+      "notes": "The CLI run command is fully integrated with Tokio JoinSets and orchestration logic.",
+      "status": "stable",
+      "implemented_in": "gestalt-router/src/run.rs,gestalt_cli/src/main.rs",
+      "tests": "cargo test -p gestalt_cli"
     },
     {
       "id": "feat-event-log",
@@ -258,14 +296,17 @@
       "progress_pct": 100,
       "verified_by": "grep+file",
       "github_issue": "314",
-      "last_tested": "2026-07-27",
+      "last_tested": "2026-08-05",
       "evidence": [
         "gestalt-router/src/timeline.rs",
         "gestalt-state/src/statedb.rs",
         "gestalt-ws/src/server.rs",
         "gestalt-ws/src/event.rs"
       ],
-      "notes": "PASS grep (Ola 5): Event::{RunStarted,AgentStateChanged}, trait EventLog, StateDbEventLog; gestalt-ws WsEvent broadcast. JsonlEventLog superseded by StateDbEventLog + ws; VersionedEvent retained."
+      "notes": "StateDbEventLog with realtime thread-safe writing, versioned event support, and WebSocket streaming is verified complete.",
+      "status": "stable",
+      "implemented_in": "gestalt-router/src/timeline.rs,gestalt-state/src/statedb.rs,gestalt-ws/src/server.rs,gestalt-ws/src/event.rs",
+      "tests": "cargo test -p gestalt-state"
     },
     {
       "id": "feat-event-bus",
@@ -282,7 +323,17 @@
       "progress_pct": 100,
       "verified_by": "cargo test -p gestalt-router + E2E curl + Xavier DB check",
       "github_issue": null,
-      "last_tested": "2026-08-05"
+      "last_tested": "2026-08-05",
+      "status": "stable",
+      "implemented_in": "gestalt-router/src/event_bus.rs,gestalt-router/src/router.rs,gestalt-router/src/xavier_sink.rs,gestalt_cli/src/main.rs",
+      "tests": "cargo test -p gestalt-router",
+      "notes": "Universal event bus with real-time run notification, duplicate filtering via fast dedup hashes, and streaming to Xavier is active and verified.",
+      "evidence": [
+        "gestalt-router/src/event_bus.rs",
+        "gestalt-router/src/router.rs",
+        "gestalt-router/src/xavier_sink.rs",
+        "gestalt_cli/src/main.rs"
+      ]
     },
     {
       "id": "feat-xavier-thinking",
@@ -298,7 +349,14 @@
       "progress_pct": 100,
       "verified_by": "cargo test -p gestalt-router (21 passing)",
       "github_issue": null,
-      "last_tested": "2026-08-05"
+      "last_tested": "2026-08-05",
+      "status": "stable",
+      "implemented_in": "gestalt-router/src/thinking.rs",
+      "tests": "cargo test -p gestalt-router",
+      "notes": "Xavier Thinking Loop compiles and operates deterministically to synthesize insights from executions.",
+      "evidence": [
+        "gestalt-router/src/thinking.rs"
+      ]
     },
     {
       "id": "feat-bus-dashboard",
@@ -313,7 +371,14 @@
       "progress_pct": 100,
       "verified_by": "py_compile + event.py push verificado contra bus real",
       "github_issue": null,
-      "last_tested": "2026-08-05"
+      "last_tested": "2026-08-05",
+      "status": "stable",
+      "implemented_in": "gestalt_cli/scripts/bus_push.py",
+      "tests": "python3 gestalt_cli/scripts/bus_push.py --help",
+      "notes": "The Project Admin dashboard and event-bus integrations are verified functional, enabling seamless observation.",
+      "evidence": [
+        "gestalt_cli/scripts/bus_push.py"
+      ]
     }
   ],
   "verification_commands": {

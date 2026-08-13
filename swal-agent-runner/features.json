@@ -1,0 +1,121 @@
+{
+  "milestones": [
+    {
+      "id": "ms-1",
+      "name": "WASM Integration & Sandbox",
+      "target_date": "2026-08-30",
+      "description": "Establish key WASM bindings with Gestalt Engine and set up in-browser WebContainer sandboxing."
+    },
+    {
+      "id": "ms-2",
+      "name": "Offline Git & Sync",
+      "target_date": "2026-09-15",
+      "description": "Enable in-browser Git operations with isomorphic-git and real-time Event Bus WS state synchronization."
+    },
+    {
+      "id": "ms-3",
+      "name": "Semantic Integration",
+      "target_date": "2026-10-01",
+      "description": "Connect PWA cache structures offline and integrate Xavier semantic memories."
+    }
+  ],
+  "features": [
+    {
+      "id": "feat-ar-001",
+      "name": "Gestalt WASM Integration",
+      "priority": "P0",
+      "milestone": "ms-1",
+      "description": "Integration with @swal/gestalt-wasm to execute parallel runs and read event stream schemas.",
+      "dependencies": [],
+      "progress_pct": 10,
+      "status": "initial_draft",
+      "steps": [
+        "Create type-safe typescript interfaces",
+        "Implement GestaltWasmBridge initializer and executor",
+        "Load compiled gestalt-wasm.wasm dynamically inside browser",
+        "E2E testing of execute_run_spec WASM calls"
+      ],
+      "tests": "npm run test"
+    },
+    {
+      "id": "feat-ar-002",
+      "name": "WebContainer Sandboxed Environment",
+      "priority": "P1",
+      "milestone": "ms-1",
+      "description": "Bootstrapping WebContainer in browser to execute workspace builds and agent code.",
+      "dependencies": ["feat-ar-001"],
+      "progress_pct": 0,
+      "status": "pending",
+      "steps": [
+        "Configure cross-origin isolation headers (COOP/COEP)",
+        "Mount workspace files onto WebContainer filesystem",
+        "Spawn terminal processes inside the WebContainer"
+      ],
+      "tests": "npm run test"
+    },
+    {
+      "id": "feat-ar-003",
+      "name": "Isomorphic-Git Browser Client",
+      "priority": "P1",
+      "milestone": "ms-2",
+      "description": "Perform full git operations (clone, checkout, commit) directly inside browser using memory/IndexedDB filesystems.",
+      "dependencies": ["feat-ar-002"],
+      "progress_pct": 0,
+      "status": "pending",
+      "steps": [
+        "Initialize isomorphic-git with LightningFS",
+        "Implement clone, checkout, status, and commit workflows",
+        "Handle merge and conflict state marking"
+      ],
+      "tests": "npm run test"
+    },
+    {
+      "id": "feat-ar-004",
+      "name": "Event Bus & WebSocket Sync",
+      "priority": "P2",
+      "milestone": "ms-2",
+      "description": "Real-time synchronization and timeline streaming with Gestalt event bus (:8081) and WS server (:3001).",
+      "dependencies": ["feat-ar-001"],
+      "progress_pct": 0,
+      "status": "pending",
+      "steps": [
+        "Connect to WebSocket ws://127.0.0.1:3001",
+        "Listen to timeline events and update React application state",
+        "Replay missing events via GET /api/events"
+      ],
+      "tests": "npm run test"
+    },
+    {
+      "id": "feat-ar-005",
+      "name": "Offline-First PWA State & Cache",
+      "priority": "P2",
+      "milestone": "ms-3",
+      "description": "Implement Service Worker, app manifests, and IndexedDB state caching for resilient offline-first work.",
+      "dependencies": [],
+      "progress_pct": 0,
+      "status": "pending",
+      "steps": [
+        "Register Service Worker with custom asset caching",
+        "Design offline indicator and state synchronization queues",
+        "Configure manifest.json and universal PWA shell requirements"
+      ],
+      "tests": "npm run test"
+    },
+    {
+      "id": "feat-ar-006",
+      "name": "Xavier Semantic Memory Integration",
+      "priority": "P3",
+      "milestone": "ms-3",
+      "description": "Direct communication with Xavier for semantic memory search (PRE-run context) and run archival (POST-run result).",
+      "dependencies": ["feat-ar-001"],
+      "progress_pct": 0,
+      "status": "pending",
+      "steps": [
+        "Map GET/POST endpoints of Xavier client",
+        "Formulate kind=execution and kind=insight payloads",
+        "Feed context into agent runs automatically"
+      ],
+      "tests": "npm run test"
+    }
+  ]
+}

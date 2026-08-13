@@ -144,7 +144,7 @@ impl WsServer {
                 msg = rx.recv() => {
                     match msg {
                         Ok(json) => {
-                            if let Err(e) = write.send(Message::Text(json)).await {
+                            if let Err(e) = write.send(Message::Text(json.into())).await {
                                 debug!("WebSocket send failed for {peer_addr}: {e}");
                                 break;
                             }

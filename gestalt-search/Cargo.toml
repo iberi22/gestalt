@@ -12,7 +12,7 @@ tracing = "0.1"
 thiserror = "1.0"
 anyhow = "1.0"
 async-trait = "0.1"
-tantivy = { version = "0.22", default-features = false, features = [
+tantivy = { version = "0.26", default-features = false, features = [
     "mmap",
     "lz4-compression",
 ] }

@@ -341,7 +341,7 @@ impl AgentWrapper {
             },
             Err(e) => {
                 // Timeout or error: obtain a non-zero exit status dynamically
-                let dummy_status = if e.contains("Timeout") {
+                if e.contains("Timeout") {
                     let mut dcmd = std::process::Command::new("false");
                     let dstatus = dcmd
                         .status()
@@ -353,8 +353,7 @@ impl AgentWrapper {
                         .status()
                         .unwrap_or_else(|_| std::process::ExitStatus::default());
                     (dstatus, String::new(), e.clone(), "Crashed", None)
-                };
-                dummy_status
+                }
             },
         };
 

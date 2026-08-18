@@ -123,7 +123,7 @@ impl Bm25Index {
 
     /// Removes a document from the BM25 index.
     pub fn delete_document(&mut self, id: &str) {
-        if let Some(_) = self.documents.remove(id) {
+        if self.documents.remove(id).is_some() {
             if let Some(tokens) = self.doc_tokens.remove(id) {
                 self.total_tokens -= tokens.len();
             }
@@ -243,6 +243,12 @@ impl Bm25Index {
 /// Thread-safe wrapper for `Bm25Index` that implements `LocalSearchEngine`.
 pub struct LocalBm25SearchEngine {
     index: RwLock<Bm25Index>,
+}
+
+impl Default for LocalBm25SearchEngine {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl LocalBm25SearchEngine {

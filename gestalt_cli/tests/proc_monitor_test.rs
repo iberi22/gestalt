@@ -4,8 +4,8 @@ mod proc_monitor;
 use gestalt_router::run::AgentSpec;
 use proc_monitor::{match_agent, ProcMonitor};
 use std::fs::{create_dir_all, remove_dir_all, write};
-use std::thread::sleep;
 use std::time::Duration;
+use tokio::time::sleep;
 
 #[test]
 fn test_match_agent_exact_and_generic() {
@@ -75,8 +75,8 @@ fn test_match_agent_with_specs() {
     assert_eq!(match_agent(&claude_cmdline, &specs), Some("claude"));
 }
 
-#[test]
-fn test_proc_monitor_lifecycle_events() {
+#[tokio::test]
+async fn test_proc_monitor_lifecycle_events() {
     // Create a unique temporary directory for simulated /proc filesystem
     let temp_dir =
         std::env::temp_dir().join(format!("simulated_proc_test_{}", uuid::Uuid::new_v4()));
@@ -109,7 +109,7 @@ fn test_proc_monitor_lifecycle_events() {
     assert!(events.is_empty());
 
     // Wait a brief moment to ensure some measurable duration elapsed
-    sleep(Duration::from_millis(50));
+    sleep(Duration::from_millis(50)).await;
 
     // 4. Simulate process exit (PID 1001 folder deleted)
     remove_dir_all(&pid_dir).unwrap();

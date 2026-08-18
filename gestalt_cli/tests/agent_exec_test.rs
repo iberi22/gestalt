@@ -22,6 +22,7 @@ fn get_env_mutex() -> &'static std::sync::Mutex<()> {
 }
 
 #[tokio::test]
+#[allow(clippy::await_holding_lock)]
 async fn test_agent_exec_trace_lifecycle() {
     // We synchronize environment modifications using our OnceLock Mutex
     let _env_guard = get_env_mutex().lock().unwrap();

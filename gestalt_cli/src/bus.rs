@@ -137,6 +137,7 @@ async fn healthz() -> Json<serde_json::Value> {
 ///
 /// Creates (or opens) the durable StateDb and an optional Xavier sink
 /// (enabled when `XAVIER_TOKEN` is set), then serves until cancelled.
+#[allow(dead_code)]
 pub async fn serve(
     host: &str,
     port: u16,

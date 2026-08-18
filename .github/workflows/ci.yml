@@ -62,6 +62,8 @@ jobs:
           cargo check \
             -p synapse-agentic \
             -p gestalt-merge \
+            -p gestalt_mcp \
+            -p gestalt-proto \
             --all-targets
 
   build-wasm:

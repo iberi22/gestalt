@@ -56,8 +56,8 @@ jobs:
           cargo check \
             -p synapse-agentic \
             -p gestalt-merge \
-            -p gestalt_infra_github \
-            -p gestalt_infra_embeddings \
+            -p gestalt_mcp \
+            -p gestalt-proto \
             --all-targets
 
   security-audit:

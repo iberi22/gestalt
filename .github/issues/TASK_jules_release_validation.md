@@ -17,10 +17,10 @@ Run full release validation after commit `5cf97f9` and close remaining gate evid
 - [ ] `cargo fmt --all --check`
 - [ ] `cargo clippy -p gestalt_core --all-targets -- -D warnings`
 - [ ] `cargo clippy -p gestalt_cli --all-targets -- -D warnings`
-- [ ] `cargo clippy -p gestalt_timeline --all-targets -- -D warnings`
+- [ ] `cargo clippy -p gestalt-state --all-targets -- -D warnings`
 - [ ] `cargo test -p gestalt_core --all-targets`
 - [ ] `cargo test -p gestalt_cli --all-targets`
-- [ ] `cargo test -p gestalt_timeline --lib`
+- [ ] `cargo test -p gestalt-state --lib`
 - [ ] `cargo test --workspace --all-targets` (or split by crate if environment constraints)
 - [ ] `python scripts/compare_benchmarks.py` with benchmark summary attached
 

@@ -150,7 +150,7 @@ impl ThinkingLoop {
             .iter()
             .filter(|e| {
                 let is_execution = e.event_type == "run_finished" || e.event_type == "run_started";
-                let is_newer = last_time.map_or(true, |t| e.created_at > t);
+                let is_newer = last_time.is_none_or(|t| e.created_at > t);
                 is_execution && is_newer
             })
             .count()

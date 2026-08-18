@@ -41,9 +41,12 @@ jobs:
           cargo test -p gestalt-router --all-targets
           cargo test -p gestalt-state --all-targets
           cargo test -p gestalt-ws --all-targets
+          cargo test -p gestalt-search --all-targets
           cargo check \
             -p synapse-agentic \
             -p gestalt-merge \
+            -p gestalt_mcp \
+            -p gestalt-proto \
             --all-targets
 
       - name: Cargo Build All Features

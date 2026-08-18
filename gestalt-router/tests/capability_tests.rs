@@ -32,10 +32,10 @@ fn test_agent_capability_matching_intersection() {
         capabilities: vec!["web".to_string(), "search".to_string()],
     };
 
-    let agents = vec![agent_a.clone(), agent_b.clone()];
+    let agents = [agent_a.clone(), agent_b.clone()];
 
     // Filter for capability "code"
-    let req_caps_1 = vec!["code".to_string()];
+    let req_caps_1 = ["code".to_string()];
     let matches_1: Vec<&AgentSpec> = agents
         .iter()
         .filter(|a| req_caps_1.iter().all(|rc| a.capabilities.contains(rc)))
@@ -45,7 +45,7 @@ fn test_agent_capability_matching_intersection() {
     assert_eq!(matches_1[0].id, "agent-a");
 
     // Filter for capabilities "code" AND "test"
-    let req_caps_2 = vec!["code".to_string(), "test".to_string()];
+    let req_caps_2 = ["code".to_string(), "test".to_string()];
     let matches_2: Vec<&AgentSpec> = agents
         .iter()
         .filter(|a| req_caps_2.iter().all(|rc| a.capabilities.contains(rc)))
@@ -55,7 +55,7 @@ fn test_agent_capability_matching_intersection() {
     assert_eq!(matches_2[0].id, "agent-a");
 
     // Filter for capability "web"
-    let req_caps_3 = vec!["web".to_string()];
+    let req_caps_3 = ["web".to_string()];
     let matches_3: Vec<&AgentSpec> = agents
         .iter()
         .filter(|a| req_caps_3.iter().all(|rc| a.capabilities.contains(rc)))
@@ -65,7 +65,7 @@ fn test_agent_capability_matching_intersection() {
     assert_eq!(matches_3[0].id, "agent-b");
 
     // Filter for capabilities "code" AND "web" (disjoint intersection)
-    let req_caps_4 = vec!["code".to_string(), "web".to_string()];
+    let req_caps_4 = ["code".to_string(), "web".to_string()];
     let matches_4: Vec<&AgentSpec> = agents
         .iter()
         .filter(|a| req_caps_4.iter().all(|rc| a.capabilities.contains(rc)))

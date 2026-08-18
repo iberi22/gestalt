@@ -42,7 +42,7 @@ async fn recv_text(
     ws: &mut (impl StreamExt<Item = Result<Message, tokio_tungstenite::tungstenite::Error>> + Unpin),
 ) -> String {
     match tokio::time::timeout(Duration::from_secs(5), ws.next()).await {
-        Ok(Some(Ok(Message::Text(text)))) => text,
+        Ok(Some(Ok(Message::Text(text)))) => text.to_string(),
         Ok(Some(Ok(other))) => panic!("Expected Text frame, got: {other:?}"),
         Ok(Some(Err(e))) => panic!("WebSocket error: {e}"),
         Ok(None) => panic!("WebSocket stream ended unexpectedly"),

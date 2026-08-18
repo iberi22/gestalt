@@ -1,4 +1,4 @@
-# Git-Core Agent Dispatcher v3.5.1
+# Git-Core Agent Dispatcher v3.8.0
 # Routes issues to best-fit executor agents
 
 name: "Agent Dispatcher"

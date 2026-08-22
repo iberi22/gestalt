@@ -13,7 +13,7 @@ uuid = { version = "1.15.1", features = ["v4", "serde"] }
 tracing = "0.1.44"
 async-trait = "0.1.89"
 libc = "0.2"
-dirs = "5.0.1"
+dirs = "6.0.0"
 gestalt_core = { path = "../gestalt_core" }
 gestalt-state = { path = "../gestalt-state" }
 gestalt-ws = { path = "../gestalt-ws" }

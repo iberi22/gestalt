@@ -14,7 +14,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 /// Registry completo de agentes
@@ -199,12 +199,88 @@ pub enum RoutingStrategy {
 }
 
 impl AgentRegistry {
-    /// Carga el registry desde un archivo TOML
+    /// Resuelve la ruta absoluta de `agent-registry.toml` según la siguiente prioridad:
+    /// 1. GESTALT_HOME environment variable (`$GESTALT_HOME/agent-registry.toml`) si está configurada y existe el archivo.
+    /// 2. Repo root descubierto desde CWD (subiendo directorios hasta encontrar `.git` o `Cargo.toml` raíz de workspace, comprobando `agent-registry.toml` o `apps/gestalt/agent-registry.toml`).
+    /// 3. Fallback `~/.gestalt/agent-registry.toml` si existe.
+    /// 4. Fallback a la ruta proporcionada o CWD como último recurso.
+    pub fn resolve_path(provided_path: impl AsRef<Path>) -> PathBuf {
+        let provided = provided_path.as_ref();
+
+        // Si la ruta proporcionada es absoluta y existe, usarla directamente.
+        if provided.is_absolute() && provided.exists() {
+            return provided.to_path_buf();
+        }
+
+        let file_name = provided
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("agent-registry.toml");
+
+        // Priority 1: GESTALT_HOME environment variable
+        if let Ok(gestalt_home) = std::env::var("GESTALT_HOME") {
+            if !gestalt_home.trim().is_empty() {
+                let path = PathBuf::from(gestalt_home).join(file_name);
+                if path.exists() {
+                    return path;
+                }
+            }
+        }
+
+        // Priority 2: Walk up directory tree from CWD to discover repo root (.git or Cargo.toml workspace root)
+        if let Ok(mut current_dir) = std::env::current_dir() {
+            loop {
+                let candidate1 = current_dir.join(file_name);
+                if candidate1.exists() {
+                    return candidate1;
+                }
+                let candidate2 = current_dir.join("apps").join("gestalt").join(file_name);
+                if candidate2.exists() {
+                    return candidate2;
+                }
+
+                // Check if we reached repo root markers or root of filesystem
+                let has_git = current_dir.join(".git").exists();
+                let has_cargo = current_dir.join("Cargo.toml").exists();
+
+                if !current_dir.pop() {
+                    break;
+                }
+
+                // If parent pop failed or we walked past repo root marker (and checked root candidates), stop loop
+                if (has_git || has_cargo) && !candidate1.exists() && !candidate2.exists() {
+                    // One extra check at workspace root before stopping if we just popped
+                    let root_candidate1 = current_dir.join(file_name);
+                    if root_candidate1.exists() {
+                        return root_candidate1;
+                    }
+                    let root_candidate2 = current_dir.join("apps").join("gestalt").join(file_name);
+                    if root_candidate2.exists() {
+                        return root_candidate2;
+                    }
+                }
+            }
+        }
+
+        // Priority 3: Fallback ~/.gestalt/agent-registry.toml
+        if let Some(home_dir) = dirs::home_dir() {
+            let user_fallback = home_dir.join(".gestalt").join(file_name);
+            if user_fallback.exists() {
+                return user_fallback;
+            }
+        }
+
+        // Priority 4: Fallback to original provided path / CWD
+        provided.to_path_buf()
+    }
+
+    /// Carga el registry desde un archivo TOML (resuelve automáticamente la ruta)
     pub fn load(path: impl AsRef<Path>) -> Result<Self, String> {
-        let content = fs::read_to_string(path.as_ref())
-            .map_err(|e| format!("No se pudo leer {}: {}", path.as_ref().display(), e))?;
+        let resolved_path = Self::resolve_path(path.as_ref());
+        let content = fs::read_to_string(&resolved_path)
+            .map_err(|e| format!("No se pudo leer {}: {}", resolved_path.display(), e))?;
         toml::from_str(&content)
-            .map_err(|e| format!("Error parseando {}: {}", path.as_ref().display(), e))
+            .map_err(|e| format!("Error parseando {}: {}", resolved_path.display(), e))
     }
 
     /// Carga el registry desde el contenido TOML directamente
@@ -440,6 +516,51 @@ pub struct AgentSummary {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_resolve_path_priority() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let repo_dir = temp_dir.path().join("my_repo");
+        let sub_dir = repo_dir.join("sub").join("nested");
+        fs::create_dir_all(&sub_dir).unwrap();
+
+        // Create .git in repo_dir
+        fs::create_dir_all(repo_dir.join(".git")).unwrap();
+
+        // Create agent-registry.toml in repo_dir
+        let registry_in_repo = repo_dir.join("agent-registry.toml");
+        fs::write(&registry_in_repo, "[[agents]]\nname=\"test\"\ntype=\"Cli\"").unwrap();
+
+        let orig_cwd = std::env::current_dir().unwrap();
+        std::env::set_current_dir(&sub_dir).unwrap();
+
+        let resolved = AgentRegistry::resolve_path("agent-registry.toml");
+        std::env::set_current_dir(&orig_cwd).unwrap();
+
+        assert_eq!(resolved.canonicalize().unwrap(), registry_in_repo.canonicalize().unwrap());
+    }
+
+    #[test]
+    fn test_resolve_path_gestalt_home_override() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let custom_dir = temp_dir.path().join("custom_home");
+        fs::create_dir_all(&custom_dir).unwrap();
+        let custom_registry = custom_dir.join("agent-registry.toml");
+        fs::write(&custom_registry, "[[agents]]\nname=\"env_agent\"\ntype=\"Cli\"").unwrap();
+
+        let prev_env = std::env::var("GESTALT_HOME").ok();
+        std::env::set_var("GESTALT_HOME", &custom_dir);
+
+        let resolved = AgentRegistry::resolve_path("agent-registry.toml");
+
+        if let Some(prev) = prev_env {
+            std::env::set_var("GESTALT_HOME", prev);
+        } else {
+            std::env::remove_var("GESTALT_HOME");
+        }
+
+        assert_eq!(resolved.canonicalize().unwrap(), custom_registry.canonicalize().unwrap());
+    }
 
     #[test]
     fn test_load_registry() {

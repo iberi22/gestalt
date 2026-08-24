@@ -1,192 +1,175 @@
-# Gestalt — Multi-Agent Codebase Router
+# Gestalt Timeline Orchestrator
 
-> **Universal AI Agent Orchestration Platform** — CLI-first, Rust-powered.
-> Orchestrate, isolate, and integrate multiple AI coding agents against a shared codebase.
+> High-performance Rust CLI meta-agent orchestrator and universal bus for multi-agent coordination.
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Rust](https://img.shields.io/badge/Rust-2021+-orange.svg)](https://www.rust-lang.org)
+[![CI](https://github.com/southwest-ai-labs/gestalt/actions/workflows/ci.yml/badge.svg)](https://github.com/southwest-ai-labs/gestalt/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Rust](https://img.shields.io/badge/Rust-2021%2B-orange.svg)](https://www.rust-lang.org)
 
----
+Gestalt solves the coordination overhead, file collision risk, and traceability loss inherent when running multiple autonomous AI coding agents against a shared codebase. By orchestrating external AI agents in isolated git worktrees, Gestalt executes tasks concurrently, tracks real-time execution events, and automatically integrates resultant code changes. It serves as a unified control plane that bridges autonomous developer tools into a single, cohesive workflow.
 
-## 🚀 Quick Start
+## Features
 
-### Build
+- **Multi-Agent Event Bus**: Real-time event ingress and state persistence (`state.db`) capturing `run_started`, `checkpoint`, and `run_finished` lifecycle telemetry across heterogeneous agents.
+- **Git Worktree & VFS Sandboxing**: Isolated execution environments for each agent utilizing local git worktrees and overlay file systems to prevent destructive file stomping.
+- **Parallel Task Waves & Integration**: Concurrent agent execution bounded by configurable concurrency limits, followed by automated branch overlap analysis and sequential `git merge-tree` integration.
+- **Deterministic Protocols & MCP Bridge**: Built-in Model Context Protocol (MCP) server endpoints alongside deterministic memory and thinking loops to power context retrieval and decision archiving.
+- **Agent Lifecycle Observer & Injector**: Background daemon that automatically discovers local AI agent CLIs, injects telemetry hooks, and tracks execution transcripts.
+
+## Quickstart
+
+### Installation
+
+Clone the repository and compile the workspace binaries using Cargo:
+
 ```bash
+git clone https://github.com/southwest-ai-labs/gestalt.git
+cd gestalt
 cargo build --release --workspace
 ```
 
-### Run Multi-Agent Orchestration
-Launch multiple agents in parallel, each in an isolated git worktree. After all agents finish, their changes are integrated via sequential merge-tree.
+The compiled `gestalt` binary will be available at `./target/release/gestalt`.
+
+### System Health Verification
+
+Verify environment readiness, database paths, and agent connectivity before running orchestrated workflows:
 
 ```bash
-cargo run -p gestalt_cli -- run \
-  --task "Audit Cargo.toml for outdated dependencies" \
-  --agents "cargo audit,cargo outdated" \
+gestalt doctor
+```
+
+### Multi-Agent Orchestration
+
+Orchestrate multiple agents concurrently on a specific engineering task:
+
+```bash
+gestalt run \
+  --task "Audit Cargo.toml dependencies and optimize build targets" \
+  --agents "cargo check" \
   --base-ref main \
   --max-parallel 4 \
   --timeout 300
 ```
 
-**How it works:**
+### Event Bus Service
 
-```
-┌─ RunSpec ─────────────────────────────────────┐
-│  task: "Audit dependencies"                   │
-│  agents: [cargo-audit, cargo-outdated]        │
-│  max_parallel: 4, timeout: 300s               │
-└──────────────┬────────────────────────────────┘
-               │
-               ▼
-┌─ Router::execute() ───────────────────────────┐
-│  1. Resolve base_ref → commit SHA             │
-│  2. Create git worktree per agent (isolated)  │
-│  3. Spawn agents in parallel (JoinSet)        │
-│  4. Run checkpoint per agent (git commit)     │
-│  5. Detect file overlaps between agents       │
-│  6. Integrate branches (sequential merge)     │
-│  7. Cleanup worktrees                         │
-│  8. Return RunReport                          │
-└───────────────────────────────────────────────┘
-```
-
-### REPL Mode
-```bash
-cargo run -p gestalt_cli -- repl
-```
-
-### Serve MCP
-```bash
-cargo run -p gestalt_cli -- serve --host 0.0.0.0 --port 3000
-```
-
----
-
-## 🧩 Workspace Crates
-
-| Crate | Type | Description |
-|-------|------|-------------|
-| `gestalt-router` | lib | Multi-agent orchestration: worktree isolation, parallel execution, branch integration, timeline events |
-| `gestalt_core` | lib | VFS overlay, LLM adapters (Gemini, MiniMax), auth, MCP client, tool registry |
-| `gestalt_cli` | bin | CLI with `run`, `repl`, `serve`, `exec`, `git` commands |
-| `gestalt_swarm` | bin | Parallel agent coordinator (legacy, not in default workspace) |
-| `synapse-agentic` | lib | Actor model (Hive), LLM providers, tool primitives |
-| `gestalt-wasm` | lib | WebAssembly interface with `native` and `wasm` feature gates |
-
-### gestalt-router modules
-
-| Module | Description |
-|--------|-------------|
-| `agent` | `SubprocessRunner` — spawns and manages CLI agent processes with POSIX process group kill and timeout |
-| `checkpoint` | Git-based checkpoint per agent with symlink escape detection and ignored file filtering |
-| `integrate` | Sequential branch integration using `git merge-tree` with binary conflict detection |
-| `overlap` | File overlap detection between agent branches using `git diff --name-only` |
-| `worktree` | `WorktreeManager` — lifecycle for git worktrees (create, list, remove, prune) |
-| `run` | Core types: `RunSpec`, `RunReport`, `AgentResult`, `RouterError` |
-| `run_state` | Run manifest and agent state transitions |
-| `timeline` | JSONL event log with `Event` enum for tracking run lifecycle events |
-| `router` | `Router::execute()` — main pipeline orchestrator |
-| `doctor` | Cleanup and recovery for orphaned runs |
-| `process` | `ProcessManager` with `CancellationToken` and timeout |
-
----
-
-## 🔑 Architecture: Gestalt Router
-
-The **Router** is the core orchestrator. It manages the full lifecycle of a multi-agent run:
-
-### Pipeline stages
-
-1. **Validate spec** — ensures agents are specified, base_ref resolves
-2. **Write manifest** — atomic JSON manifest with per-agent state
-3. **Create worktrees** — one `git worktree` per agent, each on its own branch from base_ref
-4. **Spawn agents** — parallel execution via `JoinSet` with `Semaphore`-bounded concurrency
-5. **Checkpoint** — each agent's changes committed with symlink-escape detection
-6. **Detect overlaps** — compare file lists between agents to find merge conflicts early
-7. **Integrate** — sequential merge of agent branches using `git merge-tree --write-tree`
-8. **Cleanup** — remove all worktrees
-9. **Report** — `RunReport` with merged branches and conflicts
-
-### Agent isolation model
-
-```
-agent-a worktree/      agent-b worktree/      agent-c worktree/
-    ├── src/               ├── src/               ├── src/
-    ├── Cargo.toml         ├── Cargo.toml         ├── Cargo.toml
-    └── ...                └── ...                └── ...
-        ▲                      ▲                      ▲
-        │                      │                      │
-        └──────────────┬───────┴───────────┬──────────┘
-                       │                   │
-              base_ref commit        base_ref commit
-                   (main)               (main)
-```
-
-Each agent gets their own branch + worktree. After all agents finish, branches are merged sequentially back to `base_ref`.
-
----
-
-## 📋 Commands
-
-### gestalt run
-```bash
-gestalt run [OPTIONS]
-
-Options:
-  --task <TEXT>              Task description for agents
-  --agents <LIST>            Comma-separated list of agent commands
-  --base-ref <REF>           Git base ref (default: "main")
-  --max-parallel <N>         Max parallel agents (default: 4)
-  --timeout <SECONDS>        Per-agent timeout (default: 300)
-```
-
-### gestalt repl
-Interactive REPL with git operations, tool execution, and task management.
-
-### gestalt serve
-Start MCP server for external tool integration.
-
----
-
-## 🧪 Development
+Launch the central event bus HTTP server to receive events from connected agents:
 
 ```bash
-# Check compilation
-cargo check --workspace
-
-# Run tests
-cargo test --workspace
-
-# Lint
-cargo clippy --workspace
-
-# Format
-cargo fmt --all
+gestalt bus serve --host 127.0.0.1 --port 8081
 ```
 
-### WebAssembly (WASM) Target
-
-To check and build the WebAssembly module, ensure the target is installed and run the check step:
+Push a manual telemetry event to the bus:
 
 ```bash
-# Add WASM target
-rustup target add wasm32-unknown-unknown
-
-# Check WASM target compilation
-cargo check --target wasm32-unknown-unknown -p gestalt-wasm
+gestalt bus push \
+  --agent hermes \
+  --event-type run_started \
+  --project gestalt \
+  --state Running \
+  "Started dependency analysis task"
 ```
 
-For more details, see the [gestalt-wasm Architecture & Build Instructions](gestalt-wasm/ARCHITECTURE.md).
+### Model Context Protocol (MCP) Server
 
-### Requirements
-- Rust 2021+ edition
-- Git 2.38+ (for `merge-tree --write-tree` support)
+Serve the MCP tool registry over HTTP or stdio:
 
----
+```bash
+gestalt mcp serve --host 127.0.0.1 --port 3000 --transport http
+```
 
-## 📄 License
+### Thin Agent Launcher with Context Tracing
 
-MIT — See [LICENSE-MIT](LICENSE-MIT)
+Execute a single external agent wrapped with automatic Xavier context lookup and bus event emission:
 
----
+```bash
+gestalt agent exec \
+  --agent "cargo check" \
+  --task "Verify workspace compilation" \
+  --project gestalt \
+  --timeout 120
+```
 
-*Built with ❤ at SouthWest AI Labs*
+## Usage Example
+
+The following annotated transcript demonstrates inspecting system health and executing a multi-agent orchestration run using the `gestalt` CLI:
+
+```text
+$ gestalt doctor
+🔍 Running Gestalt Doctor Environment Check...
+=============================================
+✅ Xavier reachability: Healthy (endpoint: http://127.0.0.1:8006)
+✅ StateDb open: Success (path: ~/.gestalt/state.db)
+✅ Agent registry parse: Success (9 agents loaded)
+✅ Bus serve reachability: Reachable (port 8081)
+=============================================
+Verdict: Healthy! All environment components are fully operational.
+
+$ gestalt run --task "Refactor error handling in router" --agents "cargo check" --base-ref main --max-parallel 2 --timeout 180
+🚀 Gestalt Router Run
+   Task: Refactor error handling in router
+   Agents: 1
+   Base ref: main
+   Max parallel: 2
+   Timeout: 180s
+
+⚙️  Executing run...
+
+📊 Run Report:
+   Run ID: 01JEX8Q4P8Z9M2K3N5R7V1W8X9
+   Success: true
+   Agents: 1
+   Merged branches: 1
+   Conflicts: 0
+   Events log: ~/.gestalt/events/01JEX8Q4P8Z9M2K3N5R7V1W8X9.jsonl
+
+   ✅ [agent-0] Success
+      Changed files: 2
+      Duration: 1420ms
+
+📦 AgentWrapper block-level editing:
+   ✅ 1 AgentWrapper(s) configured
+```
+
+## Architecture
+
+Gestalt is structured as a modular Rust workspace consisting of domain crates, orchestration engines, protocol adapters, and a unified CLI front-end:
+
+```
+                                  ┌────────────────────────┐
+                                  │      gestalt_cli       │
+                                  │   (CLI / Control)      │
+                                  └───────────┬────────────┘
+                                              │
+                    ┌─────────────────────────┼─────────────────────────┐
+                    ▼                         ▼                         ▼
+        ┌──────────────────────┐  ┌──────────────────────┐  ┌──────────────────────┐
+        │    gestalt-router    │  │     gestalt_core     │  │     gestalt_mcp      │
+        │ (Orchestration Engine│  │(Domain / VFS / LLM)  │  │ (MCP Tool Server)    │
+        └───────────┬──────────┘  └───────────┬──────────┘  └──────────────────────┘
+                    │                         │
+                    ▼                         ▼
+        ┌──────────────────────┐  ┌──────────────────────┐
+        │    gestalt-state     │  │    gestalt-search    │
+        │ (SQLite StateDb/Bus) │  │(BM25/Tantivy Engine) │
+        └──────────────────────┘  └──────────────────────┘
+```
+
+- **`gestalt_cli`**: Primary CLI application exposing subcommands for `run`, `bus`, `mcp`, `agent`, `doctor`, `chain`, and `thinking`.
+- **`gestalt-router`**: Multi-agent orchestration engine providing git worktree lifecycle management, process runners, branch integration (`merge-tree`), and event bus handlers.
+- **`gestalt_core`**: Core domain logic, virtual file system (VFS) implementations, belief graphs, and LLM resilience wrappers.
+- **`gestalt-state`**: SQLite-backed state persistence layer (`StateDb`) managing execution timelines, agent states, and event deduplication.
+- **`gestalt_mcp`**: Standalone Model Context Protocol (MCP) server providing standard AI tool interfaces.
+- **`gestalt-search`**: Fast local search engine providing BM25 lexical indexing over codebase assets.
+
+## Tech Stack
+
+Rust 2021 edition, Tokio async runtime, SQLite (`rusqlite`), Git `merge-tree`, Clap CLI parser, Tantivy search, Serde JSON, and Tracing.
+
+## Status
+
+**BETA / WIP**: Gestalt is actively developed under Wave 1 release candidate testing. Core CLI workflows, event bus ingress, worktree isolation, and integration routines are stable, while advanced swarm scheduling features remain under active refinement.
+
+## License
+
+Gestalt is distributed under the terms of the MIT License. See [LICENSE](LICENSE) for details.

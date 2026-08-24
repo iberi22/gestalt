@@ -1026,16 +1026,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
 
             // 3. Agent Registry Check
-            let registry_path = std::path::Path::new("agent-registry.toml");
-            match AgentRegistry::load(registry_path) {
+            let registry_path = AgentRegistry::resolve_path("agent-registry.toml");
+            match AgentRegistry::load(&registry_path) {
                 Ok(reg) => {
                     println!(
-                        "✅ Agent registry parse: Success ({} agents loaded)",
-                        reg.agents.len()
+                        "✅ Agent registry parse: Success ({} agents loaded from {})",
+                        reg.agents.len(),
+                        registry_path.display()
                     );
                 },
                 Err(e) => {
-                    println!("❌ Agent registry parse: Failed to load: {}", e);
+                    println!(
+                        "❌ Agent registry parse: Failed to load (path: {}): {}",
+                        registry_path.display(),
+                        e
+                    );
                     all_healthy = false;
                 },
             }

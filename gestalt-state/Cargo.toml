@@ -12,7 +12,7 @@ uuid = { version = "1.15", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 tracing = "0.1"
 thiserror = "1.0"
-rusqlite = { version = "0.33", features = ["bundled"] }
+rusqlite = { version = "0.40", features = ["bundled"] }
 dashmap = "6.1"
 anyhow = "1.0"
 async-trait = "0.1"

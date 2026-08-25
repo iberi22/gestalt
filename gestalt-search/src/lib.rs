@@ -193,7 +193,7 @@ impl LocalSearchEngine for TantivySearchEngine {
         let query = query_parser.parse_query(query)?;
 
         // Search with BM25 ranking
-        let top_docs = searcher.search(&query, &TopDocs::with_limit(limit))?;
+        let top_docs = searcher.search(&query, &TopDocs::with_limit(limit).order_by_score())?;
 
         let mut results = Vec::with_capacity(top_docs.len());
 

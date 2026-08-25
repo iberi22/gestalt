@@ -2,6 +2,7 @@ use crate::ports::outbound::repo_manager::{ScoredResult, VectorDb};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use surrealdb::engine::local::Db;
+use surrealdb::types::{RecordId, SurrealValue, ToSql};
 use surrealdb::Surreal;
 
 pub struct SurrealDbAdapter {
@@ -34,15 +35,17 @@ impl SurrealDbAdapter {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, SurrealValue)]
+#[surreal(crate = "surrealdb::types")]
 struct VectorRecord {
-    id: surrealdb::sql::Thing,
+    id: RecordId,
     metadata: serde_json::Value,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, SurrealValue)]
+#[surreal(crate = "surrealdb::types")]
 struct SearchResult {
-    id: surrealdb::sql::Thing,
+    id: RecordId,
     score: f32,
     metadata: serde_json::Value,
 }
@@ -100,7 +103,7 @@ impl VectorDb for SurrealDbAdapter {
             return Ok(fallback_results
                 .into_iter()
                 .map(|r| ScoredResult {
-                    id: r.id.to_string(),
+                    id: r.id.to_sql(),
                     score: 0.0,
                     metadata: r.metadata,
                 })
@@ -110,7 +113,7 @@ impl VectorDb for SurrealDbAdapter {
         Ok(results
             .into_iter()
             .map(|r| ScoredResult {
-                id: r.id.to_string(),
+                id: r.id.to_sql(),
                 score: r.score,
                 metadata: r.metadata,
             })

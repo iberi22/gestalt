@@ -537,7 +537,10 @@ mod tests {
         let resolved = AgentRegistry::resolve_path("agent-registry.toml");
         std::env::set_current_dir(&orig_cwd).unwrap();
 
-        assert_eq!(resolved.canonicalize().unwrap(), registry_in_repo.canonicalize().unwrap());
+        assert_eq!(
+            resolved.canonicalize().unwrap(),
+            registry_in_repo.canonicalize().unwrap()
+        );
     }
 
     #[test]
@@ -546,7 +549,11 @@ mod tests {
         let custom_dir = temp_dir.path().join("custom_home");
         fs::create_dir_all(&custom_dir).unwrap();
         let custom_registry = custom_dir.join("agent-registry.toml");
-        fs::write(&custom_registry, "[[agents]]\nname=\"env_agent\"\ntype=\"Cli\"").unwrap();
+        fs::write(
+            &custom_registry,
+            "[[agents]]\nname=\"env_agent\"\ntype=\"Cli\"",
+        )
+        .unwrap();
 
         let prev_env = std::env::var("GESTALT_HOME").ok();
         std::env::set_var("GESTALT_HOME", &custom_dir);
@@ -559,7 +566,10 @@ mod tests {
             std::env::remove_var("GESTALT_HOME");
         }
 
-        assert_eq!(resolved.canonicalize().unwrap(), custom_registry.canonicalize().unwrap());
+        assert_eq!(
+            resolved.canonicalize().unwrap(),
+            custom_registry.canonicalize().unwrap()
+        );
     }
 
     #[test]

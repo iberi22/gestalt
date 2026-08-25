@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
+use surrealdb::types::SurrealValue;
 use tempfile::tempdir;
 use thiserror::Error;
 use tracing::{info, warn};
@@ -264,7 +265,8 @@ pub trait VectorAdapter: Send + Sync {
     ) -> anyhow::Result<Vec<VectorRecord>>;
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, surrealdb::types::SurrealValue)]
+#[surreal(crate = "surrealdb::types")]
 pub struct VectorRecord {
     pub path: String,
     pub content: String,

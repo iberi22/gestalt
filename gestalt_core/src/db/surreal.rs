@@ -7,6 +7,7 @@ use serde::Serialize;
 use std::sync::Arc;
 use surrealdb::engine::any::Any;
 use surrealdb::opt::auth::Root;
+use surrealdb::types::SurrealValue;
 use surrealdb::Surreal;
 use tracing::info;
 
@@ -32,8 +33,8 @@ impl SurrealClient {
             || config.url.starts_with("https://")
         {
             db.signin(Root {
-                username: &config.user,
-                password: &config.pass,
+                username: config.user.clone(),
+                password: config.pass.clone(),
             })
             .await
             .context("Failed to authenticate with SurrealDB")?;
@@ -52,7 +53,7 @@ impl SurrealClient {
     }
 
     /// Create a record in a table.
-    pub async fn create<T: Serialize + DeserializeOwned>(
+    pub async fn create<T: Serialize + DeserializeOwned + SurrealValue>(
         &self,
         table: &str,
         data: &T,
@@ -63,13 +64,16 @@ impl SurrealClient {
     }
 
     /// Select all records from a table.
-    pub async fn select_all<T: DeserializeOwned>(&self, table: &str) -> Result<Vec<T>> {
+    pub async fn select_all<T: DeserializeOwned + SurrealValue>(
+        &self,
+        table: &str,
+    ) -> Result<Vec<T>> {
         let results: Vec<T> = self.db.select(table).await?;
         Ok(results)
     }
 
     /// Select a record by ID.
-    pub async fn select_by_id<T: DeserializeOwned>(
+    pub async fn select_by_id<T: DeserializeOwned + SurrealValue>(
         &self,
         table: &str,
         id: &str,
@@ -79,7 +83,7 @@ impl SurrealClient {
     }
 
     /// Update a record.
-    pub async fn update<T: Serialize + DeserializeOwned>(
+    pub async fn update<T: Serialize + DeserializeOwned + SurrealValue>(
         &self,
         table: &str,
         id: &str,
@@ -91,7 +95,7 @@ impl SurrealClient {
     }
 
     /// Upsert a record by ID.
-    pub async fn upsert<T: Serialize + DeserializeOwned>(
+    pub async fn upsert<T: Serialize + DeserializeOwned + SurrealValue>(
         &self,
         table: &str,
         id: &str,
@@ -112,13 +116,13 @@ impl SurrealClient {
     }
 
     /// Execute a raw query.
-    pub async fn query(&self, query: &str) -> Result<surrealdb::Response> {
+    pub async fn query(&self, query: &str) -> Result<surrealdb::IndexedResults> {
         let result = self.db.query(query).await?;
         Ok(result)
     }
 
     /// Execute a query with bindings.
-    pub async fn query_with<T: DeserializeOwned>(
+    pub async fn query_with<T: DeserializeOwned + SurrealValue>(
         &self,
         query: &str,
         bindings: impl Serialize,

@@ -956,7 +956,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             info!("Starting MCP Server...");
 
             let mut child = tokio::process::Command::new("./target/debug/gestalt_mcp")
-                .arg("--http")
+                .args(["--transport", "http"])
                 .spawn()?;
 
             let status = child.wait().await?;
@@ -1389,7 +1389,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
 
             // Initialize timeline events
-            let swarm_id = Ulid::new().to_string();
+            let swarm_id = Ulid::generate().to_string();
             let start_time = chrono::Utc::now();
 
             println!("📍 Swarm ID: {}", &swarm_id[..8]);
@@ -2490,7 +2490,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .next()
                     .unwrap_or("agent-exec")
                     .to_string();
-                let run_id = ulid::Ulid::new().to_string();
+                let run_id = ulid::Ulid::generate().to_string();
                 let vfs = std::sync::Arc::new(agent_wrapper::InMemoryVfs::new());
 
                 let wrapper =

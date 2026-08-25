@@ -60,4 +60,4 @@ synapse-agentic = { path = "../synapse-agentic" }
 crate-type = ["lib", "cdylib", "staticlib"]
 
 [dev-dependencies]
-criterion = "0.5.1"
+criterion = "0.8.2"

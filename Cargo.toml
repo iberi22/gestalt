@@ -11,6 +11,7 @@ members = [
     "gestalt-search",
     "gestalt-proto",
     "gestalt-wasm",
+    "gestalt-belief",
 ]
 resolver = "2"
 

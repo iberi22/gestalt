@@ -1,4 +1,5 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion};
+use std::hint::black_box;
 // Import what you need from gestalt_core
 
 fn criterion_benchmark(c: &mut Criterion) {

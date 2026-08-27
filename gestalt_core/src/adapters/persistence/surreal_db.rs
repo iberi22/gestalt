@@ -62,7 +62,7 @@ impl VectorDb for SurrealDbAdapter {
         let table = Self::sanitize_table_name(collection)?;
         self.db
             .query(
-                "UPSERT type::thing($table, $id) CONTENT { embedding: $embedding, metadata: $metadata }",
+                "UPSERT type::record($table, $id) CONTENT { embedding: $embedding, metadata: $metadata }",
             )
             .bind(("table", table))
             .bind(("id", id.to_string()))

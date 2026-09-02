@@ -567,9 +567,21 @@ enum BusAction {
 
     /// Replay unsynced bus events to Xavier (cursor sweep after outage)
     Replay {
+        /// Filter events by project name (e.g. gara-g, hosteler-ia, xavier, OrionHealth)
+        #[arg(long)]
+        project: Option<String>,
+
+        /// Filter events created within the last duration (e.g. 30s, 10m, 1h, 2d)
+        #[arg(long)]
+        since: Option<String>,
+
         /// Only replay events newer than this sequence number
         #[arg(long)]
         after_seq: Option<i64>,
+
+        /// Output matched events in JSON format
+        #[arg(long)]
+        json: bool,
 
         /// Dry run: report what would be re-sunk without writing
         #[arg(long)]
@@ -2107,8 +2119,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             },
 
-            BusAction::Replay { after_seq, dry_run } => {
+            BusAction::Replay {
+                project,
+                since,
+                after_seq,
+                json,
+                dry_run,
+            } => {
+                use gestalt_core::bus::replay::{parse_since_duration, ReplayFilter};
                 use gestalt_router::event_bus::BusEvent;
+
+                let mut filter = ReplayFilter::new();
+                if let Some(proj) = project {
+                    filter = filter.with_project(proj);
+                }
+                if let Some(after) = after_seq {
+                    filter = filter.with_after_seq(after);
+                }
+                if let Some(ref s) = since {
+                    let dur = parse_since_duration(s)
+                        .map_err(|e| format!("Invalid --since argument: {}", e))?;
+                    filter = filter.with_since(dur);
+                }
 
                 let db_path = home::home_dir()
                     .unwrap_or_else(|| PathBuf::from("."))
@@ -2128,15 +2160,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .recent_timeline(1000)
                     .map_err(|e| format!("Failed to read timeline: {}", e))?;
 
+                let now = chrono::Utc::now();
                 let mut replayed = 0usize;
                 let mut skipped = 0usize;
+
                 for ev in events.iter().rev() {
-                    if let Some(after) = after_seq {
-                        if ev.seq.unwrap_or(0) <= after {
-                            skipped += 1;
-                            continue;
-                        }
-                    }
                     let parsed: BusEvent = match serde_json::from_str(&ev.payload) {
                         Ok(b) => b,
                         Err(_) => {
@@ -2144,22 +2172,48 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             continue;
                         },
                     };
+
+                    if !filter.matches(ev.seq, parsed.project.as_deref(), Some(&parsed.ts), now) {
+                        skipped += 1;
+                        continue;
+                    }
+
+                    if json {
+                        let json_val = serde_json::json!({
+                            "seq": ev.seq,
+                            "agent": parsed.agent,
+                            "event_type": parsed.event_type,
+                            "run_id": parsed.run_id,
+                            "project": parsed.project,
+                            "state": parsed.state,
+                            "summary": parsed.summary,
+                            "metadata": parsed.metadata,
+                            "ts": parsed.ts,
+                        });
+                        println!("{}", serde_json::to_string(&json_val).unwrap_or_default());
+                        replayed += 1;
+                        continue;
+                    }
+
                     if dry_run {
                         println!(
-                            "  [dry-run] seq={} {} {}",
+                            "  [dry-run] seq={} [{}] {} {}",
                             ev.seq.unwrap_or(0),
+                            parsed.project.as_deref().unwrap_or("none"),
                             parsed.agent,
                             parsed.event_type
                         );
                         replayed += 1;
                         continue;
                     }
+
                     if let Some(ref sink) = sink {
                         match sink.sink(&parsed).await {
                             Ok(()) => {
                                 println!(
-                                    "  ✅ seq={} {} {} → Xavier",
+                                    "  ✅ seq={} [{}] {} {} → Xavier",
                                     ev.seq.unwrap_or(0),
+                                    parsed.project.as_deref().unwrap_or("none"),
                                     parsed.agent,
                                     parsed.event_type
                                 );
@@ -2170,16 +2224,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             },
                         }
                     } else {
-                        eprintln!("  ⚠️  XAVIER_TOKEN not set — cannot replay");
-                        std::process::exit(1);
+                        println!(
+                            "  ℹ️  seq={} [{}] {} {} ({})",
+                            ev.seq.unwrap_or(0),
+                            parsed.project.as_deref().unwrap_or("none"),
+                            parsed.agent,
+                            parsed.event_type,
+                            parsed.summary
+                        );
+                        replayed += 1;
                     }
                 }
-                println!(
-                    "Replay done: {} re-sunk, {} skipped (of {} total)",
-                    replayed,
-                    skipped,
-                    events.len()
-                );
+
+                if !json {
+                    println!(
+                        "Replay done: {} re-sunk/matched, {} skipped (of {} total)",
+                        replayed,
+                        skipped,
+                        events.len()
+                    );
+                }
             },
 
             BusAction::Prune {

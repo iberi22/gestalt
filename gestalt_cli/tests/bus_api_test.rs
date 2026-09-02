@@ -7,7 +7,7 @@
 pub mod bus;
 
 use axum::extract::{Query, State};
-use bus::{list_events_http, BusState, EventsQuery};
+use bus::{build_router, list_events_http, BusState, EventsQuery};
 use gestalt_router::event_bus::BusEvent;
 use gestalt_state::StateDb;
 use std::sync::Arc;
@@ -112,4 +112,67 @@ async fn it_should_query_events_with_filters_and_pagination() {
     let json = response.0;
     assert_eq!(json["count"].as_u64().unwrap(), 1);
     assert_eq!(json["events"][0]["seq"].as_i64().unwrap(), 3);
+}
+
+#[tokio::test]
+async fn it_should_support_endpoint_aliases() {
+    use axum::body::Body;
+    use axum::http::{Request, StatusCode};
+    use tower_service::Service;
+
+    let db = Arc::new(StateDb::open(":memory:").unwrap());
+    let state = BusState {
+        db: db.clone(),
+        sink: None,
+    };
+    let mut app = build_router(state);
+
+    // 1. Test GET /health, /bus/health, and /healthz
+    for health_path in &["/health", "/bus/health", "/healthz"] {
+        let req = Request::builder()
+            .method("GET")
+            .uri(*health_path)
+            .body(Body::empty())
+            .unwrap();
+        let response = app.call(req).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let body_bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+        assert_eq!(json["status"], "ok");
+        assert_eq!(json["service"], "gestalt-bus");
+    }
+
+    // 2. Test POST /bus/event alias
+    let event_payload = serde_json::json!({
+        "agent": "hermes",
+        "event_type": "run_started",
+        "summary": "hermes execution started",
+        "project": "gestalt-pipeline"
+    });
+    let req = Request::builder()
+        .method("POST")
+        .uri("/bus/event")
+        .header("content-type", "application/json")
+        .body(Body::from(event_payload.to_string()))
+        .unwrap();
+    let response = app.call(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    // 3. Test GET /bus/events alias
+    let req = Request::builder()
+        .method("GET")
+        .uri("/bus/events")
+        .body(Body::empty())
+        .unwrap();
+    let response = app.call(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body_bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+    assert_eq!(json["count"].as_u64().unwrap(), 1);
 }

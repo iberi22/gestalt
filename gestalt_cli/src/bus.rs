@@ -41,8 +41,12 @@ pub struct BusState {
 pub fn build_router(state: BusState) -> Router {
     Router::new()
         .route("/api/event", post(handle_event_http))
+        .route("/bus/event", post(handle_event_http))
         .route("/api/events", get(list_events_http))
+        .route("/bus/events", get(list_events_http))
         .route("/healthz", get(healthz))
+        .route("/health", get(healthz))
+        .route("/bus/health", get(healthz))
         .with_state(state)
 }
 
@@ -173,9 +177,9 @@ pub async fn serve(
 
     info!("Gestalt Event Bus listening on http://{addr}");
     println!("📡 Gestalt Event Bus on http://{addr}");
-    println!("   POST /api/event  — push a BusEvent");
-    println!("   GET  /api/events — tail recent events");
-    println!("   GET  /healthz    — liveness");
+    println!("   POST /api/event (/bus/event)   — push a BusEvent");
+    println!("   GET  /api/events (/bus/events) — tail recent events");
+    println!("   GET  /health (/bus/health, /healthz) — liveness");
 
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     axum::serve(listener, app).await?;

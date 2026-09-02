@@ -2,19 +2,16 @@ import React, { useState, useEffect } from "react";
 import {
   GestaltWasmBridge,
   RunSpec,
-  RunReport,
-  AgentSpec
+  RunReport
 } from "./wasm/gestaltWasm";
 import {
   Cpu,
-  GitBranch,
   Activity,
   Database,
   Compass,
   Sliders,
   Menu,
   X,
-  CheckCircle,
   AlertTriangle,
   Play,
   Layers,
@@ -95,7 +92,7 @@ const INITIAL_FEATURES = [
 export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("dashboard");
-  const [features, setFeatures] = useState(INITIAL_FEATURES);
+  const [features] = useState(INITIAL_FEATURES);
   const [wasmBridge] = useState(() => new GestaltWasmBridge());
   const [wasminited, setWasmInited] = useState(false);
 

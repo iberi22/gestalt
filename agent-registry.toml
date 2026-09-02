@@ -1,17 +1,22 @@
-
 [routing]
 strategy = "CapabilityMatch"
 
 [[agents]]
-name = "agent-a"
+name = "hermes"
 provider = "local"
-model = "model-a"
-type = "Cli"
-capabilities = ["code", "test"]
+model = "muse-spark-1.2-contributor"
+type = "Assistant"
+capabilities = ["code", "orchestration"]
 
 [[agents]]
-name = "agent-b"
+name = "jules"
 provider = "local"
-model = "model-b"
-type = "Cli"
-capabilities = ["web"]
+model = "gemini"
+type = "Api"
+capabilities = ["code", "test"]
+
+[providers.local]
+base_url = "http://localhost:8081"
+[providers.local.rate_limit]
+rpm = 60
+tpm = 100000

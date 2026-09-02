@@ -70,10 +70,10 @@ pub async fn serve(
 
     tracing::info!("Gestalt Event Bus + Task API listening on http://{addr}");
     println!("📡 Gestalt Event Bus + Task API on http://{addr}");
-    println!("   POST /api/event (/bus/event)   — push a BusEvent");
-    println!("   GET  /api/events (/bus/events) — tail recent events");
+    println!("   POST /api/event  — push a BusEvent");
+    println!("   GET  /api/events — tail recent events");
     println!("   POST /api/task   — declarative routing task API");
-    println!("   GET  /health (/bus/health, /healthz) — liveness");
+    println!("   GET  /healthz    — liveness");
 
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     axum::serve(listener, app).await?;

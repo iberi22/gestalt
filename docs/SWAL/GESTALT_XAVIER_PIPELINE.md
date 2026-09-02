@@ -1,27 +1,31 @@
-# Gestalt ↔ Xavier Pipeline Endpoint Specification
+# Gestalt Xavier Pipeline Architecture & Operations
 
-This document details the canonical HTTP endpoints and CLI interfaces for the Gestalt Event Bus and Xavier integration pipeline.
+## Overview
 
-## Bus Endpoints Table
+The Gestalt Xavier Pipeline coordinates multi-repo subagent execution, task delegation, and event tracing across Gestalt components and external subagents.
 
-| Route | HTTP Method | Description | Primary / Alias | Response Example |
-|---|---|---|---|---|
-| `/health` | `GET` | Health check probe | Alias (`/bus/health`, `/healthz`) | `{"status":"ok","service":"gestalt-bus"}` |
-| `/bus/health` | `GET` | Health check probe | Alias (`/health`, `/healthz`) | `{"status":"ok","service":"gestalt-bus"}` |
-| `/healthz` | `GET` | Liveness probe | Canonical supervisor probe | `{"status":"ok","service":"gestalt-bus"}` |
-| `/api/event` | `POST` | Ingest BusEvent from agents | Primary | `{"status":"ok","seq":49,"deduped":false,"ts":"..."}` |
-| `/bus/event` | `POST` | Ingest BusEvent from agents | Alias | `{"status":"ok","seq":50,"deduped":false,"ts":"..."}` |
-| `/api/events` | `GET` | Query & tail bus events | Primary | `{"count":47,"events":[...],"next_seq":47,"cursor":47}` |
-| `/bus/events` | `GET` | Query & tail bus events | Alias | `{"count":47,"events":[...],"next_seq":47,"cursor":47}` |
+## PNPM Execution & Worktree Policy
 
-## CLI Replay & Diagnostics Commands
+### Problem Context
 
-- **Event Bus Replay**: Replay unsynced bus events from StateDb to Xavier after an outage:
-  ```bash
-  gestalt bus replay --after-seq 0 --dry-run
-  gestalt bus replay --after-seq 49
-  ```
-- **Gestalt Doctor**: Environment sanity check including bus reachability:
-  ```bash
-  gestalt doctor
-  ```
+When subagents execute delegated tasks within Git worktrees (`/tmp/wt-wave10-*`), running workspace filter commands against package hierarchies with symlinked `node_modules` causes PNPM dependency checks (`runDepsStatusCheck`) to fail in non-interactive CI environments (`CI=true`).
+
+This produces the abort error:
+`ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY`
+which causes 120s stall timeouts repeatedly up to 1800s.
+
+### Pipeline Rules & Guidelines
+
+1. **Direct Tool Directives**:
+   - For test suites: execute `npx vitest run` directly inside the package root (`packages/app-pwa`).
+   - For frontend builds: execute `npx astro build` directly.
+   - For PNPM commands requiring root context: pass `--ignore-workspace-root-check`.
+
+2. **Delegate Prompt Construction**:
+   - Ensure `delegate_task` prompts never instruct agents to run `pnpm` filter invocations in worktrees.
+   - Verify local `.bin` dependencies prior to test invocation.
+
+3. **Event Bus Tracing**:
+   - Task executions inside worktrees should report status events back to `http://127.0.0.1:8081/api/event` using `periferia/project-admin/event.py` with `--worktree`.
+
+Refer to `docs/GESTALT_WORKTREE_PNPM.md` for full technical details and diagnostic procedures.

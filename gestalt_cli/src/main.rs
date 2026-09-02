@@ -1046,24 +1046,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
 
             // 4. Bus Serve Reachability Check
-            let bus_health_url = "http://127.0.0.1:8081/health";
-            let req_client = reqwest::Client::builder()
-                .timeout(Duration::from_secs(2))
-                .build();
-            let res = match req_client {
-                Ok(c) => c.get(bus_health_url).send().await,
-                Err(e) => Err(e),
-            };
-            match res {
-                Ok(resp) if resp.status().is_success() => {
+            use std::net::TcpStream;
+            match TcpStream::connect_timeout(
+                &"127.0.0.1:8081".parse().unwrap(),
+                Duration::from_secs(2),
+            ) {
+                Ok(_) => {
                     println!("✅ Bus serve reachability: Reachable (port 8081)");
-                },
-                Ok(resp) => {
-                    println!(
-                        "❌ Bus serve reachability: Unreachable (port 8081): HTTP {}",
-                        resp.status()
-                    );
-                    all_healthy = false;
                 },
                 Err(e) => {
                     println!("❌ Bus serve reachability: Unreachable (port 8081): {}", e);

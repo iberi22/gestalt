@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "crates/gestalt-bus",
     "gestalt_core",
     "gestalt_cli",
     "gestalt_mcp",

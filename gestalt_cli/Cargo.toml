@@ -21,6 +21,7 @@ chrono = { version = "0.4", features = ["serde"] }
 ulid = "3.0"
 home = "0.5"
 reqwest = { version = "0.12", features = ["blocking", "json"] }
+gestalt-bus = { path = "../crates/gestalt-bus" }
 gestalt-router = { path = "../gestalt-router" }
 gestalt-state = { path = "../gestalt-state" }
 gestalt-search = { path = "../gestalt-search" }

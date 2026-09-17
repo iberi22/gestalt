@@ -13,7 +13,7 @@ fn test_match_agent_exact_and_generic() {
 
     // hermes-agent python cmdline matches hermes
     let hermes_cmdline = vec![
-        "/home/belal/.local/share/uv/tools/hermes-agent/bin/python",
+        "/opt/tools/hermes-agent/bin/python",
         "agent.py",
     ];
     assert_eq!(match_agent(&hermes_cmdline, &specs), Some("hermes"));
@@ -57,7 +57,7 @@ fn test_match_agent_with_specs() {
     ];
 
     let hermes_cmdline = vec![
-        "/home/belal/.local/share/uv/tools/hermes-agent/bin/python",
+        "/opt/tools/hermes-agent/bin/python",
         "agent.py",
     ];
     // Should match the specific AgentSpec from specs list
@@ -94,7 +94,7 @@ async fn test_proc_monitor_lifecycle_events() {
     create_dir_all(&pid_dir).unwrap();
 
     // Command line: hermes-agent python path
-    let cmdline_content = b"/home/belal/.local/share/uv/tools/hermes-agent/bin/python\0agent.py\0";
+    let cmdline_content = b"/opt/tools/hermes-agent/bin/python\0agent.py\0";
     write(pid_dir.join("cmdline"), cmdline_content).unwrap();
 
     // Poll should detect start

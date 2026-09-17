@@ -1,12 +1,10 @@
 # Build artifacts
 target/
 gestalt_swarm/target/
-
 # Python
 __pycache__/
 *.pyc
 *.pyo
-
 # Xavier runtime
 .xavier/
 data/
@@ -14,21 +12,16 @@ metrics.db
 *.db-shm
 *.db-wal
 *.db
-
 # Environment
 .env
 .env.local
-
 # OS
 .DS_Store
 Thumbs.db
-
 # Patch files
 *.patch
-
 # Audit notes
 audit_notes.md
-
 # Existing checkout
 /existing
 
@@ -71,6 +64,7 @@ audit_notes.md
 .gestalt/
 .jules/
 .xavier/
+**/.xavier/
 .xavier-backups/
 .skill-registry.cache.json
 
@@ -78,11 +72,17 @@ audit_notes.md
 PLANNING.md
 TASK.md
 tasks.json
+HANDOFF.md
+HANDOFF*.md
 
 # Configuración local con rutas absolutas
 .mcp.json
 
 # Runtime y artefactos
+# Runtime databases (never publish)
+*.db
+*.sqlite
+*.sqlite3
 *.db-wal
 *.db-shm
 *.sqlite-wal

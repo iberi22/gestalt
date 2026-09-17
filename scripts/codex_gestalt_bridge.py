@@ -10,7 +10,7 @@ import os
 from typing import Dict, Any
 
 GESTALT_MCP_URL = "http://127.0.0.1:3000"
-CODEX_CLI = r"C:\Users\belal\AppData\Roaming\npm\codex.cmd"
+CODEX_CLI = os.environ.get("CODEX_CLI", "codex")
 
 
 class CodexGestaltBridge:

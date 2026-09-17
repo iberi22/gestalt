@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
 """Create 15 GitHub Issues for Gestalt Phase 2 — Merge Inteligente."""
+from pathlib import Path
 import subprocess, json, time
+
+REPO_ROOT = str(Path(__file__).resolve().parents[1])
+
 
 def gh_issue(title, body, labels="ola1,wave-1"):
     """Create a GitHub issue and return its number."""
     result = subprocess.run(
         ["gh", "issue", "create", "--title", title, "--body", body, "--label", labels],
-        capture_output=True, text=True, cwd="/home/belal/proyectosSWAL/gestalt"
+        capture_output=True, text=True, cwd=REPO_ROOT
     )
     if result.returncode != 0:
         print(f"ERROR: {result.stderr}")
@@ -82,7 +86,7 @@ issues = [
         "current": "File: `gestalt-merge/Cargo.toml` (8 lines) — only `thiserror = \"2\"` in deps. No merge engine deps.",
         "desired": "Add deps: `similar = \"2\"` (diff), `git2 = \"0.19\"` (git merges), `serde = {version=\"1\", features=[\"derive\"]}`, `uuid = {version=\"1\", features=[\"v4\"]}`, `serde_json = \"1\"`, `tracing = \"0.1\"`, `tempfile = \"3\"` (dev).",
         "research": "1. search: \"similar crate rust v2 changelog 2026\"\n2. search: \"git2 crate v0.19 rust bindings breaking changes\"\n3. search: \"gestalt-merge/Cargo.toml current content\"",
-        "context": "File: `gestalt-merge/Cargo.toml`. Project root is `/home/belal/proyectosSWAL/gestalt`. Workspace members include gestalt_core, gestalt_cli, synapse-agentic, gestalt-router, gestalt-merge.",
+        "context": "File: `gestalt-merge/Cargo.toml`. Project root is `<repo-root>`. Workspace members include gestalt_core, gestalt_cli, synapse-agentic, gestalt-router, gestalt-merge.",
         "problem": "The gestalt-merge crate has no dependencies for git operations, diff comparison, or serialization needed for 3-way merge engine.",
         "ac": "- [ ] `cargo check -p gestalt-merge` passes (0 errors)\n- [ ] `grep -c \"similar\" gestalt-merge/Cargo.toml` >= 1\n- [ ] `grep -c \"git2\" gestalt-merge/Cargo.toml` >= 1\n- [ ] `grep -c \"serde\" gestalt-merge/Cargo.toml` >= 3",
         "files": "| `gestalt-merge/Cargo.toml` | 8 lines, 1 dep | Add 6+ deps | LOW |",

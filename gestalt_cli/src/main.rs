@@ -232,6 +232,10 @@ struct Args {
     /// Verbose output
     #[arg(short, long, global = true)]
     verbose: bool,
+
+    /// Emit headless structured JSON events to stdout for Atlas telemetry
+    #[arg(long, global = true)]
+    telemetry_json: bool,
 }
 
 #[derive(Subcommand, Debug, Clone)]
@@ -899,6 +903,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let xavier_url = std::env::var("XAVIER_URL").unwrap_or_else(|_| "http://127.0.0.1:8006".into());
 
     info!("Gestalt CLI starting with URL: {}", url);
+
+    if args.telemetry_json {
+        let emitter = gestalt_bus::TelemetryEmitter::new();
+        let _ = emitter.emit(&gestalt_bus::AgentEvent::StepProgress {
+            step: 1,
+            total_steps: 1,
+            message: "Gestalt CLI execution started".to_string(),
+            timestamp: chrono::Utc::now(),
+        });
+    }
 
     // Create blocking HTTP client inside spawn_blocking to avoid nested tokio runtime
     let http_client = tokio::task::spawn_blocking(build_http_client)

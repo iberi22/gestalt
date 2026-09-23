@@ -2,8 +2,9 @@ use std::process::Command;
 
 #[test]
 fn test_help_command() {
-    let output = Command::new("cargo")
-        .args(["run", "-p", "gestalt_cli", "--", "--help"])
+    let bin_path = env!("CARGO_BIN_EXE_gestalt_cli");
+    let output = Command::new(bin_path)
+        .arg("--help")
         .output()
         .expect("Failed to execute command");
 
@@ -15,16 +16,9 @@ fn test_help_command() {
 
 #[test]
 fn test_status_offline() {
-    let output = Command::new("cargo")
-        .args([
-            "run",
-            "-p",
-            "gestalt_cli",
-            "--",
-            "status",
-            "--url",
-            "http://127.0.0.1:65535",
-        ])
+    let bin_path = env!("CARGO_BIN_EXE_gestalt_cli");
+    let output = Command::new(bin_path)
+        .args(["status", "--url", "http://127.0.0.1:65535"])
         .output()
         .expect("Failed to execute command");
 

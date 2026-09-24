@@ -8,6 +8,19 @@
 
 Gestalt solves the coordination overhead, file collision risk, and traceability loss inherent when running multiple autonomous AI coding agents against a shared codebase. By orchestrating external AI agents in isolated git worktrees, Gestalt executes tasks concurrently, tracks real-time execution events, and automatically integrates resultant code changes. It serves as a unified control plane that bridges autonomous developer tools into a single, cohesive workflow.
 
+> **2026-09-24 — Status: on-demand library, not a permanent service.**
+> `gestalt-bus.service` (the always-on `:8081` event bus daemon) was retired.
+> Owner-approved decision: Gestalt's orchestration primitives (worktree
+> sandboxing, parallel waves, MCP tools) are still fully supported, but they
+> are invoked on demand (`gestalt run`, `gestalt bus serve` for a one-off
+> session, etc.) instead of running as a always-on background process.
+> Agent telemetry that used to flow through the bus now goes straight to
+> Xavier via `~/.local/bin/swal-agent-telemetry` (metadata only — no prompt
+> text). See `docs/SWAL/ARQUITECTURA_EJECUCION_NODOS_MANTENEDORES_2026-09-24.md`
+> § "Ejecución: reemplazo del bus" for the full rationale and migration
+> inventory. The `bus serve` / `bus push` commands below still work exactly
+> as documented — they are just no longer kept running by systemd.
+
 ## Features
 
 - **Multi-Agent Event Bus**: Real-time event ingress and state persistence (`state.db`) capturing `run_started`, `checkpoint`, and `run_finished` lifecycle telemetry across heterogeneous agents.

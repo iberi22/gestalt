@@ -1,2 +1,4 @@
 [build]
-target-dir = "/build/rust-target/gestalt-swarm"  # RAM tmpfs
+# [RAM-OFF 2026-09-17] Compilacion en RAM DESACTIVADA: el tmpfs /build (noswap)
+# secuestraba RAM y tumbaba el sistema. Rollback: descomentar la linea de abajo.
+# target-dir = "/build/rust-target/gestalt-swarm"  # RAM tmpfs

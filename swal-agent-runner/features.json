@@ -74,14 +74,15 @@
       "name": "Event Bus & WebSocket Sync",
       "priority": "P2",
       "milestone": "ms-2",
-      "description": "Real-time synchronization and timeline streaming with Gestalt event bus (:8081) and WS server (:3001).",
+      "description": "Real-time synchronization and timeline streaming with Gestalt WS server (:3001) and Atlas ADE serve (:8080/ws).",
       "dependencies": ["feat-ar-001"],
-      "progress_pct": 0,
-      "status": "pending",
+      "progress_pct": 100,
+      "status": "stable",
       "steps": [
-        "Connect to WebSocket ws://127.0.0.1:3001",
-        "Listen to timeline events and update React application state",
-        "Replay missing events via GET /api/events"
+        "Connect to WebSocket ws://127.0.0.1:3001 for Gestalt timeline events",
+        "Connect to WebSocket ws://127.0.0.1:8080/ws for Atlas ADE live task DAG streaming",
+        "Implement graceful fallback and automatic reconnection",
+        "Update local task DAG and live event log when frames arrive"
       ],
       "tests": "npm run test"
     },

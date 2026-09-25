@@ -43,6 +43,42 @@ export interface RunReport {
   conflicts: ConflictInfo[];
 }
 
+export type AtlasTaskState = "PENDING" | "BLOCKED" | "READY" | "IN_PROGRESS" | "COMPLETED" | "FAILED";
+
+export interface AtlasTask {
+  id: string;
+  session_id: string;
+  title: string;
+  state: AtlasTaskState;
+  agent?: string | null;
+  attempts?: number;
+  created_at?: number;
+  updated_at?: number;
+  deps?: string[];
+}
+
+export interface AtlasEvent {
+  id: number;
+  kind: string;
+  payload: string;
+  idempotency_key?: string | null;
+  recorded_at?: number;
+}
+
+export interface AtlasWsFrame {
+  sodp_protocol?: string;
+  schema_version?: number;
+  tasks?: AtlasTask[];
+  events?: AtlasEvent[];
+}
+
+export interface GestaltWsEvent {
+  version?: number;
+  type?: string;
+  data?: any;
+  timestamp?: number;
+}
+
 /**
  * Gestalt WASM Integration Bridge.
  * Standardizes browser-side execution and provides mock fallbacks for testing.

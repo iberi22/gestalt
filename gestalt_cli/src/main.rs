@@ -823,6 +823,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_adapter_registry_and_execution() {
+        // Serialize with env-mutating observe tests (they clobber PATH;
+        // without this lock, `echo` may not resolve mid-run).
+        let _env_serial = crate::observe::ENV_MUTEX.lock().unwrap();
         let registry = AdapterRegistry::new();
 
         let adapter = Arc::new(ExternalCliAdapter::new(
@@ -852,6 +855,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_adapter_timeout() {
+        // Same serialization as above: `sleep` must resolve via real PATH.
+        let _env_serial = crate::observe::ENV_MUTEX.lock().unwrap();
         // Sleep command will run for 10 seconds, but timeout is 1 second
         let adapter = ExternalCliAdapter::new(
             "sleep-adapter".to_string(),
@@ -897,6 +902,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let default_db = "tasks.json";
 
     let xavier_url = std::env::var("XAVIER_URL").unwrap_or_else(|_| "http://127.0.0.1:8006".into());
+    let xavier_token = std::env::var("XAVIER_TOKEN").unwrap_or_default();
 
     info!("Gestalt CLI starting with URL: {}", url);
 
@@ -1747,6 +1753,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let client = reqwest::Client::new();
                     let resp = client
                         .post(format!("{}/v1/memories/search", xavier_url))
+                        .header("X-Xavier-Token", &xavier_token)
                         .json(&serde_json::json!({"query": query, "limit": limit}))
                         .send()
                         .await?;
@@ -1770,6 +1777,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let client = reqwest::Client::new();
                     let resp = client
                         .post(format!("{}/v1/memories", xavier_url))
+                        .header("X-Xavier-Token", &xavier_token)
                         .json(&serde_json::json!({"content": content, "path": path, "kind": kind}))
                         .send()
                         .await?;
@@ -1777,15 +1785,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     println!("Archived: {}", body["id"].as_str().unwrap_or("ok"));
                 },
                 XavierAction::Stats => {
+                    // NOTE: Xavier v1 has no count endpoint; a search with
+                    // limit=0 always returns 0 rows (misleading). Report
+                    // reachability + server mode instead (read-only /health).
                     let client = reqwest::Client::new();
-                    let resp = client
-                        .post(format!("{}/v1/memories/search", xavier_url))
-                        .json(&serde_json::json!({"query": "", "limit": 0}))
-                        .send()
-                        .await?;
+                    let resp = client.get(format!("{}/health", xavier_url)).send().await?;
                     let body: serde_json::Value = resp.json().await?;
-                    let count = body["results"].as_array().map(|a| a.len()).unwrap_or(0);
-                    println!("Xavier: {} memories found", count);
+                    println!(
+                        "Xavier: status={} mode={} endpoint={}",
+                        body["status"].as_str().unwrap_or("?"),
+                        body["mode"].as_str().unwrap_or("?"),
+                        xavier_url
+                    );
                 },
                 XavierAction::Cycle {
                     task,
@@ -1840,6 +1851,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let client = reqwest::Client::new();
                     let resp = client
                         .post(format!("{}/v1/memories/search", xavier_url))
+                        .header("X-Xavier-Token", &xavier_token)
                         .json(&serde_json::json!({"query": &task, "limit": 3}))
                         .send()
                         .await?;
@@ -2040,6 +2052,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                     let archive_result = client
                         .post(format!("{}/v1/memories", xavier_url))
+                        .header("X-Xavier-Token", &xavier_token)
                         .json(&archive_body)
                         .send()
                         .await;

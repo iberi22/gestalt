@@ -1,6 +1,6 @@
 use oauth2::{
-    basic::BasicClient, reqwest::async_http_client, AuthUrl, AuthorizationCode, ClientId,
-    ClientSecret, CsrfToken, PkceCodeChallenge, Scope, TokenResponse, TokenUrl,
+    basic::BasicClient, AuthUrl, AuthorizationCode, ClientId, ClientSecret, CsrfToken,
+    EndpointNotSet, EndpointSet, PkceCodeChallenge, Scope, TokenResponse, TokenUrl,
 };
 use std::io::{BufRead, BufReader, Write};
 use std::net::TcpListener;
@@ -9,7 +9,7 @@ use url::Url;
 use crate::adapters::auth::google_oauth::{save_credentials, GeminiCliToken};
 
 pub struct GoogleAuthFlow {
-    client: BasicClient,
+    client: BasicClient<EndpointSet, EndpointNotSet, EndpointNotSet, EndpointNotSet, EndpointSet>,
 }
 
 impl Default for GoogleAuthFlow {
@@ -26,12 +26,14 @@ impl GoogleAuthFlow {
         let client_secret = std::env::var("GOOGLE_OAUTH_CLIENT_SECRET")
             .unwrap_or_else(|_| "YOUR_OAUTH_SECRET".to_string());
 
-        let client = BasicClient::new(
-            ClientId::new(client_id),
-            Some(ClientSecret::new(client_secret)),
-            AuthUrl::new("https://accounts.google.com/o/oauth2/v2/auth".to_string()).unwrap(),
-            Some(TokenUrl::new("https://oauth2.googleapis.com/token".to_string()).unwrap()),
-        );
+        let client = BasicClient::new(ClientId::new(client_id))
+            .set_client_secret(ClientSecret::new(client_secret))
+            .set_auth_uri(
+                AuthUrl::new("https://accounts.google.com/o/oauth2/v2/auth".to_string()).unwrap(),
+            )
+            .set_token_uri(
+                TokenUrl::new("https://oauth2.googleapis.com/token".to_string()).unwrap(),
+            );
 
         Self { client }
     }
@@ -80,11 +82,14 @@ impl GoogleAuthFlow {
             );
             stream.write_all(response.as_bytes())?;
 
+            let http_client = reqwest::ClientBuilder::new()
+                .redirect(reqwest::redirect::Policy::none())
+                .build()?;
             let token_result = self
                 .client
                 .exchange_code(AuthorizationCode::new(auth_code))
                 .set_pkce_verifier(pkce_verifier)
-                .request_async(async_http_client)
+                .request_async(&http_client)
                 .await?;
 
             let token = GeminiCliToken {

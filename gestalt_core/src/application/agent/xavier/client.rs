@@ -22,7 +22,13 @@ pub struct SearchRequest {
 
 #[derive(Debug, Deserialize)]
 pub struct SearchResponse {
+    /// Xavier v1 returns `{"status":"ok","results":[...]}` with NO `count`
+    /// — default keeps decode working against the real server.
+    #[serde(default)]
     pub count: usize,
+    #[serde(default)]
+    pub status: String,
+    #[serde(default)]
     pub results: Vec<MemoryResult>,
 }
 
@@ -60,6 +66,8 @@ impl MemoryResult {
 
 #[derive(Debug, Serialize)]
 pub struct AddMemoryRequest {
+    /// LIVE Xavier route (`add_handler`) requires `content`.
+    /// (v1_api's `text` shape belongs to a shadowed route.)
     pub content: String,
     pub path: String,
     pub kind: String,
@@ -68,15 +76,21 @@ pub struct AddMemoryRequest {
 
 #[derive(Debug, Deserialize)]
 pub struct AddMemoryResponse {
+    #[serde(default)]
     pub id: String,
+    #[serde(default)]
     pub status: String,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct StatsResponse {
+    #[serde(default)]
     pub total_pages: usize,
+    #[serde(default)]
     pub total_memories: usize,
+    #[serde(default)]
     pub storage_bytes: usize,
+    #[serde(default)]
     pub version: String,
 }
 
@@ -145,6 +159,14 @@ impl XavierClient {
         kind: &str,
         metadata: serde_json::Value,
     ) -> anyhow::Result<AddMemoryResponse> {
+        // LIVE route (`add_handler`) drops top-level `kind`: nest it into
+        // metadata so the record stays typed (search-side reads metadata.kind).
+        let mut metadata = metadata;
+        if let Some(obj) = metadata.as_object_mut() {
+            if obj.get("kind").is_none() {
+                obj.insert("kind".to_string(), serde_json::json!(kind));
+            }
+        }
         let req = AddMemoryRequest {
             content: content.into(),
             path: path.into(),

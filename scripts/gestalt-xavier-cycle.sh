@@ -8,7 +8,10 @@ set -euo pipefail
 # ═══ Config ═══════════════════════════════════════════════
 XAVIER_URL="${XAVIER_URL:-http://127.0.0.1:8006}"
 XAVIER_TOKEN="${XAVIER_TOKEN:-}"
-GESTALT_DIR="$HOME/proyectosSWAL/gestalt"
+if [ -z "$XAVIER_TOKEN" ] && [ -f "$HOME/proyectosSWAL/apps/xavier/.env" ]; then
+    XAVIER_TOKEN=$(grep -E '^XAVIER_TOKEN=' "$HOME/proyectosSWAL/apps/xavier/.env" 2>/dev/null | cut -d'=' -f2- | tr -d '"' | tr -d "'" || true)
+fi
+GESTALT_DIR="$HOME/proyectosSWAL/apps/gestalt"
 TIMESTAMP="$(date +%s)"
 
 QUERY=""
@@ -16,6 +19,14 @@ AGENT_CMD="${AGENT_CMD:-}"
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
+        --serve-bus)
+            BIN="$GESTALT_DIR/target/debug/gestalt_cli"
+            [ -x "$GESTALT_DIR/target/release/gestalt_cli" ] && BIN="$GESTALT_DIR/target/release/gestalt_cli"
+            echo "🚀 Iniciando Gestalt Universal Event Bus en http://127.0.0.1:8081..."
+            mkdir -p "$HOME/.gestalt"
+            export XAVIER_TOKEN
+            exec "$BIN" bus serve --host 127.0.0.1 --port 8081 --db "$HOME/.gestalt/state.db"
+            ;;
         --agent|-a)
             AGENT_CMD="$2"
             shift 2
@@ -23,8 +34,6 @@ while [[ $# -gt 0 ]]; do
         *)
             if [ -z "$QUERY" ]; then
                 QUERY="$1"
-            elif [ -z "$AGENT_CMD" ]; then
-                AGENT_CMD="$1"
             fi
             shift
             ;;
@@ -32,8 +41,9 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [ -z "$QUERY" ]; then
-    echo "❌ Uso: $0 <query o tarea> [--agent \"comando\"]"
-    echo "   Ej:  $0 \"indexar documentos de arquitectura en Xavier\" --agent \"cargo test\""
+    echo "❌ Uso: $0 <query o tarea> [--agent \"comando a ejecutar\"]"
+    echo "   O bien: $0 --serve-bus (inicia el daemon del bus HTTP :8081)"
+    echo "   Ej:  $0 \"indexar arquitectura\" --agent \"cargo test --test router_tests\""
     exit 1
 fi
 
@@ -48,7 +58,7 @@ XAVIER_EXEC_BIN=""
 
 is_xavier_available() {
     if command -v xavier >/dev/null 2>&1; then
-        if curl -s --connect-timeout 1 --max-time 2 "$XAVIER_URL/health" >/dev/null 2>&1; then
+        if curl -s --connect-timeout 2 --max-time 5 "$XAVIER_URL/health" >/dev/null 2>&1 || curl -s --connect-timeout 1 --max-time 3 "$XAVIER_URL/memory/stats" -H "X-Xavier-Token: $XAVIER_TOKEN" >/dev/null 2>&1; then
             XAVIER_EXEC_BIN="xavier exec"
             return 0
         fi
@@ -137,7 +147,19 @@ for i, r in enumerate(results[:3], 1):
     memory = r.get('memory', '')
     title = memory.split(chr(10))[0][:80] if memory else '?'
     print(f'        {i}. [{kind}] {title}')
-" 2>/dev/null || echo "     ⚠️ Sin resultados"
+" 2>/dev/null || echo "     ⚠️ HTTP sin resultados"
+
+# Fallback offline: indice local del CLI cuando HTTP falla/cuelga
+XAVIER_OFFLINE_CTX=""
+if ! echo "$PRE_RESULT" | python3 -c "import sys,json; d=json.load(sys.stdin); exit(0 if d.get('results') else 1)" 2>/dev/null; then
+    echo "     [xavier-proxy] Probando indice offline (xavier search)..."
+    XAVIER_OFFLINE_CTX=$(xavier search "$QUERY" 5 2>/dev/null | grep -vE 'INFO|Searching|OFFLINE|CONNECTION_REFUSED|Falling back|loaded_memories|schema version' | head -n 25 || true)
+    if [ -n "$XAVIER_OFFLINE_CTX" ]; then
+        echo "     [xavier-proxy] Contexto offline obtenido (indice local)."
+    else
+        echo "     [xavier-proxy] Sin contexto offline tampoco."
+    fi
+fi
 
 # ═══ Fase 2: Construir contexto aumentado ═══════════════
 echo ""
@@ -145,6 +167,8 @@ echo "📝 [2/4] Construyendo contexto para subagente..."
 
 if echo "$PRE_RESULT" | python3 -c "import sys,json; d=json.load(sys.stdin); exit(0 if d.get('results') else 1)" 2>/dev/null; then
     CONTEXT_SOURCE="Xavier (memoria persistente)"
+elif [ -n "$XAVIER_OFFLINE_CTX" ]; then
+    CONTEXT_SOURCE="Xavier offline (indice local)"
 else
     CONTEXT_SOURCE="consulta directa"
 fi
@@ -207,7 +231,14 @@ if d.get('status') == 'error':
 else:
     mid = d.get('id', 'ok')
     print(f'     ✅ Archivado como: {mid}')
-" 2>/dev/null || echo "     ⚠️ No se pudo archivar"
+" 2>/dev/null || {
+    echo "     [xavier-proxy] HTTP POST fallo — fallback CLI offline..."
+    if xavier add "Tarea ejecutada: $QUERY | Contexto: $CONTEXT_SOURCE | Telemetry: $XAVIER_PROXY_TELEMETRY" "gestalt-cycle-$TIMESTAMP" -k episodic 2>/dev/null | grep -qE '✅|successfully'; then
+        echo "     ✅ Archivado offline (indice local)"
+    else
+        echo "     ⚠️ No se pudo archivar"
+    fi
+}
 
 echo ""
 echo "╔══════════════════════════════════════════════════╗"

@@ -58,8 +58,12 @@ def push(agent, event_type, summary, project, state, metadata=None, run_id=None,
             method="POST"
         )
 
-        # Fire-and-forget timeout of 3 seconds
-        with urllib.request.urlopen(req, timeout=3) as response:
+        # Fire-and-forget timeout of 3 seconds.
+        # The bus is loopback-only: when an egress proxy is exported into the
+        # process env (HTTP(S)_PROXY), urllib would route 127.0.0.1 through it
+        # and get a 502. Use an opener with proxies disabled for this call.
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        with opener.open(req, timeout=3) as response:
             _ = response.read()
     except Exception:
         # Fire-and-forget: fail silently, never raise

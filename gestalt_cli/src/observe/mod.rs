@@ -98,12 +98,12 @@ pub async fn run_daemon_loop() -> Result<(), String> {
     }
 }
 
+pub(crate) static ENV_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::fs;
-
-    static ENV_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     struct EnvGuard {
         _lock: std::sync::MutexGuard<'static, ()>,
@@ -187,13 +187,9 @@ mod tests {
 
         std::env::set_var("HOME", home_path);
 
-        // Prepend our bin_dir to original PATH
-        let old_path = std::env::var_os("PATH").unwrap_or_default();
-        let mut path_dirs = vec![bin_dir];
-        for p in std::env::split_paths(&old_path) {
-            path_dirs.push(p);
-        }
-        let new_path = std::env::join_paths(path_dirs).unwrap();
+        // Use ONLY our mock bin_dir (hermetic: prepending leaks host
+        // binaries into discovery — e.g. 15 agent CLIs on dev machines)
+        let new_path = std::env::join_paths(vec![bin_dir]).unwrap();
         std::env::set_var("PATH", new_path);
 
         let results = discover_agents().unwrap();

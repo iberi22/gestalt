@@ -4,7 +4,7 @@
 //! instead of implementing our own OAuth flow.
 
 use oauth2::{
-    basic::BasicClient, reqwest::async_http_client, ClientId, ClientSecret, RefreshToken,
+    basic::BasicClient, AuthUrl, ClientId, ClientSecret, EndpointNotSet, EndpointSet, RefreshToken,
     TokenResponse, TokenUrl,
 };
 use serde::{Deserialize, Serialize};
@@ -89,22 +89,26 @@ pub async fn clear_credentials() -> anyhow::Result<()> {
 }
 
 /// Build the OAuth2 client for token refresh.
-fn build_oauth_client() -> BasicClient {
-    BasicClient::new(
-        ClientId::new(get_oauth_client_id()),
-        Some(ClientSecret::new(get_oauth_client_secret())),
-        oauth2::AuthUrl::new("https://accounts.google.com/o/oauth2/v2/auth".to_string()).unwrap(),
-        Some(TokenUrl::new("https://oauth2.googleapis.com/token".to_string()).unwrap()),
-    )
+fn build_oauth_client(
+) -> BasicClient<EndpointSet, EndpointNotSet, EndpointNotSet, EndpointNotSet, EndpointSet> {
+    BasicClient::new(ClientId::new(get_oauth_client_id()))
+        .set_client_secret(ClientSecret::new(get_oauth_client_secret()))
+        .set_auth_uri(
+            AuthUrl::new("https://accounts.google.com/o/oauth2/v2/auth".to_string()).unwrap(),
+        )
+        .set_token_uri(TokenUrl::new("https://oauth2.googleapis.com/token".to_string()).unwrap())
 }
 
 /// Refresh the access token using the refresh token.
 pub async fn refresh_access_token(refresh_token: &str) -> anyhow::Result<GeminiCliToken> {
     let client = build_oauth_client();
 
+    let http_client = reqwest::ClientBuilder::new()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()?;
     let token_result = client
         .exchange_refresh_token(&RefreshToken::new(refresh_token.to_string()))
-        .request_async(async_http_client)
+        .request_async(&http_client)
         .await?;
 
     let new_token = GeminiCliToken {

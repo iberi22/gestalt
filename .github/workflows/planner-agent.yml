@@ -17,6 +17,8 @@ on:
 jobs:
   plan:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    continue-on-error: false
     permissions:
       contents: read
       issues: write
@@ -59,3 +61,11 @@ jobs:
         run: |
           echo "Current open issues in repo:"
           gh issue list --state open --limit 10
+
+      - name: Planner Agent Success
+        if: success()
+        run: echo "::notice::Planner Agent execution successful"
+
+      - name: Planner Agent Failure
+        if: failure()
+        run: echo "::error::Planner Agent execution failed"

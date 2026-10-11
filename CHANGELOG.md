@@ -32,6 +32,7 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 - Development workflow: GitFlow with `develop` integration branch, `main` stable
 
 ### Fixed
+- **planner-agent**: Fixed planner workflow reliability by adding `timeout-minutes: 15` and strict failure semantics in `.github/workflows/planner-agent.yml`
 - **checkpoint.rs**: Corrupted merge (two versions concatenated) — complete rewrite
 - **integrate.rs**: Corrupted merge (two `integrate()` functions nested) — rewrite as `integrate_branches()`
 - **timeline.rs**: `Event` enum fields out of sync with router.rs — updated to match

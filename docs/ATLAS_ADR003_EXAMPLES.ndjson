@@ -1,0 +1,6 @@
+{"event":"StepProgress","schema_version":"1.0","ts":"2026-10-11T15:04:05Z","run_id":"run_01j7h2x9kpq3b4","step_name":"planning","status":"started"}
+{"event":"StepProgress","schema_version":"1.0","ts":"2026-10-11T15:04:08.500Z","run_id":"run_01j7h2x9kpq3b4","step_name":"planning","status":"completed","duration_ms":3500}
+{"event":"ToolInvoked","schema_version":"1.0","ts":"2026-10-11T15:04:09Z","run_id":"run_01j7h2x9kpq3b4","tool_name":"grep","args":{"pattern":"telemetry","path":"gestalt_cli/src/main.rs"}}
+{"event":"ToolInvoked","schema_version":"1.0","ts":"2026-10-11T15:04:12Z","run_id":"run_01j7h2x9kpq3b4","tool_name":"bash","args":{"script":"echo 'Hello World'"},"exit_code":0}
+{"event":"ErrorCaptured","schema_version":"1.0","ts":"2026-10-11T15:05:00Z","run_id":"run_01j7h2x9kpq3b4","error_code":"E_TOOL_TIMEOUT","message":"Tool process exceeded 60s timeout","fatal":false}
+{"event":"ErrorCaptured","schema_version":"1.0","ts":"2026-10-11T15:05:01Z","run_id":"run_01j7h2x9kpq3b4","error_code":"E_OOM","message":"Agent process terminated by OOM killer","fatal":true,"stack_trace":"at runtime.alloc (src/alloc.rs:56)"}

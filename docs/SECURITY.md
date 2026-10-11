@@ -32,3 +32,15 @@ This project requires Google OAuth credentials for Gemini API access. **Never co
 All sensitive configuration should be stored in environment variables or `.env` files, never hardcoded in source files.
 
 See `gestalt_timeline/.env.example` for all available configuration options.
+
+## CI / CD Security & Permissions
+
+The Continuous Integration environment enforces least privilege. For example, the Planner Agent workflow runs with the following explicit permissions:
+```yaml
+    permissions:
+      contents: read
+      issues: write
+```
+
+All CI workflows (including the planner) must be green before any pull request can be merged into the `main` branch.
+Security reports or CI failures should be reported through the standard project issue tracker.

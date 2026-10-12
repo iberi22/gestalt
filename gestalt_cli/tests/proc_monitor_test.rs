@@ -12,10 +12,7 @@ fn test_match_agent_exact_and_generic() {
     let specs: Vec<AgentSpec> = vec![];
 
     // hermes-agent python cmdline matches hermes
-    let hermes_cmdline = vec![
-        "/opt/tools/hermes-agent/bin/python",
-        "agent.py",
-    ];
+    let hermes_cmdline = vec!["/opt/tools/hermes-agent/bin/python", "agent.py"];
     assert_eq!(match_agent(&hermes_cmdline, &specs), Some("hermes"));
 
     // node with opencode in argv matches opencode
@@ -56,10 +53,7 @@ fn test_match_agent_with_specs() {
         },
     ];
 
-    let hermes_cmdline = vec![
-        "/opt/tools/hermes-agent/bin/python",
-        "agent.py",
-    ];
+    let hermes_cmdline = vec!["/opt/tools/hermes-agent/bin/python", "agent.py"];
     // Should match the specific AgentSpec from specs list
     assert_eq!(match_agent(&hermes_cmdline, &specs), Some("my-hermes-spec"));
 

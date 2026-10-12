@@ -53,6 +53,9 @@ impl ToolRegistry {
     }
 }
 
+// async_trait expands to #[must_use] on a Future-returning fn, which the
+// new clippy::double_must_use lint (stable 1.99) flags as redundant.
+#[allow(clippy::double_must_use)]
 #[async_trait]
 pub trait Tool: Send + Sync {
     fn name(&self) -> &str;
@@ -61,6 +64,9 @@ pub trait Tool: Send + Sync {
     async fn call(&self, ctx: &dyn ToolContext, args: Value) -> anyhow::Result<Value>;
 }
 
+// async_trait expands to #[must_use] on a Future-returning fn, which the
+// new clippy::double_must_use lint (stable 1.99) flags as redundant.
+#[allow(clippy::double_must_use)]
 #[async_trait]
 pub trait Agent: Send + Sync + 'static {
     type Input: Send + 'static;

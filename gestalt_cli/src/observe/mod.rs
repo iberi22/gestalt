@@ -113,7 +113,9 @@ mod tests {
 
     impl EnvGuard {
         fn lock() -> Self {
-            let lock = ENV_MUTEX.lock().unwrap();
+            // Recover from poisoning so one failing test doesn't cascade
+            // PoisonError noise into the other serialized tests.
+            let lock = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
             let orig_home = std::env::var_os("HOME");
             let orig_path = std::env::var_os("PATH");
             Self {
@@ -187,14 +189,10 @@ mod tests {
 
         std::env::set_var("HOME", home_path);
 
-        // Prepend our bin_dir to original PATH
-        let old_path = std::env::var_os("PATH").unwrap_or_default();
-        let mut path_dirs = vec![bin_dir];
-        for p in std::env::split_paths(&old_path) {
-            path_dirs.push(p);
-        }
-        let new_path = std::env::join_paths(path_dirs).unwrap();
-        std::env::set_var("PATH", new_path);
+        // Isolate PATH to only the mock bin dir. The ambient PATH may
+        // contain real agent binaries (e.g. on dev machines), which would
+        // make the exact-count assertions below environment-dependent.
+        std::env::set_var("PATH", &bin_dir);
 
         let results = discover_agents().unwrap();
 

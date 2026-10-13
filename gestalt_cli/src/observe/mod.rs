@@ -15,13 +15,29 @@ pub struct DiscoveryResults {
 }
 
 pub fn discover_agents() -> Result<DiscoveryResults, String> {
+    discover_agents_with(std::env::var_os("PATH"), home::home_dir())
+}
+
+/// Testable core of [`discover_agents`]: takes the `PATH` value and home
+/// directory as explicit arguments instead of reading process-global state.
+///
+/// Rationale: unit tests in the same binary run in parallel threads sharing
+/// one global environment. The old tests called `std::env::set_var("PATH",…)`
+/// here, which raced with `tests::test_adapter_*` in `main.rs` that spawn
+/// `echo`/`sleep` via `PATH` lookup → "No such file or directory" flakes.
+/// Keeping discovery a pure function of its inputs removes the mutation at
+/// the root, so no cross-module lock or test serialization is needed.
+pub fn discover_agents_with(
+    path_var: Option<std::ffi::OsString>,
+    home: Option<PathBuf>,
+) -> Result<DiscoveryResults, String> {
     // Walk PATH directories
     let target_binaries = [
         "agy", "kimi", "opencode", "hermes", "gestalt", "claude", "codex", "orca", "jules", "agent",
     ];
 
     let mut path_agents = Vec::new();
-    if let Some(path_var) = std::env::var_os("PATH") {
+    if let Some(path_var) = path_var {
         for dir in std::env::split_paths(&path_var) {
             for binary_name in &target_binaries {
                 let binary_path = dir.join(binary_name);
@@ -49,7 +65,7 @@ pub fn discover_agents() -> Result<DiscoveryResults, String> {
     ];
 
     let mut config_dirs = Vec::new();
-    if let Some(home) = home::home_dir() {
+    if let Some(home) = &home {
         for rel_path in &known_config_paths {
             let full_path = home.join(rel_path);
             if full_path.is_dir() {
@@ -60,7 +76,7 @@ pub fn discover_agents() -> Result<DiscoveryResults, String> {
 
     // Walk Orca hooks
     let mut orca_hooks = Vec::new();
-    if let Some(home) = home::home_dir() {
+    if let Some(home) = &home {
         let hooks_dir = home.join(".orca/agent-hooks");
         if hooks_dir.is_dir() {
             if let Ok(entries) = std::fs::read_dir(hooks_dir) {
@@ -103,56 +119,21 @@ mod tests {
     use super::*;
     use std::fs;
 
-    static ENV_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
-    struct EnvGuard {
-        _lock: std::sync::MutexGuard<'static, ()>,
-        orig_home: Option<std::ffi::OsString>,
-        orig_path: Option<std::ffi::OsString>,
-    }
-
-    impl EnvGuard {
-        fn lock() -> Self {
-            // Recover from poisoning so one failing test doesn't cascade
-            // PoisonError noise into the other serialized tests.
-            let lock = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
-            let orig_home = std::env::var_os("HOME");
-            let orig_path = std::env::var_os("PATH");
-            Self {
-                _lock: lock,
-                orig_home,
-                orig_path,
-            }
-        }
-    }
-
-    impl Drop for EnvGuard {
-        fn drop(&mut self) {
-            if let Some(ref h) = self.orig_home {
-                std::env::set_var("HOME", h);
-            } else {
-                std::env::remove_var("HOME");
-            }
-            if let Some(ref p) = self.orig_path {
-                std::env::set_var("PATH", p);
-            } else {
-                std::env::remove_var("PATH");
-            }
-        }
-    }
+    // NOTE: these tests deliberately never touch the process-global
+    // environment (`std::env::set_var("PATH"/"HOME", …)`). Unit tests share
+    // one process, so mutating `PATH` here races with adapter tests in
+    // `main.rs` that spawn `echo`/`sleep` via `PATH` lookup. All inputs go
+    // through `discover_agents_with` explicitly instead.
 
     #[test]
     fn test_discover_agents_empty() {
-        let _guard = EnvGuard::lock();
-
         let temp_dir = tempfile::tempdir().unwrap();
-        let home_path = temp_dir.path();
+        let home_path = temp_dir.path().to_path_buf();
+        let empty_path = home_path.join("nonexistent");
 
-        std::env::set_var("HOME", home_path);
-        // Safely clear PATH completely for the duration of this serialized test
-        std::env::set_var("PATH", home_path.join("nonexistent"));
-
-        let results = discover_agents().unwrap();
+        let results =
+            discover_agents_with(Some(empty_path.as_os_str().to_os_string()), Some(home_path))
+                .unwrap();
 
         assert_eq!(results.path_agents.len(), 0);
         assert_eq!(results.config_dirs.len(), 0);
@@ -161,10 +142,8 @@ mod tests {
 
     #[test]
     fn test_discover_agents_populated() {
-        let _guard = EnvGuard::lock();
-
         let temp_dir = tempfile::tempdir().unwrap();
-        let home_path = temp_dir.path();
+        let home_path = temp_dir.path().to_path_buf();
 
         // Create mock config dirs
         let opencode_dir = home_path.join(".config/opencode");
@@ -187,14 +166,13 @@ mod tests {
         let hook1 = hooks_dir.join("hook1");
         fs::write(&hook1, b"").unwrap();
 
-        std::env::set_var("HOME", home_path);
-
-        // Isolate PATH to only the mock bin dir. The ambient PATH may
-        // contain real agent binaries (e.g. on dev machines), which would
-        // make the exact-count assertions below environment-dependent.
-        std::env::set_var("PATH", &bin_dir);
-
-        let results = discover_agents().unwrap();
+        // Pass the mock bin dir as the explicit search path. The ambient
+        // PATH may contain real agent binaries (e.g. on dev machines),
+        // which would make the exact-count assertions below
+        // environment-dependent.
+        let results =
+            discover_agents_with(Some(bin_dir.as_os_str().to_os_string()), Some(home_path))
+                .unwrap();
 
         assert_eq!(results.path_agents.len(), 2);
         assert!(results.path_agents.iter().any(|p| p.ends_with("hermes")));

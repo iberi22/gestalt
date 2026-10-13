@@ -106,7 +106,10 @@ fn build_oauth_client() -> GoogleOAuthClient {
 pub async fn refresh_access_token(refresh_token: &str) -> anyhow::Result<GeminiCliToken> {
     let client = build_oauth_client();
 
-    let http_client = reqwest::Client::new();
+    // No redirects on the token request (oauth2 5 guidance, avoids SSRF).
+    let http_client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()?;
     let token_result = client
         .exchange_refresh_token(&RefreshToken::new(refresh_token.to_string()))
         .request_async(&http_client)

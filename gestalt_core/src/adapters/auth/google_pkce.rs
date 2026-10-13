@@ -85,7 +85,10 @@ impl GoogleAuthFlow {
             );
             stream.write_all(response.as_bytes())?;
 
-            let http_client = reqwest::Client::new();
+            // No redirects on the token request (oauth2 5 guidance, avoids SSRF).
+            let http_client = reqwest::Client::builder()
+                .redirect(reqwest::redirect::Policy::none())
+                .build()?;
             let token_result = self
                 .client
                 .exchange_code(AuthorizationCode::new(auth_code))

@@ -10,6 +10,9 @@ pub enum NodeResult {
     Halt,
 }
 
+// async_trait expands to #[must_use] on a Future-returning fn, which the
+// new clippy::double_must_use lint (stable 1.99) flags as redundant.
+#[allow(clippy::double_must_use)]
 #[async_trait]
 pub trait GraphNode: Send + Sync {
     fn id(&self) -> &str;

@@ -516,9 +516,20 @@ pub struct AgentSummary {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{Mutex, OnceLock};
+
+    /// Serializes tests that mutate process-global state (cwd, env vars).
+    /// Rust runs tests in parallel threads in one process, so without this
+    /// `test_resolve_path_priority` can observe `GESTALT_HOME` set by
+    /// `test_resolve_path_gestalt_home_override` and fail spuriously.
+    fn global_state_lock() -> &'static Mutex<()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+    }
 
     #[test]
     fn test_resolve_path_priority() {
+        let _guard = global_state_lock().lock().unwrap();
         let temp_dir = tempfile::tempdir().unwrap();
         let repo_dir = temp_dir.path().join("my_repo");
         let sub_dir = repo_dir.join("sub").join("nested");
@@ -545,6 +556,7 @@ mod tests {
 
     #[test]
     fn test_resolve_path_gestalt_home_override() {
+        let _guard = global_state_lock().lock().unwrap();
         let temp_dir = tempfile::tempdir().unwrap();
         let custom_dir = temp_dir.path().join("custom_home");
         fs::create_dir_all(&custom_dir).unwrap();

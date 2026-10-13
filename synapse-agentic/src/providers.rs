@@ -1,6 +1,9 @@
 use async_trait::async_trait;
 use serde::Deserialize;
 
+// async_trait expands to #[must_use] on a Future-returning fn, which the
+// new clippy::double_must_use lint (stable 1.99) flags as redundant.
+#[allow(clippy::double_must_use)]
 #[async_trait]
 pub trait LLMProvider: Send + Sync + std::fmt::Debug {
     fn name(&self) -> &str;

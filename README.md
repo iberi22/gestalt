@@ -170,6 +170,10 @@ Rust 2021 edition, Tokio async runtime, SQLite (`rusqlite`), Git `merge-tree`, C
 
 **BETA / WIP**: Gestalt is actively developed under Wave 1 release candidate testing. Core CLI workflows, event bus ingress, worktree isolation, and integration routines are stable, while advanced swarm scheduling features remain under active refinement.
 
+## Security
+
+For information about supported versions and how to report vulnerabilities, please see our [Security Policy](SECURITY.md).
+
 ## License
 
 Gestalt is distributed under the terms of the MIT License. See [LICENSE](LICENSE) for details.

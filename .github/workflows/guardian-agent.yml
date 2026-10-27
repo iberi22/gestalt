@@ -29,8 +29,11 @@ jobs:
 
       - name: Get PR Info
         id: pr-info
+        env:
+          PR_NUM_IN: ${{ github.event.pull_request.number || github.event.inputs.pr_number }}
         run: |
-          PR_NUM=${{ github.event.pull_request.number || github.event.inputs.pr_number }}
+          PR_NUM=${PR_NUM_IN}
+          case "$PR_NUM" in ""|*[!0-9]*) echo "Invalid PR number" >&2; exit 1;; esac
           echo "pr_number=$PR_NUM" >> $GITHUB_OUTPUT
 
           gh pr view $PR_NUM --json title,state,author,baseRefName,headRefName -q '.'

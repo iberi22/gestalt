@@ -26,12 +26,15 @@ jobs:
     steps:
       - name: Analyze Issue
         id: analyze
+        env:
+          EVENT_ISSUE_NUMBER: ${{ github.event.issue.number }}
+          INPUT_ISSUE_NUMBER: ${{ github.event.inputs.issue_number }}
         run: |
           echo "Analyzing issue for routing..."
 
-          ISSUE_NUMBER="${{ github.event.issue.number }}"
+          ISSUE_NUMBER="${EVENT_ISSUE_NUMBER}"
           if [ -z "$ISSUE_NUMBER" ]; then
-            ISSUE_NUMBER="${{ github.event.inputs.issue_number }}"
+            ISSUE_NUMBER="${INPUT_ISSUE_NUMBER}"
           fi
 
           if [ -z "$ISSUE_NUMBER" ]; then

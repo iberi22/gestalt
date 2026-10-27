@@ -41,9 +41,11 @@ jobs:
           echo "Architecture file content saved ($(/usr/bin/wc -l < /tmp/architecture.txt) lines)"
 
       - name: Generate Issues
+        env:
+          OBJECTIVE: ${{ github.event.inputs.objective }}
         run: |
           echo "Planning Agent execution..."
-          echo "Objective: ${{ github.event.inputs.objective }}"
+          echo "Objective: ${OBJECTIVE}"
           echo "Architecture file parsed successfully"
 
           # In real implementation, would use AI to generate issues

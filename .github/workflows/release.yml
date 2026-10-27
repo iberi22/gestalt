@@ -116,11 +116,15 @@ jobs:
 
       - name: Generate Release Tag
         id: tag
+        env:
+          GIT_REF: ${{ github.ref }}
+          REF_NAME: ${{ github.ref_name }}
+          GIT_SHA: ${{ github.sha }}
         run: |
-          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
-            TAG_NAME="${{ github.ref_name }}"
+          if [[ "${GIT_REF}" == refs/tags/* ]]; then
+            TAG_NAME="${REF_NAME}"
           else
-            TAG_NAME="v1.0.0-${{ github.sha }}"
+            TAG_NAME="v1.0.0-${GIT_SHA}"
           fi
           echo "release_tag=$TAG_NAME" >> $GITHUB_OUTPUT
 

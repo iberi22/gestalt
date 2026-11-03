@@ -35,6 +35,8 @@ pub struct Router {
     worktrees: Arc<WorktreeManager>,
     /// Enable dry run mode (simulate merges without writing).
     pub dry_run: bool,
+    /// Default timeout for agents in seconds (default 300).
+    pub timeout_secs: u64,
 }
 
 impl Router {
@@ -67,6 +69,7 @@ impl Router {
                 "/tmp/gestalt",
             ))),
             dry_run: false,
+            timeout_secs: 300,
         };
 
         // Spawn LiveConflictDetector if a WebSocket server is configured
@@ -309,6 +312,7 @@ impl Router {
         //    No Semaphore — file-level concurrency uses MemState::try_lock
         let mut join_set: JoinSet<Result<AgentResult, RouterError>> = JoinSet::new();
 
+        let router_timeout_secs = self.timeout_secs;
         for agent in spec.agents {
             let agent_id = agent.id.clone();
             let agent_spec = agent.clone();
@@ -316,7 +320,12 @@ impl Router {
             let run_id_clone = run_id;
             let run_id_str_clone = run_id_str.clone();
             let wt_path = wt_paths.get(&agent_id).cloned().unwrap();
-            let timeout = std::time::Duration::from_secs(spec.timeout);
+            let effective_timeout_secs = if spec.timeout > 0 {
+                spec.timeout
+            } else {
+                router_timeout_secs
+            };
+            let timeout = std::time::Duration::from_secs(effective_timeout_secs);
 
             let runner_clone = self.runner.clone();
             let state_db = self.state_db.clone();

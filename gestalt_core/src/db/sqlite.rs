@@ -296,28 +296,35 @@ impl SqliteDb {
         }
 
         let query_blob = vector_to_blob(vector);
+        // `sqlite-vec` aborts the whole statement when two vectors have
+        // different widths, so rows from other embedding models are filtered
+        // out by blob size (`length()` is bytes for BLOBs) instead of taking
+        // the entire search down with them.
+        let query_width = query_blob.len() as i64;
         let limit = limit as i64;
 
         self.with_conn(|conn| {
             let mut stmt = conn.prepare(
                 "SELECT id, metadata, 1.0 - vec_distance_cosine(vector, ?1) AS score
                  FROM embeddings
-                 WHERE collection = ?2
+                 WHERE collection = ?2 AND length(vector) = ?3
                  ORDER BY score DESC
-                 LIMIT ?3",
+                 LIMIT ?4",
             )?;
 
-            let rows = stmt.query_map(params![query_blob, collection, limit], |row| {
-                let id: String = row.get(0)?;
-                let metadata_json: String = row.get(1)?;
-                let score: f64 = row.get(2)?;
-                let metadata: Value = serde_json::from_str(&metadata_json).unwrap_or(Value::Null);
-                Ok(ScoredResult {
-                    id,
-                    score: score as f32,
-                    metadata,
-                })
-            })?;
+            let rows =
+                stmt.query_map(params![query_blob, collection, query_width, limit], |row| {
+                    let id: String = row.get(0)?;
+                    let metadata_json: String = row.get(1)?;
+                    let score: f64 = row.get(2)?;
+                    let metadata: Value =
+                        serde_json::from_str(&metadata_json).unwrap_or(Value::Null);
+                    Ok(ScoredResult {
+                        id,
+                        score: score as f32,
+                        metadata,
+                    })
+                })?;
 
             let mut results = Vec::new();
             for row in rows {

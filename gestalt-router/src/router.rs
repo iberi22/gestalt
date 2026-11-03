@@ -15,7 +15,9 @@ use gestalt_ws::WsServer;
 use crate::agent::AgentRunner;
 use crate::event_bus::BusEvent;
 use crate::overlap::{LiveConflictDetector, OverlapDetector};
-use crate::run::{AgentResult, ConflictInfo, RouterError, RunReport, RunSpec};
+use crate::run::{
+    AgentResult, AgentSpec, ConflictInfo, RouterError, RouterErrorKind, RunReport, RunSpec,
+};
 use crate::timeline::{Event, EventLog};
 use crate::worktree::WorktreeManager;
 use gestalt_core::ports::outbound::vfs::VirtualFS;
@@ -37,6 +39,8 @@ pub struct Router {
     pub dry_run: bool,
     /// Default timeout for agents in seconds (default 300).
     pub timeout_secs: u64,
+    /// Maximum number of retry attempts for transient failures (default 3).
+    pub max_retries: u32,
 }
 
 impl Router {
@@ -70,6 +74,7 @@ impl Router {
             ))),
             dry_run: false,
             timeout_secs: 300,
+            max_retries: 3,
         };
 
         // Spawn LiveConflictDetector if a WebSocket server is configured
@@ -103,6 +108,14 @@ impl Router {
     /// Enable dry run mode (simulate merges without writing).
     pub fn with_dry_run(mut self, dry_run: bool) -> Self {
         self.dry_run = dry_run;
+        self
+    }
+
+    /// Configure the maximum number of retry attempts for transient failures.
+    ///
+    /// A value of `0` disables retries (only the initial attempt runs).
+    pub fn with_max_retries(mut self, max_retries: u32) -> Self {
+        self.max_retries = max_retries;
         self
     }
 
@@ -313,6 +326,7 @@ impl Router {
         let mut join_set: JoinSet<Result<AgentResult, RouterError>> = JoinSet::new();
 
         let router_timeout_secs = self.timeout_secs;
+        let max_retries = self.max_retries;
         for agent in spec.agents {
             let agent_id = agent.id.clone();
             let agent_spec = agent.clone();
@@ -394,10 +408,20 @@ impl Router {
                     }
                 }
 
-                // Run Agent
-                let mut run_result = runner_clone
-                    .run(&agent_spec, &wt_path, &task_desc, timeout)
-                    .await?;
+                // Run Agent with exponential-backoff retry on transient failures.
+                // The runner is shared, so wrap the dispatch with retry semantics
+                // that only retry transient errors (timeout, rate limit, connection
+                // refused) and never permanent ones (auth, invalid input, not found).
+                let mut run_result = run_agent_with_retry(
+                    runner_clone.as_ref(),
+                    &agent_spec,
+                    std::path::Path::new(&wt_path),
+                    &task_desc,
+                    timeout,
+                    max_retries,
+                    &agent_id,
+                )
+                .await?;
 
                 // Run Checkpoint
                 let checkpoint_res = crate::checkpoint::run_checkpoint(&wt_path, &agent_id);
@@ -704,6 +728,175 @@ impl Router {
             events_path,
             success: true,
         })
+    }
+}
+
+// --- Retry with exponential backoff ---------------------------------------
+
+/// Base delay before the first retry attempt.
+const RETRY_BASE_DELAY_MS: u64 = 100;
+/// Upper bound on any individual backoff delay.
+const RETRY_MAX_DELAY_MS: u64 = 5_000;
+/// Backoff multiplier applied between consecutive retry attempts.
+const RETRY_MULTIPLIER: u32 = 2;
+
+/// Compute the exponential-backoff delay for a retry index (0-based).
+///
+/// `delay = base * multiplier^attempt`, capped at [`RETRY_MAX_DELAY_MS`].
+fn backoff_delay(attempt: u32) -> std::time::Duration {
+    let mut delay = RETRY_BASE_DELAY_MS;
+    for _ in 0..attempt {
+        delay = delay.saturating_mul(u64::from(RETRY_MULTIPLIER));
+    }
+    if delay > RETRY_MAX_DELAY_MS {
+        delay = RETRY_MAX_DELAY_MS;
+    }
+    std::time::Duration::from_millis(delay)
+}
+
+/// Returns true when `msg` describes a transient (retryable) failure.
+///
+/// Permanent causes (auth failure, invalid input, not found) take precedence
+/// over transient ones so that, e.g., an "authentication timeout" is not retried.
+fn is_transient_message(msg: &str) -> bool {
+    let lower = msg.to_lowercase();
+
+    const PERMANENT: &[&str] = &[
+        "auth",
+        "unauthorized",
+        "forbidden",
+        "permission denied",
+        "401",
+        "403",
+        "not found",
+        "no such file",
+        "404",
+        "invalid",
+        "bad request",
+        "400",
+        "422",
+    ];
+    if PERMANENT.iter().any(|p| lower.contains(p)) {
+        return false;
+    }
+
+    const TRANSIENT: &[&str] = &[
+        "timeout",
+        "timed out",
+        "rate limit",
+        "rate-limited",
+        "too many requests",
+        "429",
+        "connection refused",
+        "connection reset",
+        "connection closed",
+        "temporarily unavailable",
+        "temporary",
+        "transient",
+        "service unavailable",
+        "503",
+        "network",
+    ];
+    TRANSIENT.iter().any(|t| lower.contains(t))
+}
+
+/// Returns true when a [`RouterError`] is transient and should be retried.
+fn is_transient_error(err: &RouterError) -> bool {
+    match err.kind {
+        RouterErrorKind::Timeout => true,
+        RouterErrorKind::AgentError => is_transient_message(&err.message),
+        // GitError, InvalidSpec, and TimelineError are permanent by construction.
+        _ => false,
+    }
+}
+
+/// Returns true when an [`AgentResult`] represents a transient failure that
+/// should be retried (a timeout, or a crash caused by a transient error).
+fn is_transient_agent_result(state: &AgentState, error: Option<&str>) -> bool {
+    match state {
+        AgentState::Timeout => true,
+        AgentState::Crashed => error.is_some_and(is_transient_message),
+        _ => false,
+    }
+}
+
+/// Annotate an optional agent error message with the number of retries used.
+fn annotate_retry_count(error: Option<String>, max_retries: u32) -> String {
+    match error {
+        Some(e) => format!("{e} (retried {max_retries} time(s))"),
+        None => format!("transient failure after {max_retries} retry attempt(s)"),
+    }
+}
+
+/// Annotate a [`RouterError`] message with the number of retries used.
+fn annotate_retry_error(mut err: RouterError, max_retries: u32) -> RouterError {
+    err.message = format!("{} (retried {} time(s))", err.message, max_retries);
+    err
+}
+
+/// Runs an agent, retrying transient failures with exponential backoff.
+///
+/// The initial attempt is followed by up to `max_retries` retries. Only
+/// transient failures (timeouts, rate limits, connection refusals) are
+/// retried; permanent errors are returned immediately. Cancellation is honored
+/// implicitly: if this future is dropped during a backoff sleep (e.g. the
+/// parent run is aborted), no further retry is scheduled.
+async fn run_agent_with_retry(
+    runner: &dyn AgentRunner,
+    spec: &AgentSpec,
+    worktree: &std::path::Path,
+    task: &str,
+    timeout: std::time::Duration,
+    max_retries: u32,
+    agent_id: &str,
+) -> Result<AgentResult, RouterError> {
+    let mut attempt: u32 = 0;
+
+    loop {
+        match runner.run(spec, worktree, task, timeout).await {
+            Ok(result) => {
+                if !is_transient_agent_result(&result.state, result.error.as_deref()) {
+                    return Ok(result);
+                }
+
+                if attempt >= max_retries {
+                    let mut result = result;
+                    result.error = Some(annotate_retry_count(result.error, max_retries));
+                    return Ok(result);
+                }
+
+                let delay = backoff_delay(attempt);
+                tracing::warn!(
+                    agent_id = %agent_id,
+                    attempt = attempt + 1,
+                    retry_in_ms = delay.as_millis() as u64,
+                    state = %result.state,
+                    "transient agent failure; retrying with exponential backoff"
+                );
+                tokio::time::sleep(delay).await;
+                attempt += 1;
+            },
+            Err(e) => {
+                if !is_transient_error(&e) {
+                    return Err(e);
+                }
+
+                if attempt >= max_retries {
+                    return Err(annotate_retry_error(e, max_retries));
+                }
+
+                let delay = backoff_delay(attempt);
+                tracing::warn!(
+                    agent_id = %agent_id,
+                    attempt = attempt + 1,
+                    retry_in_ms = delay.as_millis() as u64,
+                    error = %e.message,
+                    "transient agent error; retrying with exponential backoff"
+                );
+                tokio::time::sleep(delay).await;
+                attempt += 1;
+            },
+        }
     }
 }
 
@@ -1047,5 +1240,261 @@ mod tests {
         assert!(final_sha.is_empty());
 
         let _ = fs::remove_dir_all(&temp);
+    }
+}
+
+#[cfg(test)]
+mod retry_tests {
+    use super::*;
+    use std::collections::VecDeque;
+    use std::path::Path;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Mutex;
+
+    enum MockOutcome {
+        TransientResult,
+        PermanentResult,
+        SuccessResult,
+        TransientError,
+        PermanentError,
+    }
+
+    struct MockRunner {
+        queue: Mutex<VecDeque<MockOutcome>>,
+        calls: AtomicUsize,
+    }
+
+    impl MockRunner {
+        fn with_outcomes(outcomes: Vec<MockOutcome>) -> Self {
+            Self {
+                queue: Mutex::new(outcomes.into()),
+                calls: AtomicUsize::new(0),
+            }
+        }
+    }
+
+    fn agent_result(state: AgentState, error: Option<&str>) -> AgentResult {
+        AgentResult {
+            agent_id: "mock".to_string(),
+            state,
+            output: None,
+            error: error.map(str::to_string),
+            branch: None,
+            changed_files: Vec::new(),
+            duration_ms: 0,
+            run_id: None,
+            worktree_path: None,
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl AgentRunner for MockRunner {
+        async fn run(
+            &self,
+            _spec: &AgentSpec,
+            _worktree: &Path,
+            _task: &str,
+            _timeout: std::time::Duration,
+        ) -> Result<AgentResult, RouterError> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            let outcome = self.queue.lock().unwrap().pop_front().unwrap();
+            match outcome {
+                MockOutcome::TransientResult => Ok(agent_result(
+                    AgentState::Timeout,
+                    Some("Agent process timed out"),
+                )),
+                MockOutcome::PermanentResult => Ok(agent_result(
+                    AgentState::Crashed,
+                    Some("authentication failed"),
+                )),
+                MockOutcome::SuccessResult => Ok(agent_result(AgentState::Success, None)),
+                MockOutcome::TransientError => Err(RouterError::agent_error("connection refused")),
+                MockOutcome::PermanentError => Err(RouterError::invalid_spec("not found")),
+            }
+        }
+    }
+
+    #[test]
+    fn backoff_delay_grows_exponentially_and_caps() {
+        assert_eq!(backoff_delay(0), std::time::Duration::from_millis(100));
+        assert_eq!(backoff_delay(1), std::time::Duration::from_millis(200));
+        assert_eq!(backoff_delay(2), std::time::Duration::from_millis(400));
+        assert_eq!(backoff_delay(3), std::time::Duration::from_millis(800));
+        assert_eq!(backoff_delay(4), std::time::Duration::from_millis(1600));
+        assert_eq!(backoff_delay(5), std::time::Duration::from_millis(3200));
+        assert_eq!(backoff_delay(6), std::time::Duration::from_millis(5000));
+        assert_eq!(backoff_delay(10), std::time::Duration::from_millis(5000));
+        assert_eq!(backoff_delay(100), std::time::Duration::from_millis(5000));
+    }
+
+    #[test]
+    fn transient_message_classification() {
+        for m in [
+            "request timed out",
+            "rate limit exceeded",
+            "HTTP 429 too many requests",
+            "connection refused",
+            "temporarily unavailable",
+            "service unavailable (503)",
+        ] {
+            assert!(is_transient_message(m), "expected transient: {m}");
+        }
+
+        for m in [
+            "authentication failed",
+            "401 unauthorized",
+            "403 forbidden",
+            "not found",
+            "no such file or directory",
+            "invalid input",
+            "bad request (400)",
+        ] {
+            assert!(!is_transient_message(m), "expected permanent: {m}");
+        }
+
+        // Permanent causes take precedence over transient ones.
+        assert!(!is_transient_message("authentication timeout"));
+    }
+
+    #[test]
+    fn transient_error_kind_classification() {
+        assert!(is_transient_error(&RouterError::timeout("timed out")));
+        assert!(is_transient_error(&RouterError::agent_error(
+            "connection refused"
+        )));
+        assert!(!is_transient_error(&RouterError::agent_error(
+            "authentication failed"
+        )));
+        assert!(!is_transient_error(&RouterError::invalid_spec("bad spec")));
+        assert!(!is_transient_error(&RouterError::git_error("git failure")));
+        assert!(!is_transient_error(&RouterError::timeline_error(
+            "timeline error"
+        )));
+    }
+
+    #[test]
+    fn transient_agent_result_classification() {
+        assert!(is_transient_agent_result(&AgentState::Timeout, None));
+        assert!(is_transient_agent_result(
+            &AgentState::Crashed,
+            Some("rate limit exceeded")
+        ));
+        assert!(!is_transient_agent_result(
+            &AgentState::Crashed,
+            Some("authentication failed")
+        ));
+        assert!(!is_transient_agent_result(&AgentState::Success, None));
+        assert!(!is_transient_agent_result(&AgentState::NoChanges, None));
+        assert!(!is_transient_agent_result(&AgentState::Quarantined, None));
+    }
+
+    fn mock_spec() -> AgentSpec {
+        AgentSpec {
+            id: "mock".to_string(),
+            command: "true".to_string(),
+            args: Vec::new(),
+            allowed_paths: None,
+            env: None,
+            capabilities: Vec::new(),
+        }
+    }
+
+    #[tokio::test]
+    async fn retries_transient_then_succeeds() {
+        let runner = MockRunner::with_outcomes(vec![
+            MockOutcome::TransientError,
+            MockOutcome::TransientResult,
+            MockOutcome::SuccessResult,
+        ]);
+
+        let result = run_agent_with_retry(
+            &runner,
+            &mock_spec(),
+            Path::new("/tmp"),
+            "task",
+            std::time::Duration::from_secs(1),
+            3,
+            "mock",
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(result.state, AgentState::Success);
+        assert_eq!(runner.calls.load(Ordering::SeqCst), 3);
+    }
+
+    #[tokio::test]
+    async fn exhausts_retries_and_annotates_error() {
+        let runner = MockRunner::with_outcomes(vec![
+            MockOutcome::TransientError,
+            MockOutcome::TransientError,
+        ]);
+
+        let err = run_agent_with_retry(
+            &runner,
+            &mock_spec(),
+            Path::new("/tmp"),
+            "task",
+            std::time::Duration::from_secs(1),
+            1,
+            "mock",
+        )
+        .await
+        .unwrap_err();
+
+        assert!(err.message.contains("retried 1 time(s)"), "{}", err.message);
+        assert_eq!(runner.calls.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn does_not_retry_permanent_error() {
+        let runner = MockRunner::with_outcomes(vec![MockOutcome::PermanentError]);
+
+        let err = run_agent_with_retry(
+            &runner,
+            &mock_spec(),
+            Path::new("/tmp"),
+            "task",
+            std::time::Duration::from_secs(1),
+            3,
+            "mock",
+        )
+        .await
+        .unwrap_err();
+
+        assert_eq!(err.kind, RouterErrorKind::InvalidSpec);
+        assert_eq!(runner.calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn does_not_retry_permanent_result() {
+        let runner = MockRunner::with_outcomes(vec![MockOutcome::PermanentResult]);
+
+        let result = run_agent_with_retry(
+            &runner,
+            &mock_spec(),
+            Path::new("/tmp"),
+            "task",
+            std::time::Duration::from_secs(1),
+            3,
+            "mock",
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(result.state, AgentState::Crashed);
+        assert_eq!(runner.calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn annotate_retry_count_formats() {
+        assert_eq!(
+            annotate_retry_count(Some("timed out".to_string()), 3),
+            "timed out (retried 3 time(s))"
+        );
+        assert_eq!(
+            annotate_retry_count(None, 2),
+            "transient failure after 2 retry attempt(s)"
+        );
     }
 }

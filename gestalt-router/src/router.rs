@@ -44,6 +44,10 @@ pub struct Router {
     pub max_retries: u32,
     /// TTL-cached provider health checks (CLI presence, response, API reach).
     pub health_cache: Arc<HealthCache>,
+    /// Run ID currently being executed (if any), for cancellation finalization.
+    pub current_run_id: std::sync::Mutex<Option<String>>,
+    /// Worktree paths created for the current run, for cancellation cleanup.
+    pub current_worktrees: std::sync::Mutex<Vec<std::path::PathBuf>>,
 }
 
 impl Router {
@@ -79,6 +83,8 @@ impl Router {
             timeout_secs: 300,
             max_retries: 3,
             health_cache: Arc::new(HealthCache::new()),
+            current_run_id: std::sync::Mutex::new(None),
+            current_worktrees: std::sync::Mutex::new(Vec::new()),
         };
 
         // Spawn LiveConflictDetector if a WebSocket server is configured
@@ -113,6 +119,32 @@ impl Router {
     pub fn with_dry_run(mut self, dry_run: bool) -> Self {
         self.dry_run = dry_run;
         self
+    }
+
+    /// Best-effort cancellation finalization for a run interrupted mid-flight.
+    ///
+    /// Removes any worktrees created for the current run and persists a
+    /// terminal `cancelled` status for the run record. Failures are logged
+    /// but never propagated, so shutdown cannot hang on this path.
+    pub async fn cancel_current_run(&self) {
+        let run_id = self.current_run_id.lock().unwrap().clone();
+        let worktrees: Vec<std::path::PathBuf> =
+            self.current_worktrees.lock().unwrap().clone();
+
+        for wt in &worktrees {
+            if let Err(e) = self.worktrees.cleanup_worktree(wt).await {
+                tracing::warn!("cancel_current_run: cleanup failed for {:?}: {}", wt, e);
+            }
+        }
+
+        if let Some(rid) = run_id {
+            if let Err(e) = self.state_db.complete_run(&rid, "cancelled") {
+                tracing::warn!("cancel_current_run: failed to persist cancelled status: {}", e);
+            }
+        }
+
+        *self.current_run_id.lock().unwrap() = None;
+        self.current_worktrees.lock().unwrap().clear();
     }
 
     /// Configure the maximum number of retry attempts for transient failures.
@@ -278,6 +310,10 @@ impl Router {
                 RouterError::InvalidSpec(format!("Failed to create run in StateDb: {}", e))
             })?;
 
+        // Track the active run so a cancellation can finalize it.
+        *self.current_run_id.lock().unwrap() = Some(run_id_str.clone());
+        *self.current_worktrees.lock().unwrap() = Vec::new();
+
         // 3. PRE: Fetch relevant context from local BM25 (offline) or Xavier (remote)
         let search_context = self.fetch_context(&spec.task, 5).await;
 
@@ -331,7 +367,8 @@ impl Router {
             {
                 Ok(path) => {
                     created_wts.push(path.clone());
-                    wt_paths.insert(agent.id.clone(), path);
+                    wt_paths.insert(agent.id.clone(), path.clone());
+                    self.current_worktrees.lock().unwrap().push(path);
                 },
                 Err(e) => {
                     // Cleanup already created worktrees
@@ -589,6 +626,10 @@ impl Router {
                 .await
             {
                 Ok(integrate_wt_path) => {
+                    self.current_worktrees
+                        .lock()
+                        .unwrap()
+                        .push(integrate_wt_path.clone());
                     let mut queue = SerialMergeQueue::new(
                         integrate_wt_path.clone(),
                         base_sha.clone(),
@@ -681,6 +722,10 @@ impl Router {
             .map_err(|e| {
                 RouterError::InvalidSpec(format!("Failed to complete run in StateDb: {}", e))
             })?;
+
+        // Clear cancellation tracking on successful completion.
+        *self.current_run_id.lock().unwrap() = None;
+        self.current_worktrees.lock().unwrap().clear();
 
         // 11. POST: Archive run results as memory in Xavier
         let events_path = self

@@ -1737,6 +1737,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         "⚠️  Shutdown requested — cancelled {} in-flight agent run(s)",
                         agent_count
                     );
+                    // Best-effort finalization: persist a terminal outcome and
+                    // remove worktrees so no `Running` record or worktree is
+                    // left behind. Failures must not panic or hang shutdown.
+                    let _ = router.cancel_current_run().await;
                     drop(run_guard);
                 },
                 Some(Ok(report)) => {

@@ -12,6 +12,16 @@ use gestalt_state::memstate::MemState;
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
+/// Drain timeout honoured by the HTTP server, sourced from
+/// `GESTALT_SHUTDOWN_TIMEOUT_MS` (default 5s), clamped to 10 minutes.
+fn drain_timeout_from_env() -> Duration {
+    std::env::var("GESTALT_SHUTDOWN_TIMEOUT_MS")
+        .ok()
+        .and_then(|v| v.trim().parse::<u64>().ok())
+        .map(|ms| Duration::from_millis(ms.min(600_000)))
+        .unwrap_or(Duration::from_secs(5))
+}
+
 static GLOBAL_MEM_STATE: OnceLock<MemState> = OnceLock::new();
 
 pub fn get_mem_state() -> MemState {
@@ -98,9 +108,23 @@ pub async fn serve_with_shutdown(
 
     match shutdown {
         Some(wait) => {
-            axum::serve(listener, app)
-                .with_graceful_shutdown(wait)
-                .await?;
+            // Race the graceful drain against the configured deadline so a
+            // stalled in-flight request can never keep us here forever.
+            // `GESTALT_SHUTDOWN_TIMEOUT_MS` (default 5s) is the single source
+            // of truth for that deadline.
+            let drain_deadline = drain_timeout_from_env();
+            let serve_fut = axum::serve(listener, app).with_graceful_shutdown(wait);
+            match tokio::time::timeout(drain_deadline, serve_fut).await {
+                Ok(res) => {
+                    res?;
+                },
+                Err(_) => {
+                    tracing::warn!(
+                        "Event Bus + Task API graceful drain exceeded {:?}; abandoning",
+                        drain_deadline
+                    );
+                },
+            }
             tracing::info!("Event Bus + Task API stopped accepting connections (drained)");
         },
         None => {

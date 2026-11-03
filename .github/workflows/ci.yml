@@ -137,11 +137,68 @@ jobs:
             -p gestalt-proto \
             --all-targets
 
+  test-workspace:
+    name: Test (Workspace)
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "gestalt-rust"
+          cache-on-failure: true
+      # The per-crate jobs above give fast, granular signal, but they only cover
+      # six of the eleven workspace members and never run a member's tests for
+      # the crates that merely get `cargo check`ed. This job runs every member.
+      - name: Cargo Test (whole workspace)
+        run: cargo test --workspace --all-targets
+
+  test-doctests:
+    name: Test (Doc-tests)
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "gestalt-rust"
+          cache-on-failure: true
+      # `--all-targets` deliberately EXCLUDES doc-tests, so they had no CI
+      # coverage at all and a broken one could sit on main indefinitely.
+      - name: Cargo Test (doc-tests)
+        run: cargo test --workspace --doc
+
+  test-swarm:
+    name: Test (gestalt_swarm)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "gestalt-swarm"
+          cache-on-failure: true
+          workspaces: "gestalt_swarm -> target"
+      # gestalt_swarm declares its own [workspace], so it is not a member of the
+      # root workspace and no root-level cargo invocation ever reaches it.
+      - name: Cargo Test (nested workspace)
+        working-directory: gestalt_swarm
+        run: cargo test --all-targets
+
   build-wasm:
     name: Cargo Build (WASM)
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    needs: [fmt, clippy, test-core, test-cli, test-router, test-search, check-other]
+    needs: [fmt, clippy, test-core, test-cli, test-router, test-search, check-other, test-workspace, test-doctests, test-swarm]
     steps:
       - uses: actions/checkout@v6
       - name: Install Rust Toolchain
@@ -161,7 +218,7 @@ jobs:
     name: Build Binary
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    needs: [fmt, clippy, test-core, test-cli, test-router, test-search, check-other]
+    needs: [fmt, clippy, test-core, test-cli, test-router, test-search, check-other, test-workspace, test-doctests, test-swarm]
     steps:
       - uses: actions/checkout@v6
       - name: Install Rust Toolchain

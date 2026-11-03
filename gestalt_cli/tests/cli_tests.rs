@@ -183,3 +183,51 @@ async fn test_thinking_list_and_approve_with_stub_xavier() {
     assert!(stdout_approve_real.contains("Decision promoted successfully!"));
     assert!(stdout_approve_real.contains("decision-456"));
 }
+
+#[tokio::test]
+async fn test_ctrl_c_handler() {
+    // Start the CLI process, perhaps doing something that hangs or is long running.
+    // E.g., `observe` without `--once` which runs a daemon loop.
+    let bin_path = env!("CARGO_BIN_EXE_gestalt_cli");
+    let child = tokio::process::Command::new(bin_path)
+        .arg("observe")
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("Failed to spawn process");
+
+    // Wait a brief moment to ensure the process has started and registered the signal handler.
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+
+    // Send SIGINT to the process
+    let pid = child.id().expect("Failed to get child PID");
+
+    // Use `kill` command to send SIGINT.
+    // We are on unix, so we can use libc::kill
+    #[cfg(unix)]
+    {
+        let kill_result = unsafe { libc::kill(pid as i32, libc::SIGINT) };
+        assert_eq!(kill_result, 0, "Failed to send SIGINT to child process");
+    }
+
+    // Wait for the child to exit
+    let output = child
+        .wait_with_output()
+        .await
+        .expect("Failed to wait on child");
+
+    // Assert it exited with status 0
+    assert!(
+        output.status.success(),
+        "Expected success (0) exit status, got {:?}",
+        output.status
+    );
+
+    // Assert stderr contains the expected shutdown message
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("Shutting down gracefully..."),
+        "stderr did not contain expected message. stderr: {}",
+        stderr
+    );
+}

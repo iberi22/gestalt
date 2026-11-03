@@ -875,6 +875,13 @@ mod tests {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    tokio::spawn(async {
+        if let Ok(()) = tokio::signal::ctrl_c().await {
+            eprintln!("Shutting down gracefully...");
+            std::process::exit(0);
+        }
+    });
+
     let config = CliConfig::load().unwrap_or_default();
     let args = Args::parse();
 

@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 pub mod belief;
 pub mod belief_graph;
+pub mod capabilities;
 pub mod error;
 pub mod genui;
 pub mod rag;

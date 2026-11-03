@@ -34,7 +34,6 @@ use gestalt_core::ports::outbound::vfs::{
 use gestalt_router::run_state::MemState;
 use serde::Serialize;
 use std::collections::HashMap;
-use std::process::Command;
 use std::sync::Arc;
 use std::sync::Mutex;
 use tracing::{error, info, warn};
@@ -160,9 +159,16 @@ impl AgentWrapper {
             return Err("Empty command".to_string());
         }
 
-        let output = Command::new(&program)
-            .args(&args)
+        // Asynchronous, cancellation-safe subprocess execution. Using
+        // `tokio::process::Command` keeps the surrounding `async fn` from
+        // blocking the runtime, and `kill_on_drop` guarantees the child is
+        // terminated if this future is dropped (e.g. on shutdown).
+        let mut cmd = tokio::process::Command::new(&program);
+        cmd.args(&args);
+        cmd.kill_on_drop(true);
+        let output = cmd
             .output()
+            .await
             .map_err(|e| format!("Failed to run agent command '{}': {}", self.command, e))?;
 
         let stdout = String::from_utf8_lossy(&output.stdout).to_string();
@@ -291,6 +297,7 @@ impl AgentWrapper {
 
         cmd.stdout(std::process::Stdio::piped());
         cmd.stderr(std::process::Stdio::piped());
+        cmd.kill_on_drop(true);
 
         let mut child = cmd
             .spawn()
@@ -323,6 +330,7 @@ impl AgentWrapper {
             }
             _ = timeout_fut => {
                 let _ = child.kill().await;
+                let _ = child.wait().await;
                 Err("Timeout reached during execution".to_string())
             }
         };

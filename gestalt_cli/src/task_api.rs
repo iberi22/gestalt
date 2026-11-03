@@ -30,11 +30,30 @@ pub fn router() -> Router<BusState> {
     Router::new().route("/api/task", post(handle_task_http))
 }
 
+/// Future that resolves when the process should stop accepting connections.
+///
+/// Kept as a boxed future (instead of `crate::shutdown::ShutdownCoordinator`)
+/// so this module stays self-contained: integration tests include this file
+/// directly with `#[path]`, where `crate::shutdown` does not exist.
+pub type ShutdownFuture = std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>>;
+
 /// Run the combined bus and task API HTTP server on `host:port`.
 pub async fn serve(
     host: &str,
     port: u16,
     db_path: Option<&str>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    serve_with_shutdown(host, port, db_path, None).await
+}
+
+/// Run the bus + task API server, draining in-flight connections when
+/// `shutdown` resolves (`axum`'s graceful shutdown still answers any request
+/// already being served).
+pub async fn serve_with_shutdown(
+    host: &str,
+    port: u16,
+    db_path: Option<&str>,
+    shutdown: Option<ShutdownFuture>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let state_db_path = db_path.map(std::path::PathBuf::from).unwrap_or_else(|| {
         home::home_dir()
@@ -76,7 +95,18 @@ pub async fn serve(
     println!("   GET  /healthz    — liveness");
 
     let listener = tokio::net::TcpListener::bind(&addr).await?;
-    axum::serve(listener, app).await?;
+
+    match shutdown {
+        Some(wait) => {
+            axum::serve(listener, app)
+                .with_graceful_shutdown(wait)
+                .await?;
+            tracing::info!("Event Bus + Task API stopped accepting connections (drained)");
+        },
+        None => {
+            axum::serve(listener, app).await?;
+        },
+    }
 
     Ok(())
 }

@@ -10,6 +10,13 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 ## [Unreleased]
 
 ### Added
+- **Graceful shutdown in `gestalt_cli` (SIGINT/SIGTERM)**: a single
+  `ShutdownCoordinator` stops new work, cancels in-flight sub-agents (swarm
+  `JoinSet`, router runs, chain runs, agent launchers, the Xavier cycle
+  subprocess), kills spawned MCP servers, drains axum connections and flushes the
+  `OverlayFs` before exiting. The shutdown report prints drained/cancelled counts.
+  Exit code `0` on SIGTERM, `130` on Ctrl+C, and a second signal force-exits
+  immediately. Drain deadline defaults to 5s (`GESTALT_SHUTDOWN_TIMEOUT_MS`).
 - **gestalt-router crate**: Multi-agent orchestration engine with full pipeline
   - `Router::execute()` — parallel agent spawning via JoinSet + Semaphore
   - `SubprocessRunner` — CLI agent process management with POSIX process group kill

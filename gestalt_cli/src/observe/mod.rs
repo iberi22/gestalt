@@ -96,10 +96,23 @@ pub fn discover_agents_with(
     })
 }
 
-pub async fn run_daemon_loop() -> Result<(), String> {
+/// Observation daemon loop that stops as soon as `shutdown` is triggered.
+///
+/// The tick sleep is part of the `select!`, so `Ctrl+C` during a 5s nap
+/// returns immediately instead of after the tick.
+pub async fn run_daemon_loop_until(
+    shutdown: Option<&crate::shutdown::ShutdownCoordinator>,
+) -> Result<(), String> {
     println!("[Daemon] Starting observation daemon loop (ticking every 5s)...");
     let mut monitor = proc_monitor::ProcMonitor::new(Vec::new());
+    let tick = || tokio::time::sleep(tokio::time::Duration::from_secs(5));
+
     loop {
+        if shutdown.is_some_and(|coord| coord.is_shutting_down()) {
+            println!("[Daemon] Shutdown requested — stopping observation loop");
+            return Ok(());
+        }
+
         println!("[Daemon] Ticking process monitor...");
         let events = monitor.poll();
         for ev in &events {
@@ -110,7 +123,20 @@ pub async fn run_daemon_loop() -> Result<(), String> {
                 ev.summary
             );
         }
-        tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+
+        match shutdown {
+            Some(coord) => {
+                tokio::select! {
+                    biased;
+                    _ = coord.wait_for_shutdown() => {
+                        println!("[Daemon] Shutdown requested — stopping observation loop");
+                        return Ok(());
+                    },
+                    _ = tick() => {},
+                }
+            },
+            None => tick().await,
+        }
     }
 }
 

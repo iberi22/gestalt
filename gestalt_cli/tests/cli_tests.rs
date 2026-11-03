@@ -184,10 +184,13 @@ async fn test_thinking_list_and_approve_with_stub_xavier() {
     assert!(stdout_approve_real.contains("decision-456"));
 }
 
-#[tokio::test]
-async fn test_ctrl_c_handler() {
-    // Start the CLI process, perhaps doing something that hangs or is long running.
-    // E.g., `observe` without `--once` which runs a daemon loop.
+/// Spawn the long-running `observe` daemon, send `signal`, and return the
+/// captured output once the process exits.
+///
+/// A timeout guards against a hung drain: if graceful shutdown never
+/// completes, the test fails instead of blocking the whole suite.
+#[cfg(unix)]
+async fn run_observe_until_signal(signal: libc::c_int) -> std::process::Output {
     let bin_path = env!("CARGO_BIN_EXE_gestalt_cli");
     let child = tokio::process::Command::new(bin_path)
         .arg("observe")
@@ -199,27 +202,29 @@ async fn test_ctrl_c_handler() {
     // Wait a brief moment to ensure the process has started and registered the signal handler.
     tokio::time::sleep(std::time::Duration::from_millis(500)).await;
 
-    // Send SIGINT to the process
     let pid = child.id().expect("Failed to get child PID");
+    let kill_result = unsafe { libc::kill(pid as i32, signal) };
+    assert_eq!(
+        kill_result, 0,
+        "Failed to send signal {signal} to child process"
+    );
 
-    // Use `kill` command to send SIGINT.
-    // We are on unix, so we can use libc::kill
-    #[cfg(unix)]
-    {
-        let kill_result = unsafe { libc::kill(pid as i32, libc::SIGINT) };
-        assert_eq!(kill_result, 0, "Failed to send SIGINT to child process");
-    }
-
-    // Wait for the child to exit
-    let output = child
-        .wait_with_output()
+    tokio::time::timeout(std::time::Duration::from_secs(20), child.wait_with_output())
         .await
-        .expect("Failed to wait on child");
+        .expect("process did not exit after the signal: graceful shutdown hung")
+        .expect("Failed to wait on child")
+}
 
-    // Assert it exited with status 0
-    assert!(
-        output.status.success(),
-        "Expected success (0) exit status, got {:?}",
+#[cfg(unix)]
+#[tokio::test]
+async fn test_ctrl_c_handler() {
+    // SIGINT must drain and report, then exit with 130 (128 + SIGINT).
+    let output = run_observe_until_signal(libc::SIGINT).await;
+
+    assert_eq!(
+        output.status.code(),
+        Some(130),
+        "Ctrl+C must exit with 130, got {:?}",
         output.status
     );
 
@@ -228,6 +233,40 @@ async fn test_ctrl_c_handler() {
     assert!(
         stderr.contains("Shutting down gracefully..."),
         "stderr did not contain expected message. stderr: {}",
+        stderr
+    );
+
+    // The drain report (drained/cancelled counts) is printed before exiting.
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("Shutdown complete"),
+        "stdout did not contain the shutdown report. stdout: {}",
+        stdout
+    );
+    assert!(
+        stdout.contains("Tasks cancelled:"),
+        "shutdown report must include the cancelled-task count. stdout: {}",
+        stdout
+    );
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn test_sigterm_graceful_shutdown() {
+    // SIGTERM is the "service manager stopped us" path: exit code 0.
+    let output = run_observe_until_signal(libc::SIGTERM).await;
+
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "SIGTERM must exit gracefully with 0, got {:?}",
+        output.status
+    );
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("SIGTERM"),
+        "stderr should name the signal that stopped us. stderr: {}",
         stderr
     );
 }

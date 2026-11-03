@@ -221,6 +221,7 @@ pub struct InteractiveRepl<H: ReplHandler> {
 
 impl<H: ReplHandler + Default> InteractiveRepl<H> {
     /// Create new REPL
+    #[allow(dead_code)]
     pub fn new() -> Result<Self, ReplError> {
         Self::with_handler(H::default())
     }
@@ -453,12 +454,6 @@ impl<H: ReplHandler + Default> InteractiveRepl<H> {
     }
 }
 
-impl<H: ReplHandler + Default> Default for InteractiveRepl<H> {
-    fn default() -> Self {
-        InteractiveRepl::new().expect("Failed to initialize interactive REPL")
-    }
-}
-
 /// Simple handler that just echoes input
 #[derive(Debug, Default)]
 pub struct EchoHandler;
@@ -505,7 +500,7 @@ mod tests {
     }
 
     #[test]
-    fn test_gestalt_completer() {
+    fn test_gestalt_completer() -> anyhow::Result<()> {
         use rustyline::completion::Completer;
 
         let completer = GestaltCompleter::new();
@@ -514,18 +509,18 @@ mod tests {
         let ctx = rustyline::Context::new(&history);
 
         // Test prefix matching on empty or single word prefix
-        let (start, candidates) = completer.complete("he", 2, &ctx).unwrap();
+        let (start, candidates) = completer.complete("he", 2, &ctx)?;
         assert_eq!(start, 0);
         assert!(candidates.iter().any(|p| p.display == "help"));
 
         // Test non-matching word
-        let (_, candidates) = completer.complete("xyz", 3, &ctx).unwrap();
+        let (_, candidates) = completer.complete("xyz", 3, &ctx)?;
         assert!(candidates.is_empty());
 
         // Test multi-byte non-ASCII characters (e.g. Spanish, German, emojis) - must not panic!
         let input = "ñhe";
         let pos = input.len();
-        let (start, candidates) = completer.complete(input, pos, &ctx).unwrap();
+        let (start, candidates) = completer.complete(input, pos, &ctx)?;
         // Since there is no whitespace, start is 0
         assert_eq!(start, 0);
         assert!(candidates.is_empty()); // "ñhe" doesn't match any command prefix, but it shouldn't panic
@@ -533,9 +528,11 @@ mod tests {
         // Test with leading space and a valid prefix
         let input2 = " he";
         let pos2 = input2.len();
-        let (start2, candidates2) = completer.complete(input2, pos2, &ctx).unwrap();
+        let (start2, candidates2) = completer.complete(input2, pos2, &ctx)?;
         // It detects "he" starts after the space at byte index 1
         assert_eq!(start2, 1);
         assert!(candidates2.iter().any(|p| p.display == "help"));
+
+        Ok(())
     }
 }

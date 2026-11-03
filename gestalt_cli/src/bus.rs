@@ -12,23 +12,36 @@
 //!   - `after_seq`  (optional) cursor sequence number for pagination
 //!   - `limit`      (optional) maximum number of events to return (default 50, max 500)
 //! - `GET  /healthz`    — liveness probe for supervisors
+//! - `GET  /api/health/providers` — readiness of every agent provider CLI
+//!   (binary presence, version response, API reachability; 30s cached,
+//!   `?force=true` bypasses the cache)
 //!
 //! Events are persisted durably in StateDb and streamed to Xavier in real time
 //! as `kind=execution` via the [`XavierEventSink`], giving full traceability
 //! (agent, llm, provider, decision, requested_by) across all agents.
 
 use axum::{
-    extract::State,
+    extract::{Query, State},
+    http::StatusCode,
+    response::IntoResponse,
     routing::{get, post},
     Json, Router,
 };
 use gestalt_router::{
     event_bus::{handle_event, BusEvent},
+    health::{HealthCache, HealthReport, HealthStatus},
     xavier_sink::XavierEventSink,
 };
 use gestalt_state::StateDb;
-use std::sync::Arc;
+use serde::Deserialize;
+use std::sync::{Arc, OnceLock};
 use tracing::{info, warn};
+
+/// Process-wide provider health cache (30s TTL, shared by every request).
+fn provider_health_cache() -> &'static Arc<HealthCache> {
+    static CACHE: OnceLock<Arc<HealthCache>> = OnceLock::new();
+    CACHE.get_or_init(|| Arc::new(HealthCache::new()))
+}
 
 /// Shared application state for the bus HTTP server.
 #[derive(Clone)]
@@ -43,6 +56,7 @@ pub fn build_router(state: BusState) -> Router {
         .route("/api/event", post(handle_event_http))
         .route("/api/events", get(list_events_http))
         .route("/healthz", get(healthz))
+        .route("/api/health/providers", get(providers_health_http))
         .with_state(state)
 }
 
@@ -133,6 +147,28 @@ async fn healthz() -> Json<serde_json::Value> {
     Json(serde_json::json!({"status": "ok", "service": "gestalt-bus"}))
 }
 
+/// Query params for `GET /api/health/providers`.
+#[derive(Debug, Deserialize)]
+struct ProviderHealthQuery {
+    /// Bypass the 30s cache and re-probe every provider.
+    #[serde(default)]
+    force: bool,
+}
+
+/// `GET /api/health/providers` — readiness of every agent provider CLI.
+///
+/// Returns 200 when all providers are healthy/degraded and 503 when at least
+/// one is unusable, so supervisors can gate dispatch on this endpoint.
+async fn providers_health_http(Query(params): Query<ProviderHealthQuery>) -> impl IntoResponse {
+    let report: HealthReport = provider_health_cache().report(params.force).await;
+    let status = if report.status == HealthStatus::Unhealthy {
+        StatusCode::SERVICE_UNAVAILABLE
+    } else {
+        StatusCode::OK
+    };
+    (status, Json(report))
+}
+
 /// Run the bus HTTP server on `host:port` (default 127.0.0.1:8081).
 ///
 /// Creates (or opens) the durable StateDb and an optional Xavier sink
@@ -176,6 +212,7 @@ pub async fn serve(
     println!("   POST /api/event  — push a BusEvent");
     println!("   GET  /api/events — tail recent events");
     println!("   GET  /healthz    — liveness");
+    println!("   GET  /api/health/providers — provider CLI health (?force=true)");
 
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     axum::serve(listener, app).await?;

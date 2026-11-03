@@ -34,7 +34,6 @@ use gestalt_core::ports::outbound::vfs::{
 use gestalt_router::run_state::MemState;
 use serde::Serialize;
 use std::collections::HashMap;
-use std::process::Command;
 use std::sync::Arc;
 use std::sync::Mutex;
 use tracing::{error, info, warn};

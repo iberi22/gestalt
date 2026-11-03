@@ -3,7 +3,7 @@
 //! This module provides a concrete, local-first implementation of the
 //! [`RepoManager`] and [`VectorDb`] boundary ports on top of [`rusqlite`]
 //! (with the `bundled` feature, so no system SQLite is required) and
-//! [`sqlite-vec`] for cosine-similarity vector search.
+//! `sqlite-vec` for cosine-similarity vector search.
 //!
 //! [`rusqlite`] is synchronous, so every database operation is dispatched to a
 //! blocking thread via [`tokio::task::spawn_blocking`] to keep the public API
@@ -170,6 +170,14 @@ impl SqliteDb {
     pub fn with_repos_dir(mut self, dir: impl AsRef<Path>) -> Self {
         self.repos_dir = Arc::new(dir.as_ref().to_path_buf());
         self
+    }
+
+    /// Returns the base directory where cloned repositories are stored.
+    ///
+    /// Adapters built on top of [`SqliteDb`] use this as the single source of
+    /// truth for their clone destination.
+    pub fn repos_dir(&self) -> &Path {
+        self.repos_dir.as_ref()
     }
 
     /// Checks a connection out of the pool. If the pool is unexpectedly empty

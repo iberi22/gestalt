@@ -122,6 +122,19 @@ fn repo_name_from_url(url: &str) -> String {
 #[derive(Clone)]
 pub struct SqliteDb {
     pool: Arc<Mutex<Vec<Connection>>>,
+    /// Serializes whole operations when the database is in-memory.
+    ///
+    /// A `:memory:` database lives entirely inside the single connection that
+    /// created it: a second `Connection::open(":memory:")` yields a *different,
+    /// empty* database. Without this guard two concurrent operations could
+    /// check out the only connection and then open that second, private
+    /// database — reads would come back empty and writes would vanish when the
+    /// extra connection was dropped. Holding this for the duration of an
+    /// operation guarantees `checkout()` always finds the one real connection.
+    ///
+    /// `None` for file-backed databases, which legitimately support several
+    /// concurrent connections.
+    in_memory_guard: Option<Arc<Mutex<()>>>,
     db_path: Arc<PathBuf>,
     max_size: usize,
     repos_dir: Arc<PathBuf>,
@@ -153,6 +166,11 @@ impl SqliteDb {
 
         Ok(Self {
             pool: Arc::new(Mutex::new(connections)),
+            in_memory_guard: if is_in_memory(&db_path) {
+                Some(Arc::new(Mutex::new(())))
+            } else {
+                None
+            },
             db_path: Arc::new(db_path),
             max_size,
             repos_dir: Arc::new(default_repos_dir()),
@@ -183,6 +201,12 @@ impl SqliteDb {
     /// Checks a connection out of the pool. If the pool is unexpectedly empty
     /// (which should not happen given mutex serialization), a fresh connection
     /// is opened and migrated so callers always make progress.
+    ///
+    /// The one case where opening a fresh connection would be *wrong* is an
+    /// in-memory database: `Connection::open(":memory:")` creates a brand-new
+    /// empty database, so writes would silently vanish. That path is a logic
+    /// error (the [`SqliteDb::in_memory_guard`] must be held), so it fails
+    /// loudly instead of corrupting behaviour.
     fn checkout(&self) -> anyhow::Result<Connection> {
         let mut pool = self
             .pool
@@ -192,6 +216,13 @@ impl SqliteDb {
         if let Some(conn) = pool.pop() {
             return Ok(conn);
         }
+
+        anyhow::ensure!(
+            !is_in_memory(self.db_path.as_ref()),
+            "in-memory connection pool exhausted: refusing to open a second \
+             `:memory:` database (writes would be lost). This indicates the \
+             in-memory operation guard was not held."
+        );
 
         let conn = Connection::open(self.db_path.as_ref())?;
         conn.execute_batch("PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;")?;
@@ -211,7 +242,20 @@ impl SqliteDb {
 
     /// Runs `f` with a pooled connection, guaranteeing the connection is
     /// returned to the pool afterwards regardless of the outcome.
+    ///
+    /// For an in-memory database the whole operation is serialized behind
+    /// [`SqliteDb::in_memory_guard`], so `checkout` never has to open a second
+    /// (empty) `:memory:` database.
     fn with_conn<T>(&self, f: impl FnOnce(&Connection) -> anyhow::Result<T>) -> anyhow::Result<T> {
+        let _serialized = match &self.in_memory_guard {
+            Some(guard) => Some(
+                guard
+                    .lock()
+                    .map_err(|e| anyhow::anyhow!("in-memory operation lock poisoned: {e}"))?,
+            ),
+            None => None,
+        };
+
         let conn = self.checkout()?;
         let result = f(&conn);
         self.checkin(conn);
@@ -446,6 +490,44 @@ impl VectorDb for SqliteDb {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Regression test for the in-memory pool bug: a `:memory:` database lives
+    /// inside one connection, so concurrent operations must not open a second
+    /// (empty) database. Every write must be visible to every reader.
+    #[test]
+    fn concurrent_in_memory_operations_share_one_database() {
+        let db = SqliteDb::open_in_memory().unwrap();
+        let threads = 8;
+        let per_thread = 10;
+
+        let handles: Vec<_> = (0..threads)
+            .map(|t| {
+                let db = db.clone();
+                std::thread::spawn(move || {
+                    for i in 0..per_thread {
+                        let repo = Repository {
+                            id: format!("repo-{t}-{i}"),
+                            name: format!("repo-{t}-{i}"),
+                            url: format!("https://example.test/{t}/{i}.git"),
+                            local_path: None,
+                        };
+                        db.insert_repo_sync(&repo).unwrap();
+                    }
+                })
+            })
+            .collect();
+
+        for handle in handles {
+            handle.join().unwrap();
+        }
+
+        let repos = db.list_repos_sync().unwrap();
+        assert_eq!(
+            repos.len(),
+            threads * per_thread,
+            "writes were lost: a concurrent operation opened a second :memory: database"
+        );
+    }
 
     #[tokio::test]
     async fn migrations_create_tables() {

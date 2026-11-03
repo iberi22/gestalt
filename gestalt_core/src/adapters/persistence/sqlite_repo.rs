@@ -67,6 +67,56 @@ fn repo_name_from_url(url: &str) -> Option<String> {
     Some(name.to_string())
 }
 
+/// Replaces every character that is unsafe in a path segment with `-`.
+fn sanitize_segment(segment: &str) -> String {
+    segment
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.' {
+                c
+            } else {
+                '-'
+            }
+        })
+        .collect()
+}
+
+/// Derives the *directory* name used for a clone, incorporating the owner.
+///
+/// [`repo_name_from_url`] only keeps the last segment, so `owner-a/project.git`
+/// and `owner-b/project.git` would both map to `project` — the second clone
+/// would silently reuse the first owner's checkout. Including the owner keeps
+/// the two apart: `owner-a--project` vs `owner-b--project`.
+///
+/// Returns `None` under the same conditions as [`repo_name_from_url`], and for
+/// URLs made only of separators.
+fn repo_dir_name_from_url(url: &str) -> Option<String> {
+    let repo = repo_name_from_url(url)?;
+
+    let trimmed = url.trim().trim_end_matches('/');
+    let mut segments = trimmed.rsplit('/');
+
+    // Consume the repository segment itself, then try to take the owner.
+    segments.next()?;
+    let owner = segments.next()?;
+    let owner = sanitize_segment(owner);
+    let owner = owner.trim_matches('-');
+
+    if owner.is_empty() || owner == "." || owner == ".." {
+        return Some(sanitize_segment(&repo));
+    }
+
+    Some(format!("{owner}--{}", sanitize_segment(&repo)))
+}
+
+/// Reads the `origin` remote URL of an existing checkout, if any.
+fn existing_origin_url(repo_path: &Path) -> Option<String> {
+    let repo = git2::Repository::open(repo_path).ok()?;
+    let remote = repo.find_remote("origin").ok()?;
+    let url = remote.url()?.to_string();
+    Some(url)
+}
+
 /// Builds a [`Repository`] record for a clone that has already been materialized
 /// on disk.
 fn repository_record(url: &str, name: &str, local_path: &Path) -> Repository {
@@ -86,23 +136,46 @@ fn repository_record(url: &str, name: &str, local_path: &Path) -> Repository {
 fn clone_blocking(db: &SqliteDb, url: &str) -> anyhow::Result<Repository> {
     let base = db.repos_dir();
 
+    // `name` is the human-facing repository name recorded in the database;
+    // `dir_name` is the collision-free directory on disk (it includes the
+    // owner, so two remotes sharing a basename never share a checkout).
     let name = repo_name_from_url(url)
         .ok_or_else(|| anyhow::anyhow!("cannot derive a repository name from URL {url:?}"))?;
+    let dir_name = repo_dir_name_from_url(url)
+        .ok_or_else(|| anyhow::anyhow!("cannot derive a repository directory from URL {url:?}"))?;
 
-    let local_path: PathBuf = base.join(&name);
+    let local_path: PathBuf = base.join(&dir_name);
 
     std::fs::create_dir_all(base)
         .with_context(|| format!("failed to create repositories dir {}", base.display()))?;
 
     if local_path.join(GIT_DIR).exists() {
         // The working copy is already there (for example from a previous run
-        // whose database was recreated). Reuse it instead of failing.
+        // whose database was recreated). Reuse it only when it really is a
+        // checkout of *this* remote: reusing a different repository would hand
+        // the caller the wrong codebase to read and modify.
         git2::Repository::open(&local_path).with_context(|| {
             format!(
                 "destination {} exists but is not a usable git repository",
                 local_path.display()
             )
         })?;
+
+        match existing_origin_url(&local_path) {
+            Some(existing) if canonical_url(&existing) == canonical_url(url) => {},
+            Some(existing) => anyhow::bail!(
+                "refusing to reuse {}: it is a checkout of {:?}, not of {:?}",
+                local_path.display(),
+                existing,
+                url
+            ),
+            None => anyhow::bail!(
+                "refusing to reuse {}: the existing checkout has no `origin` remote, \
+                 so it cannot be verified as a checkout of {:?}",
+                local_path.display(),
+                url
+            ),
+        }
     } else if local_path.exists() {
         anyhow::bail!(
             "destination {} already exists and is not a git repository",
@@ -355,5 +428,96 @@ mod tests {
 
         assert_eq!(listed.len(), 1);
         assert_eq!(listed[0].id, repo.id);
+    }
+
+    /// Regression test: two remotes that share a basename but differ in owner
+    /// must not share a checkout.
+    #[test]
+    fn dir_names_keep_owners_apart() {
+        assert_eq!(
+            repo_dir_name_from_url("https://github.com/owner-a/project.git").as_deref(),
+            Some("owner-a--project")
+        );
+        assert_eq!(
+            repo_dir_name_from_url("https://github.com/owner-b/project.git").as_deref(),
+            Some("owner-b--project")
+        );
+        assert_ne!(
+            repo_dir_name_from_url("https://github.com/owner-a/project.git"),
+            repo_dir_name_from_url("https://github.com/owner-b/project.git"),
+            "two owners sharing a basename must not map to the same directory"
+        );
+        // A local path still yields a usable, owner-qualified directory.
+        assert_eq!(
+            repo_dir_name_from_url("/tmp/fixtures/my-repo/").as_deref(),
+            Some("fixtures--my-repo")
+        );
+        assert_eq!(repo_dir_name_from_url("   "), None);
+    }
+
+    /// Regression test: cloning two same-named repositories from different
+    /// owners must produce two distinct checkouts with the right content.
+    #[tokio::test]
+    async fn clone_repo_does_not_confuse_owners_with_same_basename() {
+        let sources = tempfile::tempdir().unwrap();
+        let owner_a = sources.path().join("owner-a").join("project");
+        let owner_b = sources.path().join("owner-b").join("project");
+        std::fs::create_dir_all(&owner_a).unwrap();
+        std::fs::create_dir_all(&owner_b).unwrap();
+        init_source_repo(&owner_a);
+        init_source_repo(&owner_b);
+        // Make the two fixtures distinguishable.
+        std::fs::write(owner_a.join("README.md"), "# owner a\n").unwrap();
+        std::fs::write(owner_b.join("README.md"), "# owner b\n").unwrap();
+
+        let dest = tempfile::tempdir().unwrap();
+        let adapter = SqliteRepo::with_repos_dir(SqliteDb::open_in_memory().unwrap(), dest.path());
+
+        let a = adapter.clone_repo(owner_a.to_str().unwrap()).await.unwrap();
+        let b = adapter.clone_repo(owner_b.to_str().unwrap()).await.unwrap();
+
+        let path_a = PathBuf::from(a.local_path.clone().unwrap());
+        let path_b = PathBuf::from(b.local_path.clone().unwrap());
+        assert_ne!(
+            path_a, path_b,
+            "both owners were cloned into the same directory"
+        );
+
+        // The first checkout must not have been clobbered by the second.
+        let origin_a = existing_origin_url(&path_a).expect("owner-a checkout has an origin");
+        assert_eq!(
+            canonical_url(&origin_a),
+            canonical_url(owner_a.to_str().unwrap())
+        );
+        assert_eq!(adapter.list_repos().await.unwrap().len(), 2);
+    }
+
+    /// Regression test: a pre-existing checkout of a *different* remote at the
+    /// target directory must be refused, never silently reused.
+    #[tokio::test]
+    async fn clone_repo_refuses_to_reuse_a_different_remote() {
+        let sources = tempfile::tempdir().unwrap();
+        let owner_a = sources.path().join("owner-a").join("project");
+        std::fs::create_dir_all(&owner_a).unwrap();
+        init_source_repo(&owner_a);
+
+        let dest = tempfile::tempdir().unwrap();
+        let url_b = "https://github.com/owner-b/project.git";
+
+        // Materialize what the buggy code used to produce: a checkout of
+        // owner-a sitting at the directory owner-b would be cloned into.
+        let dir_b = dest
+            .path()
+            .join(repo_dir_name_from_url(url_b).expect("derivable"));
+        git2::Repository::clone(owner_a.to_str().unwrap(), &dir_b).unwrap();
+
+        let adapter = SqliteRepo::with_repos_dir(SqliteDb::open_in_memory().unwrap(), dest.path());
+        let err = adapter.clone_repo(url_b).await.unwrap_err().to_string();
+
+        assert!(
+            err.contains("refusing to reuse"),
+            "expected a refusal, got: {err}"
+        );
+        assert!(adapter.list_repos().await.unwrap().is_empty());
     }
 }

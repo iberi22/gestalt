@@ -24,6 +24,14 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   - `--task`, `--agents`, `--base-ref`, `--max-parallel`, `--timeout` flags
   - Auto-creates WorktreeManager, SubprocessRunner, JsonlEventLog
 - **features.json**: Updated to 12 features (11 passing, 1 failing: feat-belief-graph)
+- **Provider health checks** (`gestalt-router::health`)
+  - `Router::health_report(force)` / `Router::provider_health(name, force)` — structured
+    `healthy`/`degraded`/`unhealthy` status for `claude`, `opencode`, `agy`, `codex`, `wrangler`
+  - Three probe layers: binary in `PATH` (`which` + fallback scan), CLI version response via
+    `tokio::process::Command`, and TCP reachability of the provider API when its credentials are set
+  - Concurrent, 5 s bounded probes with `kill_on_drop`, results cached 30 s (`HealthCache`)
+  - `GET /api/health/providers` on the event bus server (200, or 503 when a provider is unusable;
+    `?force=true` bypasses the cache)
 - **Documentation**: README rewritten in English with full Router architecture and usage guide
 
 ### Changed

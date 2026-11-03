@@ -7,6 +7,7 @@ pub mod agent;
 pub mod checkpoint;
 pub mod doctor;
 pub mod event_bus;
+pub mod health;
 pub mod integrate;
 pub mod otel;
 pub mod overlap;

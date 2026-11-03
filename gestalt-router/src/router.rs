@@ -14,6 +14,7 @@ use gestalt_ws::WsServer;
 
 use crate::agent::AgentRunner;
 use crate::event_bus::BusEvent;
+use crate::health::{HealthCache, HealthCheck, HealthReport};
 use crate::overlap::{LiveConflictDetector, OverlapDetector};
 use crate::run::{
     AgentResult, AgentSpec, ConflictInfo, RouterError, RouterErrorKind, RunReport, RunSpec,
@@ -41,6 +42,8 @@ pub struct Router {
     pub timeout_secs: u64,
     /// Maximum number of retry attempts for transient failures (default 3).
     pub max_retries: u32,
+    /// TTL-cached provider health checks (CLI presence, response, API reach).
+    pub health_cache: Arc<HealthCache>,
 }
 
 impl Router {
@@ -75,6 +78,7 @@ impl Router {
             dry_run: false,
             timeout_secs: 300,
             max_retries: 3,
+            health_cache: Arc::new(HealthCache::new()),
         };
 
         // Spawn LiveConflictDetector if a WebSocket server is configured
@@ -116,6 +120,27 @@ impl Router {
     /// A value of `0` disables retries (only the initial attempt runs).
     pub fn with_max_retries(mut self, max_retries: u32) -> Self {
         self.max_retries = max_retries;
+        self
+    }
+
+    /// Health of every agent provider CLI (claude, opencode, agy, codex,
+    /// wrangler): binary presence, version response and API reachability.
+    ///
+    /// The sweep is cached for [`crate::health::DEFAULT_TTL`] seconds; pass
+    /// `force = true` to bypass the cache. Probes are concurrent and bounded,
+    /// so a slow CLI degrades only its own provider.
+    pub async fn health_report(&self, force: bool) -> HealthReport {
+        self.health_cache.report(force).await
+    }
+
+    /// Health of a single provider by name (`None` for unknown providers).
+    pub async fn provider_health(&self, provider: &str, force: bool) -> Option<HealthCheck> {
+        self.health_cache.provider(provider, force).await
+    }
+
+    /// Attach a custom health cache (useful for tests or a different TTL).
+    pub fn with_health_cache(mut self, cache: Arc<HealthCache>) -> Self {
+        self.health_cache = cache;
         self
     }
 

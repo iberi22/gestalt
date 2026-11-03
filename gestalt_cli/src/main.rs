@@ -13,6 +13,7 @@ mod chain;
 mod config;
 mod observe;
 mod repl;
+mod shutdown;
 pub mod task_api;
 
 use crate::config::CliConfig;
@@ -821,6 +822,28 @@ async fn run_swarm_task(
     Ok(())
 }
 
+/// Wait for a spawned child process, or stop it when a shutdown is requested.
+///
+/// Returns `Some(status)` when the child exited on its own, and `None` when we
+/// killed it because the CLI is shutting down (keeps the child from outliving
+/// its parent and squatting on a port).
+async fn wait_for_child_or_shutdown(
+    child: &mut tokio::process::Child,
+    shutdown: &shutdown::ShutdownCoordinator,
+    label: &str,
+) -> std::io::Result<Option<std::process::ExitStatus>> {
+    tokio::select! {
+        biased;
+        _ = shutdown.wait_for_shutdown() => {
+            eprintln!("⚠️  Shutdown requested — stopping {label}");
+            let _ = child.start_kill();
+            let _ = child.wait().await;
+            Ok(None)
+        },
+        status = child.wait() => status.map(Some),
+    }
+}
+
 #[cfg(test)]
 #[allow(clippy::items_after_test_module)]
 mod tests {
@@ -875,12 +898,10 @@ mod tests {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    tokio::spawn(async {
-        if let Ok(()) = tokio::signal::ctrl_c().await {
-            eprintln!("Shutting down gracefully...");
-            std::process::exit(0);
-        }
-    });
+    // Graceful shutdown: SIGINT/SIGTERM flip the shared coordinator, long-running
+    // commands observe it, and `finalize_shutdown` drains + reports before exit.
+    let shutdown = shutdown::global();
+    shutdown::spawn_signal_listener(shutdown);
 
     let config = CliConfig::load().unwrap_or_default();
     let args = Args::parse();
@@ -952,8 +973,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .arg(format!("{}:{}", host, port))
                     .spawn()?;
 
-                let status = child.wait().await?;
-                std::process::exit(status.code().unwrap_or(0));
+                match wait_for_child_or_shutdown(&mut child, shutdown, "standalone MCP server")
+                    .await?
+                {
+                    Some(status) => std::process::exit(status.code().unwrap_or(0)),
+                    None => {
+                        shutdown.record_cancelled(1);
+                    },
+                }
             },
         },
 
@@ -983,8 +1010,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .args(["--transport", "http"])
                 .spawn()?;
 
-            let status = child.wait().await?;
-            std::process::exit(status.code().unwrap_or(0));
+            match wait_for_child_or_shutdown(&mut child, shutdown, "MCP server").await? {
+                Some(status) => std::process::exit(status.code().unwrap_or(0)),
+                None => {
+                    shutdown.record_cancelled(1);
+                },
+            }
         },
 
         Commands::Status => {
@@ -1469,15 +1500,36 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 });
             }
 
-            // Wait for all tasks to complete
+            // Wait for all tasks to complete, unless a shutdown is requested:
+            // then cancel the in-flight agents and keep whatever finished so the
+            // OverlayFs can still be flushed (no data loss on Ctrl+C).
             let mut results = Vec::new();
-            while let Some(res) = join_set.join_next().await {
-                match res {
-                    Ok((task_id, task_desc, result)) => {
-                        results.push((task_id, task_desc, result));
+            let mut cancelled_tasks = 0usize;
+            loop {
+                tokio::select! {
+                    biased;
+                    _ = shutdown.wait_for_shutdown() => {
+                        cancelled_tasks = shutdown::abort_and_drain_join_set(&mut join_set).await;
+                        shutdown.record_cancelled(cancelled_tasks);
+                        if cancelled_tasks > 0 {
+                            println!(
+                                "  ⚠️  Shutdown requested — cancelled {} in-flight task(s)",
+                                cancelled_tasks
+                            );
+                        }
+                        break;
                     },
-                    Err(e) => {
-                        error!("Task panicked: {:?}", e);
+                    joined = join_set.join_next() => {
+                        match joined {
+                            Some(Ok((task_id, task_desc, result))) => {
+                                results.push((task_id, task_desc, result));
+                            },
+                            Some(Err(e)) => {
+                                error!("Task panicked: {:?}", e);
+                            },
+                            // Every task already handed in its result.
+                            None => break,
+                        }
                     },
                 }
             }
@@ -1494,6 +1546,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     Ok(_) => println!("  ✅ {}: OK - {}", task_id, task_desc),
                     Err(e) => println!("  ❌ {}: FAIL - {} ({})", task_id, task_desc, e),
                 }
+            }
+            if cancelled_tasks > 0 {
+                println!("  🛑 {}: CANCELLED - shutdown requested", cancelled_tasks);
             }
 
             println!();
@@ -1536,15 +1591,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let duration = end_time.signed_duration_since(start_time);
             println!();
             println!(
-                "🐝 Swarm complete in {}s ({} tasks: {} ✅ / {} ❌)",
+                "🐝 Swarm complete in {}s ({} tasks: {} ✅ / {} ❌ / {} 🛑)",
                 duration.num_seconds(),
-                results.len(),
+                results.len() + cancelled_tasks,
                 successes,
-                failures
+                failures,
+                cancelled_tasks
             );
 
-            // Exit with error if any tasks failed
-            if failures > 0 {
+            // Exit with error if any tasks failed (a requested shutdown keeps
+            // its own exit code — it is handled by `finalize_shutdown`).
+            if failures > 0 && !shutdown.is_shutting_down() {
                 std::process::exit(1);
             }
         },
@@ -1662,8 +1719,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             println!("⚙️  Executing run...");
 
-            match router.execute(spec).await {
-                Ok(report) => {
+            // The router future owns the agent subprocesses and the worktrees;
+            // dropping it on shutdown aborts the in-flight agents.
+            let run_guard = shutdown.register_task("router-run");
+            let run_outcome = tokio::select! {
+                biased;
+                _ = shutdown.wait_for_shutdown() => None,
+                result = router.execute(spec) => Some(result),
+            };
+
+            match run_outcome {
+                // Shutdown wins: the future was dropped, so every in-flight
+                // agent is cancelled instead of being left half-run.
+                None => {
+                    shutdown.record_cancelled(agent_count);
+                    eprintln!(
+                        "⚠️  Shutdown requested — cancelled {} in-flight agent run(s)",
+                        agent_count
+                    );
+                    drop(run_guard);
+                },
+                Some(Ok(report)) => {
                     println!();
                     println!("📊 Run Report:");
                     println!("   Run ID: {}", report.run_id);
@@ -1744,8 +1820,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     // Also output the full report as JSON for machine consumption
                     println!();
                     println!("{}", serde_json::to_string_pretty(&report)?);
+                    run_guard.finish();
                 },
-                Err(e) => {
+                Some(Err(e)) => {
                     error!("Router execution failed: {}", e);
                     eprintln!("❌ Router execution failed: {}", e);
                     std::process::exit(1);
@@ -1913,20 +1990,35 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             )
                         };
 
-                        // Run with 300s timeout
+                        // Run with 300s timeout. `kill_on_drop` makes the
+                        // sub-agent killable if a shutdown is requested.
                         let timeout_dur = Duration::from_secs(300);
                         let agent_overlay = overlay_dir.clone();
-                        let agent_future = tokio::task::spawn_blocking(move || {
-                            let mut cmd = std::process::Command::new(&program);
+                        let agent_future = async move {
+                            let mut cmd = tokio::process::Command::new(&program);
                             cmd.args(&args);
+                            cmd.kill_on_drop(true);
                             if let Some(ref od) = agent_overlay {
                                 cmd.current_dir(od);
                             }
-                            cmd.output()
-                        });
+                            cmd.output().await
+                        };
 
-                        match tokio::time::timeout(timeout_dur, agent_future).await {
-                            Ok(Ok(Ok(output))) => {
+                        let agent_outcome = tokio::select! {
+                            biased;
+                            _ = shutdown.wait_for_shutdown() => None,
+                            result = tokio::time::timeout(timeout_dur, agent_future) => Some(result),
+                        };
+
+                        match agent_outcome {
+                            None => {
+                                shutdown.record_cancelled(1);
+                                agent_state = AgentState::Crashed;
+                                agent_stderr = "Agent cancelled by shutdown signal".to_string();
+                                agent_exit_status = "cancelled".to_string();
+                                eprintln!("⚠️  Agent subprocess cancelled by shutdown signal");
+                            },
+                            Some(Ok(Ok(output))) => {
                                 let out_stdout = String::from_utf8_lossy(&output.stdout);
                                 let out_stderr = String::from_utf8_lossy(&output.stderr);
 
@@ -1948,19 +2040,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     println!("stderr: {}", out_stderr);
                                 }
                             },
-                            Ok(Ok(Err(e))) => {
+                            Some(Ok(Err(e))) => {
                                 agent_state = AgentState::Crashed;
                                 agent_stderr = format!("Agent subprocess error: {}", e);
                                 agent_exit_status = "error".to_string();
                                 eprintln!("Agent failed: {}", e);
                             },
-                            Ok(Err(join_err)) => {
-                                agent_state = AgentState::Crashed;
-                                agent_stderr = format!("Agent task panicked: {}", join_err);
-                                agent_exit_status = "panic".to_string();
-                                eprintln!("Agent task panicked: {}", join_err);
-                            },
-                            Err(_elapsed) => {
+                            Some(Err(_elapsed)) => {
                                 agent_state = AgentState::Timeout;
                                 agent_stderr = "Agent timed out after 300s".to_string();
                                 agent_exit_status = "timeout".to_string();
@@ -2076,7 +2162,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         Commands::Bus { action } => match action {
             BusAction::Serve { host, port, db } => {
-                task_api::serve(&host, port, db.as_deref()).await?;
+                // Drain HTTP connections on shutdown instead of dropping them.
+                let serve_guard = shutdown.register_task("bus-serve");
+                let bus_shutdown = shutdown.clone();
+                let wait_for_stop = Box::pin(async move { bus_shutdown.wait_for_shutdown().await });
+                task_api::serve_with_shutdown(&host, port, db.as_deref(), Some(wait_for_stop))
+                    .await?;
+                serve_guard.finish();
             },
             BusAction::Push {
                 agent,
@@ -2532,7 +2624,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     println!("  - {}", hook.display());
                 }
             } else {
-                observe::run_daemon_loop().await?;
+                let observe_guard = shutdown.register_task("observe-daemon");
+                observe::run_daemon_loop_until(Some(shutdown)).await?;
+                observe_guard.finish();
             }
         },
 
@@ -2544,11 +2638,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             } => {
                 info!("Starting chain run for spec: {}", spec);
                 println!("⛓️  Running agent pipeline chain...");
-                if let Err(e) = chain::run_chain(&spec, project, continue_on_error).await {
+                let chain_guard = shutdown.register_task("chain-run");
+                let chain_result = tokio::select! {
+                    biased;
+                    _ = shutdown.wait_for_shutdown() => {
+                        shutdown.record_cancelled(1);
+                        eprintln!("⚠️  Chain run cancelled by shutdown signal");
+                        chain_guard.finish();
+                        return finalize_shutdown(shutdown).await;
+                    },
+                    result = chain::run_chain(&spec, project, continue_on_error) => result,
+                };
+                if let Err(e) = chain_result {
                     error!("Chain run failed: {}", e);
                     eprintln!("❌ Chain run failed: {}", e);
                     std::process::exit(1);
                 }
+                chain_guard.finish();
                 println!("✅ Chain run completed successfully.");
             },
         },
@@ -2579,11 +2685,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     println!("   Project: {}", proj);
                 }
 
-                match wrapper
-                    .execute_with_trace(&task, project.as_deref(), timeout)
-                    .await
-                {
-                    Ok((edits, status, stdout, stderr)) => {
+                let exec_guard = shutdown.register_task("agent-exec");
+                let exec_outcome = tokio::select! {
+                    biased;
+                    _ = shutdown.wait_for_shutdown() => None,
+                    result = wrapper.execute_with_trace(&task, project.as_deref(), timeout) => {
+                        Some(result)
+                    },
+                };
+
+                match exec_outcome {
+                    None => {
+                        shutdown.record_cancelled(1);
+                        eprintln!("⚠️  Agent launcher cancelled by shutdown signal");
+                        exec_guard.finish();
+                        return finalize_shutdown(shutdown).await;
+                    },
+                    Some(Ok((edits, status, stdout, stderr))) => {
                         println!();
                         println!("━━━ Run Summary ━━━");
                         println!("Status:      {}", status);
@@ -2591,11 +2709,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         println!("Stdout len:  {}", stdout.len());
                         println!("Stderr len:  {}", stderr.len());
                         println!("━━━━━━━━━━━━━━━━━━━");
+                        exec_guard.finish();
                         if !status.success() {
                             std::process::exit(status.code().unwrap_or(1));
                         }
                     },
-                    Err(e) => {
+                    Some(Err(e)) => {
                         eprintln!("❌ Launcher execution failed: {}", e);
                         std::process::exit(1);
                     },
@@ -2604,5 +2723,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         },
     }
 
-    Ok(())
+    finalize_shutdown(shutdown).await
+}
+
+/// Drain in-flight work, print the shutdown summary and exit when a signal
+/// arrived while the command was running.
+///
+/// Commands that complete on their own return normally (`Ok(())`); only a
+/// triggered shutdown takes over the exit code (`130` for `Ctrl+C`, `0` for
+/// `SIGTERM`). We `std::process::exit` instead of returning because lingering
+/// child processes and blocking threads would otherwise keep the runtime alive
+/// past the drain deadline.
+async fn finalize_shutdown(
+    shutdown: &shutdown::ShutdownCoordinator,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if !shutdown.is_shutting_down() {
+        return Ok(());
+    }
+
+    let report = shutdown.drain(shutdown::drain_timeout_from_env()).await;
+    eprintln!(
+        "🛑 Graceful shutdown: {} task(s) drained, {} cancelled",
+        report.drained, report.cancelled
+    );
+    shutdown::print_report(&report);
+    std::process::exit(report.exit_code());
 }

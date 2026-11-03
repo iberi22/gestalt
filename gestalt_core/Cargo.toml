@@ -52,7 +52,8 @@ config = "0.15.19"
 tempfile = "3.24.0"
 
 # Database
-surrealdb = { version = "3.2.4", features = ["kv-mem"] }
+rusqlite = { version = "0.32", features = ["bundled"] }
+sqlite-vec = "0.1"
 
 synapse-agentic = { path = "../synapse-agentic" }
 

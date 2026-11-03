@@ -376,15 +376,15 @@ mod tests {
 
     #[test]
     fn test_scan() -> anyhow::Result<()> {
-        let dir = tempdir().expect("failed to create temp dir");
+        let dir = tempdir()?;
         let file_path = dir.path().join("test.rs");
-        let mut file = File::create(&file_path).expect("failed to create test file");
-        writeln!(file, "fn main() {{}}").expect("failed to write to test file");
+        let mut file = File::create(&file_path)?;
+        writeln!(file, "fn main() {{}}")?;
 
         let hidden_dir = dir.path().join(".git");
-        std::fs::create_dir(&hidden_dir).expect("failed to create hidden dir");
+        std::fs::create_dir(&hidden_dir)?;
         let hidden_file = hidden_dir.join("config");
-        File::create(&hidden_file).expect("failed to create hidden file");
+        File::create(&hidden_file)?;
 
         let indexer = Indexer::default();
         let files = indexer.scan(dir.path());

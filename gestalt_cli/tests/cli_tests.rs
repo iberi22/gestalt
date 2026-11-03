@@ -211,7 +211,10 @@ async fn test_ctrl_c_handler() {
     }
 
     // Wait for the child to exit
-    let output = child.wait_with_output().await.expect("Failed to wait on child");
+    let output = child
+        .wait_with_output()
+        .await
+        .expect("Failed to wait on child");
 
     // Assert it exited with status 0
     assert!(

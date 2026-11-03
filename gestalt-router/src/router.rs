@@ -128,8 +128,7 @@ impl Router {
     /// but never propagated, so shutdown cannot hang on this path.
     pub async fn cancel_current_run(&self) {
         let run_id = self.current_run_id.lock().unwrap().clone();
-        let worktrees: Vec<std::path::PathBuf> =
-            self.current_worktrees.lock().unwrap().clone();
+        let worktrees: Vec<std::path::PathBuf> = self.current_worktrees.lock().unwrap().clone();
 
         for wt in &worktrees {
             if let Err(e) = self.worktrees.cleanup_worktree(wt).await {
@@ -139,7 +138,10 @@ impl Router {
 
         if let Some(rid) = run_id {
             if let Err(e) = self.state_db.complete_run(&rid, "cancelled") {
-                tracing::warn!("cancel_current_run: failed to persist cancelled status: {}", e);
+                tracing::warn!(
+                    "cancel_current_run: failed to persist cancelled status: {}",
+                    e
+                );
             }
         }
 

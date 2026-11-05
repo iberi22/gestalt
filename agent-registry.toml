@@ -15,8 +15,41 @@ model = "gemini"
 type = "Api"
 capabilities = ["code", "test"]
 
+[[agents]]
+name = "xavier-chat"
+provider = "local"
+model = "auto"
+type = "Cli"
+capabilities = ["memory", "search", "inference", "embedding"]
+command = "xavier"
+args = ["chat", "{prompt}"]
+
+[[agents]]
+name = "xavier-memory"
+provider = "local"
+model = "qwen3-4b"
+type = "Cli"
+capabilities = ["search", "retrieval", "vector-db"]
+command = "xavier"
+args = ["search", "{query}"]
+
+[[agents]]
+name = "agy"
+provider = "google"
+model = "gemini-2.0-flash"
+type = "Cli"
+capabilities = ["web-search", "google-search", "reasoning"]
+command = "agy"
+args = ["--print", "{query}"]
+
 [providers.local]
 base_url = "http://localhost:8081"
 [providers.local.rate_limit]
+rpm = 60
+tpm = 100000
+
+[providers.google]
+base_url = "https://antigravity.google"
+[providers.google.rate_limit]
 rpm = 60
 tpm = 100000

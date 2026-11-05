@@ -21,7 +21,7 @@ provider = "local"
 model = "auto"
 type = "Cli"
 capabilities = ["memory", "search", "inference", "embedding"]
-command = "e:/proyectosSWAL/xavier/target/release/xavier.exe"
+command = "xavier"
 args = ["chat", "{prompt}"]
 
 [[agents]]
@@ -30,7 +30,7 @@ provider = "local"
 model = "qwen3-4b"
 type = "Cli"
 capabilities = ["search", "retrieval", "vector-db"]
-command = "e:/proyectosSWAL/xavier/target/release/xavier.exe"
+command = "xavier"
 args = ["search", "{query}"]
 
 [[agents]]
@@ -39,7 +39,7 @@ provider = "google"
 model = "gemini-2.0-flash"
 type = "Cli"
 capabilities = ["web-search", "google-search", "reasoning"]
-command = "C:/Users/belal/AppData/Local/agy/bin/agy.exe"
+command = "agy"
 args = ["--print", "{query}"]
 
 [providers.local]
